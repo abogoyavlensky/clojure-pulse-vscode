@@ -1,2 +1,15 @@
 .claude/
 .images/
+
+# Build output
+dist/
+out/
+
+# Dependencies
+node_modules/
+
+# Packaged extension
+*.vsix
+
+# Test runner
+.vscode-test/
