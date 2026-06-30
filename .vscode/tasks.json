@@ -21,17 +21,25 @@
       },
       "problemMatcher": {
         "owner": "esbuild",
-        "fileLocation": "absolute",
+        "source": "esbuild",
+        "fileLocation": ["relative", "${workspaceFolder}"],
         "pattern": [
           {
-            "regexp": "^\\u2718 \\[ERROR\\] (.+)$",
-            "message": 1
+            "regexp": "^(?:✘ )?\\[(WARNING|ERROR)\\] (.+)$",
+            "severity": 1,
+            "message": 2
+          },
+          {
+            "regexp": "^\\s+(.+):(\\d+):(\\d+):$",
+            "file": 1,
+            "line": 2,
+            "column": 3
           }
         ],
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "\\[watch\\] build started",
-          "endsPattern": "\\[watch\\] build finished"
+          "beginsPattern": "^\\[watch\\] build started$",
+          "endsPattern": "^\\[watch\\] build finished$"
         }
       }
     }
