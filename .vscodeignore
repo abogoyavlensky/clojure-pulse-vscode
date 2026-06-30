@@ -7,7 +7,12 @@ node_modules/**
 .github/**
 docs/**
 .images/**
+.tmp/**
+.claude/**
+*.vsix
 .gitignore
+AGENTS.md
+CLAUDE.md
 esbuild.js
 eslint.config.mjs
 tsconfig.json
