@@ -1,18 +1,23 @@
 import * as vscode from "vscode";
-import { LanguageClient } from "vscode-languageclient/node";
+import { LanguageClient, State } from "vscode-languageclient/node";
 import { createClient } from "./client";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
+import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
 let client: LanguageClient | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
+let statusBar: StatusBar | undefined;
+let stateListener: vscode.Disposable | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel("Clojure Pulse");
+  statusBar = createStatusBar();
 
   context.subscriptions.push(
     outputChannel,
+    statusBar,
     vscode.commands.registerCommand("clojurePulse.restart", restart),
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
@@ -39,13 +44,22 @@ async function start(): Promise<void> {
 
   if (isError(resolution)) {
     outputChannel?.appendLine(`[clojure-pulse] ${resolution.error}`);
+    statusBar?.update("error", { message: resolution.error });
     reportMissingServer(resolution.error);
     return;
   }
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
+  statusBar?.update("starting");
   const newClient = createClient(resolution, outputChannel!);
   client = newClient;
+
+  stateListener = newClient.onDidChangeState((event) => {
+    statusBar?.update(toServerStatus(event.newState), {
+      serverInfo: newClient.initializeResult?.serverInfo,
+      command: resolution.command,
+    });
+  });
 
   // Do not await: a failed spawn should surface as an error, not block (or
   // fail) extension activation. Drop the reference on failure so a later
@@ -53,12 +67,28 @@ async function start(): Promise<void> {
   newClient.start().catch((err: unknown) => {
     outputChannel?.appendLine(`[clojure-pulse] failed to start server: ${String(err)}`);
     if (client === newClient) {
+      stateListener?.dispose();
+      stateListener = undefined;
       client = undefined;
+      statusBar?.update("error", { message: "failed to start the language server" });
     }
   });
 }
 
+function toServerStatus(state: State): ServerStatus {
+  switch (state) {
+    case State.Running:
+      return "running";
+    case State.Starting:
+      return "starting";
+    default:
+      return "stopped";
+  }
+}
+
 async function stop(): Promise<void> {
+  stateListener?.dispose();
+  stateListener = undefined;
   const current = client;
   client = undefined;
   if (!current) {
