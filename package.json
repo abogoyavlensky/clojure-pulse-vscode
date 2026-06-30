@@ -39,6 +39,42 @@
         "scopeName": "source.clojure",
         "path": "./syntaxes/clojure.tmLanguage.json"
       }
+    ],
+    "configuration": {
+      "title": "Clojure Pulse",
+      "properties": {
+        "clojurePulse.server.path": {
+          "type": "string",
+          "default": "clj-pulse",
+          "markdownDescription": "Path to the `clj-pulse` language server binary. A bare name (e.g. `clj-pulse`) is resolved from your `PATH`; an absolute or relative path is used as-is."
+        },
+        "clojurePulse.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra command-line arguments passed to the clj-pulse server on startup."
+        },
+        "clojurePulse.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the clj-pulse language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "clojurePulse.restart",
+        "title": "Restart Server",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.showOutput",
+        "title": "Show Output",
+        "category": "Clojure Pulse"
+      }
     ]
   },
   "scripts": {
