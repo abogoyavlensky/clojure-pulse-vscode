@@ -24,7 +24,23 @@
     "workspaceContains:**/project.clj",
     "workspaceContains:**/lgx.edn"
   ],
-  "contributes": {},
+  "contributes": {
+    "languages": [
+      {
+        "id": "clojure",
+        "aliases": ["Clojure", "clojure"],
+        "extensions": [".clj", ".cljs", ".cljc", ".edn", ".bb", ".lg"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "clojure",
+        "scopeName": "source.clojure",
+        "path": "./syntaxes/clojure.tmLanguage.json"
+      }
+    ]
+  },
   "scripts": {
     "compile": "tsc --noEmit && node esbuild.js",
     "watch": "node esbuild.js --watch",
