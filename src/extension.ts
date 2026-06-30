@@ -3,6 +3,7 @@ import { LanguageClient, State } from "vscode-languageclient/node";
 import { createClient } from "./client";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
+import { createJarContentProvider } from "./jarContentProvider";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -21,6 +22,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("clojurePulse.restart", restart),
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
+    ),
+    // `jar:` documents (library / clojure.core sources) are served by the
+    // running server; the closure resolves the current client per request so it
+    // keeps working across restarts.
+    vscode.workspace.registerTextDocumentContentProvider(
+      "jar",
+      createJarContentProvider((method, param) =>
+        client
+          ? client.sendRequest(method, param)
+          : Promise.reject(new Error("clj-pulse language server is not running")),
+      ),
     ),
   );
 
