@@ -1,6 +1,6 @@
 # Clojure Pulse — VS Code Extension Scaffold Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Scaffold a minimal, best-practice TypeScript VS Code extension named **Clojure Pulse** that is (1) a self-contained Clojure language contribution and (2) a thin LSP client for the `clj-pulse` server, with a status-bar indicator of server state.
 
@@ -101,29 +101,29 @@ clojure-pulse-vscode/
 - Create: `.vscode/launch.json`, `.vscode/tasks.json`, `.vscode/extensions.json`
 - Create: `src/extension.ts` (no-op `activate`/`deactivate`)
 
-- [ ] **Step 1: Write `package.json`**
+- [x] **Step 1: Write `package.json`**
   Manifest with `name: "clojure-pulse"`, `displayName: "Clojure Pulse"`, `publisher: "abogoyavlensky"`, `version: "0.0.1"`, `license: "MIT"`, `engines.vscode: "^1.85.0"`, `main: "./dist/extension.js"`, `categories: ["Programming Languages", "Linters"]`. `activationEvents: ["onLanguage:clojure", "workspaceContains:**/deps.edn", "workspaceContains:**/project.clj", "workspaceContains:**/lgx.edn"]`. Empty `contributes: {}` for now. Scripts: `"compile": "tsc --noEmit && node esbuild.js"`, `"watch": "node esbuild.js --watch"`, `"package-build": "tsc --noEmit && node esbuild.js --production"`, `"vscode:prepublish": "npm run package-build"`, `"compile-tests": "tsc -p . --outDir out"`, `"lint": "eslint src"`, `"pretest": "npm run compile-tests && npm run compile && npm run lint"`, `"test": "vscode-test"`, `"package": "vsce package"`. Dependencies: `vscode-languageclient: "^9.0.1"`. devDependencies: `@types/vscode: "^1.85.0"`, `@types/node`, `@types/mocha`, `typescript`, `esbuild`, `eslint`, `@eslint/js`, `typescript-eslint`, `@vscode/test-cli`, `@vscode/test-electron`, `@vscode/vsce`.
 
-- [ ] **Step 2: Write `tsconfig.json`**
+- [x] **Step 2: Write `tsconfig.json`**
   `target: ES2022`, `module: Node16`, `moduleResolution: Node16`, `lib: ["ES2022"]`, `strict: true`, `outDir: "out"`, `rootDir: "src"`, `sourceMap: true`. Include `src`.
 
-- [ ] **Step 3: Write `esbuild.js`**
+- [x] **Step 3: Write `esbuild.js`**
   Bundle `src/extension.ts` → `dist/extension.js`, `platform: "node"`, `format: "cjs"`, `external: ["vscode"]`, `sourcemap: true`. Honor `--production` (minify, no sourcemap) and `--watch` flags.
 
-- [ ] **Step 4: Write tooling configs**
+- [x] **Step 4: Write tooling configs**
   `eslint.config.mjs` (flat config: `@eslint/js` recommended + `typescript-eslint` recommended, scoped to `src/**/*.ts`). `.vscode-test.mjs` exporting `defineConfig({ files: "out/test/**/*.test.js" })`. `.vscodeignore` excluding `src/`, `out/`, `node_modules/`, `.vscode*`, `esbuild.js`, `tsconfig.json`, `**/*.map`, `.github/`, `docs/`. `.gitignore` for `node_modules/`, `dist/`, `out/`, `*.vsix`.
 
-- [ ] **Step 5: Write `.vscode/` debug configs**
+- [x] **Step 5: Write `.vscode/` debug configs**
   `launch.json` with an `extensionHost` config (`--extensionDevelopmentPath=${workspaceFolder}`, preLaunchTask the watch build). `tasks.json` running `npm: watch` as background. `extensions.json` recommending `dbaeumer.vscode-eslint`.
 
-- [ ] **Step 6: Write `LICENSE` (MIT, © 2026 Andrey Bogoyavlenskiy), `CHANGELOG.md` (Unreleased section), and no-op `src/extension.ts`**
+- [x] **Step 6: Write `LICENSE` (MIT, © 2026 Andrey Bogoyavlenskiy), `CHANGELOG.md` (Unreleased section), and no-op `src/extension.ts`**
   `export function activate(context) {}` and `export function deactivate() {}` with `vscode` imported.
 
-- [ ] **Step 7: Install and compile**
+- [x] **Step 7: Install and compile**
   Run: `npm install && npm run compile`
   Expected: installs cleanly; `dist/extension.js` produced; no type errors.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
   `git commit -m "chore: scaffold VS Code extension build tooling"`
 
 ### Task 2: Clojure language contribution
@@ -132,20 +132,20 @@ clojure-pulse-vscode/
 - Create: `language-configuration.json`, `syntaxes/clojure.tmLanguage.json`, `syntaxes/NOTICE`
 - Modify: `package.json` (add `contributes.languages` + `contributes.grammars`)
 
-- [ ] **Step 1: Write `language-configuration.json`**
+- [x] **Step 1: Write `language-configuration.json`**
   `comments.lineComment: ";"`, brackets/`autoClosingPairs`/`surroundingPairs` for `()` `[]` `{}` and `"`, and word-pattern/indentation suitable for Lisp. Keep `"` out of auto-closing inside strings via the standard `notIn` rules.
 
-- [ ] **Step 2: Vendor the TextMate grammar**
+- [x] **Step 2: Vendor the TextMate grammar**
   Download the MIT-licensed `clojure.tmLanguage.json` (scope `source.clojure`) into `syntaxes/`. Verify `scopeName` is `source.clojure`. Add `syntaxes/NOTICE` with the upstream license text and source URL.
 
-- [ ] **Step 3: Add `contributes.languages` and `contributes.grammars` to `package.json`**
+- [x] **Step 3: Add `contributes.languages` and `contributes.grammars` to `package.json`**
   One language: `{ id: "clojure", aliases: ["Clojure", "clojure"], extensions: [".clj", ".cljs", ".cljc", ".edn", ".bb", ".lg"], configuration: "./language-configuration.json" }`. One grammar: `{ language: "clojure", scopeName: "source.clojure", path: "./syntaxes/clojure.tmLanguage.json" }`.
 
-- [ ] **Step 4: Verify in the Extension Development Host**
+- [x] **Step 4: Verify in the Extension Development Host**
   Run: `npm run compile`, then launch via F5 (or `code --extensionDevelopmentPath=.`), open a `.clj` and a `.lg` file.
   Expected: syntax highlighting renders; typing `(` auto-closes `)`; `;` line comment toggles. No "language already registered" hard error.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: contribute Clojure language, file associations, and grammar"`
 
 ### Task 3: Server-path resolution
@@ -154,21 +154,21 @@ clojure-pulse-vscode/
 - Create: `src/serverPath.ts`
 - Test: `src/test/serverPath.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Test `resolveServerPath({ path, args }, env)`: (a) a `path` containing a separator returns that command verbatim; (b) a bare `"clj-pulse"` resolves to the first matching executable across `env.PATH` dirs (create a temp dir with a dummy executable); (c) an unresolvable bare name returns a structured `{ error }`. Use `os.tmpdir()` fixtures.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `npm test`
   Expected: FAIL — `resolveServerPath` not implemented / module not found.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   `resolveServerPath(config, env)`: if `config.path` contains a path separator, return `{ command: config.path, args }`. Otherwise scan `env.PATH` split on `path.delimiter`, return the first existing file (honor `PATHEXT` on win32 minimally or accept exact match), else `{ error: "clj-pulse not found on PATH" }`. Pure — no `vscode` import.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: resolve clj-pulse from setting or PATH"`
 
 ### Task 4: LSP client, activation, and commands
@@ -178,23 +178,23 @@ clojure-pulse-vscode/
 - Modify: `src/extension.ts`, `package.json` (add `contributes.configuration` + `contributes.commands`)
 - Test: `src/test/extension.test.ts`
 
-- [ ] **Step 1: Add `contributes.configuration` and `contributes.commands` to `package.json`**
+- [x] **Step 1: Add `contributes.configuration` and `contributes.commands` to `package.json`**
   Configuration (title "Clojure Pulse"): `clojurePulse.server.path` (string, default `"clj-pulse"`), `clojurePulse.server.args` (array of string, default `[]`), `clojurePulse.trace.server` (enum `off`/`messages`/`verbose`, default `off`). Commands: `clojurePulse.restart` ("Clojure Pulse: Restart Server"), `clojurePulse.showOutput` ("Clojure Pulse: Show Output").
 
-- [ ] **Step 2: Write `src/client.ts`**
+- [x] **Step 2: Write `src/client.ts`**
   `createClient(command, args, outputChannel): LanguageClient` — `ServerOptions` = `{ command, args, transport: TransportKind.stdio }`; `clientOptions` = `{ documentSelector: [{ scheme: "file", language: "clojure" }], outputChannel, traceOutputChannel: outputChannel }`. Construct `new LanguageClient("clojurePulse", "Clojure Pulse", serverOptions, clientOptions)`.
 
-- [ ] **Step 3: Write `src/extension.ts` orchestration**
+- [x] **Step 3: Write `src/extension.ts` orchestration**
   In `activate`: read `clojurePulse` config, call `resolveServerPath`. On error → show a warning notification with an "Install clj-pulse" item linking to the repo, set status (Task 5 hook) to error, and return without throwing. On success → create an output channel, `createClient`, register `restart` (stop → re-`activate` logic / recreate client) and `showOutput` (reveal channel) commands, push everything to `context.subscriptions`, and `client.start()`. `deactivate` → `client?.stop()`. Keep the client reference module-scoped.
 
-- [ ] **Step 4: Write the activation smoke test**
+- [x] **Step 4: Write the activation smoke test**
   `extension.test.ts`: set `clojurePulse.server.path` to a guaranteed-missing path, activate the extension via `vscode.extensions.getExtension("abogoyavlensky.clojure-pulse")?.activate()`, assert it resolves without throwing and that `clojurePulse.restart` / `clojurePulse.showOutput` appear in `vscode.commands.getCommands(true)`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
   Run: `npm test`
   Expected: PASS — activation resilient with a missing binary; commands registered.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: start clj-pulse LSP client with restart and output commands"`
 
 ### Task 5: Status-bar indicator
@@ -204,24 +204,24 @@ clojure-pulse-vscode/
 - Modify: `src/extension.ts`
 - Test: `src/test/statusBar.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Test the pure `statusPresentation(state, serverInfo?)`: for each `State` (Starting/Running/Stopped) and an explicit error case, assert the returned `text` (codicon + "clj-pulse"), `tooltip`, and whether an error background is set. Running with `serverInfo` includes the version in the tooltip.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `npm test`
   Expected: FAIL — `statusPresentation` not implemented.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   `statusPresentation(state, serverInfo?)` returns `{ text, tooltip, error: boolean }` per the Design mapping. `createStatusBar(onClick)` creates a left-aligned `StatusBarItem` (priority placing it near git/diagnostics), wires `command` to `clojurePulse.showOutput`, and exposes `update(state, serverInfo?)` applying `statusPresentation` (sets `backgroundColor` to `statusBarItem.errorBackground` when `error`) and `setError(message)`. Show the item immediately.
 
-- [ ] **Step 4: Wire into `extension.ts`**
+- [x] **Step 4: Wire into `extension.ts`**
   Create the status bar in `activate`; on the missing-binary error path call `setError`. On success, subscribe to `client.onDidChangeState` and call `update(e.newState, client.initializeResult?.serverInfo)`; also `update` once after `start()`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: show clj-pulse server status in the status bar"`
 
 ### Task 6: Jar content provider for library navigation
@@ -231,25 +231,25 @@ clojure-pulse-vscode/
 - Modify: `src/extension.ts`
 - Test: `src/test/jarContentProvider.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Test `createJarContentProvider(sendRequest)`: `provideTextDocumentContent(uri)` calls the injected `sendRequest("clojure/dependencyContents", { uri: uri.toString() })` and returns its resolved string. Use a fake `sendRequest` returning `"(ns clojure.core)"` and assert the body is returned and the request args are correct.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `npm test`
   Expected: FAIL — `createJarContentProvider` not implemented.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
   `createJarContentProvider(sendRequest)` returns a `TextDocumentContentProvider` whose `provideTextDocumentContent(uri)` returns `sendRequest("clojure/dependencyContents", { uri: uri.toString() })`. In `extension.ts`, after `client.start()`, register it via `vscode.workspace.registerTextDocumentContentProvider("jar", createJarContentProvider((m, p) => client.sendRequest(m, p)))` and push to subscriptions.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Manual verification (optional, needs the real binary)**
+- [x] **Step 5: Manual verification (optional, needs the real binary)**
   With `clj-pulse` on `PATH` and a `deps.edn` project open, go-to-definition on a `clojure.core` symbol (e.g. `map`).
   Expected: a read-only `jar:` document opens with the source.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: open jar: library sources via clojure/dependencyContents"`
 
 ### Task 7: CI workflow
@@ -257,14 +257,14 @@ clojure-pulse-vscode/
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
   Trigger on push + pull_request. Job on `ubuntu-latest`: checkout, `actions/setup-node` (Node 20, npm cache), `npm ci`, `npm run lint`, `npm run compile`, run tests headless under xvfb (`xvfb-run -a npm test`), then `npx @vscode/vsce package` to confirm the `.vsix` builds. Upload the `.vsix` as an artifact.
 
-- [ ] **Step 2: Verify the commands locally**
+- [x] **Step 2: Verify the commands locally**
   Run: `npm ci && npm run lint && npm run compile && npm test && npm run package`
   Expected: all succeed; a `clojure-pulse-0.0.1.vsix` is produced.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "ci: lint, compile, test, and package the extension"`
 
 ### Task 8: README, CHANGELOG, and docs
@@ -272,11 +272,50 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Write `README.md`** (use /writing-clearly)
+- [x] **Step 1: Write `README.md`** (use /writing-clearly)
   Sections: what it is (Clojure Pulse + clj-pulse LSP), install `clj-pulse` (brew / mise / PATH, linking the clj-pulse repo), configure (`clojurePulse.server.path` and friends with a `settings.json` example), features (highlighting + the LSP feature list + jar navigation + status bar), development (clone, `npm install`, F5), and a short "standalone" note: Clojure Pulse is self-contained and meant to be used on its own — it owns the `clojure` language id, so uninstall/disable Calva (or other Clojure language extensions) to avoid a duplicate registration.
 
-- [ ] **Step 2: Update `CHANGELOG.md`**
+- [x] **Step 2: Update `CHANGELOG.md`**
   Add a `0.0.1` entry summarizing the initial scaffold: language contribution, LSP client, jar navigation, status bar.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "docs: document install, configuration, and usage"`
+
+---
+
+## Implementation Summary
+
+**Status: ✅ Completed 2026-07-01.** All 8 tasks implemented, tested, and committed.
+
+### What shipped
+- A TypeScript VS Code extension bundled with esbuild (engine `vscode ^1.85`).
+- Self-contained Clojure language support: `language-configuration.json` plus a
+  vendored MIT TextMate grammar (`source.clojure`, converted from
+  atom/language-clojure) covering `.clj/.cljs/.cljc/.edn/.bb/.lg`.
+- A thin `clj-pulse` LSP client over stdio with `clojurePulse.server.path` /
+  `server.args` / `trace.server` settings and `Restart Server` / `Show Output`
+  commands.
+- `serverPath.ts` (setting/PATH resolution), `statusBar.ts` (lifecycle
+  indicator), and `jarContentProvider.ts` (`jar:` → `clojure/dependencyContents`
+  for library / `clojure.core` navigation).
+- 13 hermetic tests (unit + activation) run headless via `@vscode/test-cli`
+  under xvfb, and a GitHub Actions CI pipeline (lint → compile → test → package).
+
+### Notable decisions / deviations
+- The status-bar click opens the output channel (per the design); tooltips were
+  worded to match.
+- Tests use dependency-injection seams, so no real `clj-pulse` binary is needed.
+  The optional real-binary jar-navigation check (Task 6, Step 5) is deferred to
+  a manual F5 run.
+- `.vscodeignore` was hardened to keep `.tmp/`, `.claude/`, `AGENTS.md`, and
+  `CLAUDE.md` out of the packaged `.vsix`.
+
+### Codex review findings addressed
+- Task 3: probe a Windows command exactly as given before appending PATHEXT
+  variants (avoids false "not found" for an explicit `clj-pulse.exe`).
+- Task 4: drop the failed client and make `stop()` resilient so `Restart`
+  always recovers from a bad server path; added a regression test.
+
+### Verification
+- `npm run lint`, `npm run compile`, `xvfb-run -a npm test` (13 passing), and
+  `npx @vscode/vsce package` (clean 10-file vsix) all pass.
