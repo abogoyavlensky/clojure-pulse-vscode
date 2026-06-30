@@ -13,3 +13,6 @@ node_modules/
 
 # Test runner
 .vscode-test/
+
+# Scratch / tooling artifacts (codex reviews, etc.)
+.tmp/
