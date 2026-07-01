@@ -95,6 +95,13 @@ suite("planShift", () => {
     assert.deepStrictEqual(planShift(tabbed, insertAt(0, 0, "  ")), []);
   });
 
+  test("CRLF blank lines stay untouched", () => {
+    const post = "  (a\r\n\r\n  b)\r\n";
+    assert.deepStrictEqual(planShift(post, insertAt(0, 0, "  ")), [
+      { line: 2, deltaCols: 2 },
+    ]);
+  });
+
   test("bails when the affected bracket never closes", () => {
     const post = "  (foo a\n  b\n";
     assert.strictEqual(planShift(post, insertAt(0, 0, "  ")), null);

@@ -210,9 +210,13 @@ export function planShift(postText: string, change: ContentChange): LineShift[] 
       continue;
     }
     const lineEnd = endOfLine(postText, start.offset);
+    // In CRLF documents a "blank" line still holds a `\r` — exclude it so
+    // the empty-line guard below holds for Windows-style files too.
+    const contentEnd =
+      lineEnd > start.offset && postText[lineEnd - 1] === "\r" ? lineEnd - 1 : lineEnd;
     let wsEnd = start.offset;
     let tab = false;
-    while (wsEnd < lineEnd) {
+    while (wsEnd < contentEnd) {
       const ch = postText[wsEnd];
       if (ch === " ") {
         wsEnd++;
@@ -222,7 +226,7 @@ export function planShift(postText: string, change: ContentChange): LineShift[] 
       }
     }
     // Never guess tab width; never touch empty lines.
-    if (tab || wsEnd === lineEnd) {
+    if (tab || wsEnd === contentEnd) {
       continue;
     }
     const leading = wsEnd - start.offset;
