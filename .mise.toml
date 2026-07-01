@@ -1,0 +1,7 @@
+[tools]
+# Build/test toolchain for the extension.
+node = "20"
+# The clj-pulse language server the extension drives — installed here so local
+# end-to-end testing works out of the box.
+# https://github.com/abogoyavlensky/clj-pulse
+"github:abogoyavlensky/clj-pulse" = "latest"
