@@ -219,6 +219,90 @@ export class Scanner {
 }
 
 /**
+ * Offset of the closer matching the opener whose token starts at
+ * `openOffset` (`#` for `#(` / `#{`), or `null` when the form never closes or
+ * `openOffset` is not actually an opener in context (inside a string or
+ * comment). Closers inside skipped constructs and mismatched closers do not
+ * match — same scanner, same robustness rules.
+ */
+export function findMatchingClose(text: string, openOffset: number): number | null {
+  if (openOffset < 0 || openOffset >= text.length) {
+    return null;
+  }
+  const scanner = new Scanner();
+  scanner.scan(text, 0, openOffset);
+
+  // The opener token is 1–2 units (`(` vs `#(`); consume units until its
+  // frame appears on the stack.
+  let i = openOffset;
+  const tokenLimit = Math.min(openOffset + 2, text.length);
+  let opened = false;
+  while (i < tokenLimit && !opened) {
+    scanner.advance(text[i], text[i + 1], i);
+    i++;
+    const top = scanner.stack[scanner.stack.length - 1];
+    opened = top !== undefined && top.openOffset === openOffset;
+  }
+  if (!opened) {
+    return null;
+  }
+
+  const targetDepth = scanner.stack.length;
+  for (; i < text.length; i++) {
+    scanner.advance(text[i], text[i + 1], i);
+    if (scanner.stack.length < targetDepth) {
+      return i;
+    }
+  }
+  return null;
+}
+
+/** Structural facts about the start of one line, for re-indentation. */
+export interface LineScanInfo {
+  line: number;
+  /** Opener-token offset of the innermost open frame at line start, or
+   *  `null` at top level. */
+  anchorOffset: number | null;
+  /** Whether the line starts inside a string/regex literal (its leading
+   *  whitespace is string content — never touch it). */
+  startsInString: boolean;
+}
+
+/**
+ * Per-line structural info for lines `fromLine..=toLine`. The whole prefix is
+ * scanned (context cannot be skipped), so callers pass the smallest range
+ * they need and the scan stops at its end.
+ */
+export function scanLineInfo(text: string, fromLine: number, toLine: number): LineScanInfo[] {
+  const scanner = new Scanner();
+  const infos: LineScanInfo[] = [];
+  const record = () => {
+    if (scanner.line >= fromLine && scanner.line <= toLine) {
+      const top = scanner.stack[scanner.stack.length - 1];
+      infos.push({
+        line: scanner.line,
+        anchorOffset: top ? top.openOffset : null,
+        startsInString: scanner.inString,
+      });
+    }
+  };
+  for (let i = 0; i < text.length; i++) {
+    if (scanner.line > toLine) {
+      return infos;
+    }
+    if (scanner.col === 0) {
+      record();
+    }
+    scanner.advance(text[i], text[i + 1], i);
+  }
+  // A trailing empty line (text ending in `\n`) never enters the loop.
+  if (scanner.col === 0 && scanner.line <= toLine) {
+    record();
+  }
+  return infos;
+}
+
+/**
  * The target indent column (UTF-16 units) for a new line whose cursor sits at
  * `offset`, or `null` when the position is inside a string/regex (insert a
  * plain newline — never change string content).
