@@ -47,16 +47,17 @@ export interface IgnoredFormDecorator {
 }
 
 /**
- * Dims `#_` discard forms and `(comment …)` blocks with a `opacity: 0.5`
- * decoration — which composites above the grammar, semantic tokens, and
+ * Dims `#_` discard forms and `(comment …)` blocks with an `opacity` decoration
+ * (default 0.6) — which composites above the grammar, semantic tokens, and
  * bracket-pair colorization, so the whole form (brackets included) fades
  * uniformly. Ranges come from the server via `sendRanges`.
  */
 export function createIgnoredFormDecorator(
   sendRanges: SendRanges,
+  opacity = 0.6,
 ): IgnoredFormDecorator {
   const decorationType = vscode.window.createTextEditorDecorationType({
-    textDecoration: "none; opacity: 0.5",
+    textDecoration: `none; opacity: ${opacity}`,
     rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
   });
 

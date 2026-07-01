@@ -157,17 +157,22 @@ function reportMissingServer(message: string): void {
  * `sendRanges` closure re-reads `client` per call so it survives restarts.
  */
 function setupIgnoredFormDimming(context: vscode.ExtensionContext): void {
-  const enabled = vscode.workspace
-    .getConfiguration("clojurePulse")
-    .get<boolean>("dimIgnoredForms", true);
-  if (!enabled) {
+  const config = vscode.workspace.getConfiguration("clojurePulse");
+  if (!config.get<boolean>("dimIgnoredForms", true)) {
     return;
   }
 
-  decorator = createIgnoredFormDecorator((uri) =>
-    client
-      ? client.sendRequest("clojurePulse/ignoredForms", { uri })
-      : Promise.reject(new Error("clj-pulse language server is not running")),
+  const rawOpacity = config.get<number>("dimIgnoredFormsOpacity", 0.6);
+  const opacity = Number.isFinite(rawOpacity)
+    ? Math.min(1, Math.max(0.1, rawOpacity))
+    : 0.6;
+
+  decorator = createIgnoredFormDecorator(
+    (uri) =>
+      client
+        ? client.sendRequest("clojurePulse/ignoredForms", { uri })
+        : Promise.reject(new Error("clj-pulse language server is not running")),
+    opacity,
   );
 
   context.subscriptions.push(
