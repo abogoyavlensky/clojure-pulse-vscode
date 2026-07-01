@@ -119,8 +119,8 @@ suite("clojurePulse.newline (integration)", () => {
   });
 
   test("Enter before a multiline form carries its body along", async () => {
-    // The composed behavior: the atomic newline moves `(b` to a new column
-    // and the maintain-indentation listener shifts the form's body to match.
+    // The composed behavior: the newline moves `(b` to a new column and the
+    // form's body shifts to match, folded into the same atomic edit.
     const editor = await openClojureDoc("(a (b\n    c))", cursor(0, 2));
     await vscode.commands.executeCommand("clojurePulse.newline");
     await waitForText(editor.document, "(a\n  (b\n   c))");
@@ -128,5 +128,14 @@ suite("clojurePulse.newline (integration)", () => {
       [editor.selection.active.line, editor.selection.active.character],
       [1, 2],
     );
+  });
+
+  test("one undo reverts the Enter and the carried body together", async () => {
+    const editor = await openClojureDoc("(a (b\n    c))", cursor(0, 2));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    await waitForText(editor.document, "(a\n  (b\n   c))");
+
+    await vscode.commands.executeCommand("undo");
+    await waitForText(editor.document, "(a (b\n    c))");
   });
 });

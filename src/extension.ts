@@ -232,9 +232,54 @@ async function insertStructuralNewline(): Promise<void> {
         indent: indentColumnAt(text, doc.offsetAt(sel.start)) ?? 0,
       };
     });
+
+  // Single cursor: fold the relative-indentation shift (Enter right before a
+  // multiline form carries its body along) into the same atomic edit — one
+  // operation, one undo step. Leaving it to the async listener would put the
+  // shift in a separate undo entry, since this edit's default trailing undo
+  // stop blocks merging. The listener stays out of the way on its own: a
+  // multi-part edit raises a multi-change event (it bails), and a shift-free
+  // newline re-derives the same empty plan.
+  let shiftEdits: { line: number; deltaCols: number }[] = [];
+  if (
+    edits.length === 1 &&
+    vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<boolean>("maintainIndentation", true)
+  ) {
+    const edit = edits[0];
+    const inserted = "\n" + " ".repeat(edit.indent);
+    const postText =
+      text.slice(0, doc.offsetAt(edit.range.start)) +
+      inserted +
+      text.slice(doc.offsetAt(edit.range.end));
+    shiftEdits =
+      planShift(postText, {
+        range: {
+          start: {
+            line: edit.range.start.line,
+            character: edit.range.start.character,
+          },
+          end: { line: edit.range.end.line, character: edit.range.end.character },
+        },
+        text: inserted,
+      }) ?? [];
+  }
+
   const applied = await editor.edit((builder) => {
     for (const edit of edits) {
       builder.replace(edit.range, "\n" + " ".repeat(edit.indent));
+    }
+    // Shift lines come back in post-edit coordinates; the newline edit adds
+    // one line (minus any lines a multi-line selection removed) above them.
+    const lineDelta = 1 - (edits[0].range.end.line - edits[0].range.start.line);
+    for (const shift of shiftEdits) {
+      const preLine = shift.line - lineDelta;
+      if (shift.deltaCols > 0) {
+        builder.insert(new vscode.Position(preLine, 0), " ".repeat(shift.deltaCols));
+      } else {
+        builder.delete(new vscode.Range(preLine, 0, preLine, -shift.deltaCols));
+      }
     }
   });
   if (!applied) {
