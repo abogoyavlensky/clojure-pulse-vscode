@@ -8,6 +8,7 @@ import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
 } from "./ignoredForms";
+import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
@@ -30,6 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
     ),
+    vscode.commands.registerCommand("clojurePulse.newline", insertStructuralNewline),
     // `jar:` documents (library / clojure.core sources) are served by the
     // running server; the closure resolves the current client per request so it
     // keeps working across restarts.
@@ -196,6 +198,41 @@ function setupIgnoredFormDimming(context: vscode.ExtensionContext): void {
 
 function isClojure(doc: vscode.TextDocument): boolean {
   return doc.languageId === "clojure";
+}
+
+/**
+ * Enter, owned by the extension for Clojure (bound in package.json): inserts
+ * the newline *and* the structural indent as one atomic edit, so the cursor
+ * never lands at a guessed column and hops — unlike onTypeFormatting, which
+ * runs after the editor's own auto-indent. Inside a string the indent is
+ * omitted (plain newline). Whitespace immediately after each cursor is eaten
+ * (Sublimed's `skip_spaces`), so Enter before trailing spaces does not strand
+ * them as bogus indentation on the new line.
+ */
+async function insertStructuralNewline(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const doc = editor.document;
+  const text = doc.getText();
+  const edits = editor.selections.map((sel) => {
+    const lineText = doc.lineAt(sel.end.line).text;
+    let wsEnd = sel.end.character;
+    while (wsEnd < lineText.length && (lineText[wsEnd] === " " || lineText[wsEnd] === "\t")) {
+      wsEnd++;
+    }
+    const col = indentColumnAt(text, doc.offsetAt(sel.start));
+    return {
+      range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
+      text: "\n" + " ".repeat(col ?? 0),
+    };
+  });
+  await editor.edit((builder) => {
+    for (const edit of edits) {
+      builder.replace(edit.range, edit.text);
+    }
+  });
 }
 
 /** Set while this extension's own shift edit is in flight, so the change

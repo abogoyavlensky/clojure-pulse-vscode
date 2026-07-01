@@ -83,7 +83,7 @@
     },
     "configurationDefaults": {
       "[clojure]": {
-        "editor.formatOnType": true
+        "editor.formatOnType": false
       }
     },
     "commands": [
@@ -96,6 +96,18 @@
         "command": "clojurePulse.showOutput",
         "title": "Show Output",
         "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.newline",
+        "title": "Insert Newline and Indent",
+        "category": "Clojure Pulse"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "clojurePulse.newline",
+        "key": "enter",
+        "when": "editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !codeActionMenuVisible"
       }
     ]
   },
