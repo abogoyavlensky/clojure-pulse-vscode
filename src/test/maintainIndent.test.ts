@@ -121,3 +121,69 @@ suite("planShift", () => {
     assert.strictEqual(planShift(post, insertAt(0, 0, " ")), null);
   });
 });
+
+suite("planShift — argument alignment", () => {
+  test("argument-aligned lines follow a growing head symbol", () => {
+    // `(-> foo\n    bar\n    baz)` with `->` renamed to `cond->`.
+    const post = "(cond-> foo\n    bar\n    baz)\n";
+    const shifts = planShift(post, replace(0, 1, 0, 3, "cond->"));
+    assert.deepStrictEqual(shifts, [
+      { line: 1, deltaCols: 4 },
+      { line: 2, deltaCols: 4 },
+    ]);
+  });
+
+  test("argument-aligned lines follow a shrinking head symbol", () => {
+    // `(cond-> foo\n        bar)` with `cond->` renamed back to `->`.
+    const post = "(-> foo\n        bar)\n";
+    const shifts = planShift(post, replace(0, 1, 0, 7, "->"));
+    assert.deepStrictEqual(shifts, [{ line: 1, deltaCols: -4 }]);
+  });
+
+  test("two-space body indent does not follow the head", () => {
+    const post = "(cond-> foo\n  bar)\n";
+    assert.deepStrictEqual(planShift(post, replace(0, 1, 0, 3, "cond->")), []);
+  });
+
+  test("let → letfn leaves a two-space body alone", () => {
+    const post = "(letfn [a 1]\n  body)\n";
+    assert.deepStrictEqual(planShift(post, replace(0, 1, 0, 4, "letfn")), []);
+  });
+
+  test("an aligned line's own nested form cascades along", () => {
+    // `(-> foo\n    (bar\n     baz))` — `baz` is anchored to `(bar`, which
+    // sits on the shifted aligned line.
+    const post = "(cond-> foo\n    (bar\n     baz))\n";
+    const shifts = planShift(post, replace(0, 1, 0, 3, "cond->"));
+    assert.deepStrictEqual(shifts, [
+      { line: 1, deltaCols: 4 },
+      { line: 2, deltaCols: 4 },
+    ]);
+  });
+
+  test("editing after the first argument does not shift aligned lines", () => {
+    // `(-> foo\n    bar)` with an `x` typed after `foo` — the alignment
+    // anchor (foo's start) did not move.
+    const post = "(-> foox\n    bar)\n";
+    assert.deepStrictEqual(planShift(post, insertAt(0, 7, "x")), []);
+  });
+
+  test("bracket shift and alignment compose in one edit", () => {
+    // `(-> (foo\n      a)\n    bar)` with an `x` typed into the head: the
+    // moved `(foo` form's body shifts, and so does the `bar` line aligned
+    // to the first argument.
+    const post = "(->x (foo\n      a)\n    bar)\n";
+    const shifts = planShift(post, insertAt(0, 3, "x"));
+    assert.deepStrictEqual(shifts, [
+      { line: 1, deltaCols: 1 },
+      { line: 2, deltaCols: 1 },
+    ]);
+  });
+
+  test("no alignment when the head is not a simple token", () => {
+    // `((f g)  x\n        y)` — head is a nested form; alignment stays off
+    // and nothing in the tail opens a multiline form.
+    const post = "((f g)  x\n        y)\n";
+    assert.deepStrictEqual(planShift(post, insertAt(0, 6, " ")), []);
+  });
+});

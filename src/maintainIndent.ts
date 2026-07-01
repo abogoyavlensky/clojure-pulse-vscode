@@ -56,6 +56,36 @@ function endOfLine(text: string, offset: number): number {
   return nl === -1 ? text.length : nl;
 }
 
+/** Code units that end a head token (or make it "not a simple token"). */
+const HEAD_STOP = ' \t,()[]{}";';
+
+/**
+ * Offset of a list form's *first argument* (the form after the head token),
+ * or `null` when the head is not a simple token or the first argument is not
+ * on the same line before `eol`. Argument-aligned continuation lines sit at
+ * this token's column.
+ */
+function firstArgOffset(text: string, openOffset: number, eol: number): number | null {
+  let i = openOffset + (text[openOffset] === "#" ? 2 : 1);
+  while (i < eol && (text[i] === " " || text[i] === "\t" || text[i] === ",")) {
+    i++;
+  }
+  // A simple head token: not a collection, string, char, comment or quote.
+  if (i >= eol || HEAD_STOP.includes(text[i]) || text[i] === "\\" || text[i] === "'") {
+    return null;
+  }
+  while (i < eol && !HEAD_STOP.includes(text[i]) && text[i] !== "\\") {
+    i++;
+  }
+  while (i < eol && (text[i] === " " || text[i] === "\t" || text[i] === ",")) {
+    i++;
+  }
+  if (i >= eol || text[i] === ";") {
+    return null;
+  }
+  return i;
+}
+
 /**
  * Computes the per-line indentation shifts a single content change calls
  * for. Returns `[]` when nothing needs to move and `null` when the planner
@@ -96,32 +126,63 @@ export function planShift(postText: string, change: ContentChange): LineShift[] 
     return null;
   }
 
+  // Alignment extension: when the edit sits in the head of an enclosing list
+  // whose opener did not move but whose first argument did (a head symbol
+  // grew or shrank), lines sitting exactly at the first argument's old
+  // column are argument-aligned and follow it.
+  const eol = endOfLine(postText, tailOffset);
+  const lineStartOffset = tailOffset - newCol;
+  const enclosing = scanner.stack[scanner.stack.length - 1];
+  const enclosingDepth = scanner.stack.length;
+  let alignment: { anchorOffset: number; oldCol: number } | null = null;
+  if (
+    enclosing !== undefined &&
+    enclosing.parenLike &&
+    enclosing.openOffset < tailOffset &&
+    enclosing.openLine === tailLine
+  ) {
+    const argOffset = firstArgOffset(postText, enclosing.openOffset, eol);
+    if (argOffset !== null && argOffset >= tailOffset) {
+      alignment = {
+        anchorOffset: enclosing.openOffset,
+        oldCol: argOffset - lineStartOffset - delta,
+      };
+    }
+  }
+
   // Openers at/after the tail position moved by `delta`. Anything opened
   // earlier kept its column, so only frames with openOffset >= tailOffset
-  // (a suffix of the stack) are affected; the shallowest one bounds the
-  // region of lines that must shift.
-  const eol = endOfLine(postText, tailOffset);
+  // (a suffix of the stack) are affected; the shallowest one — or the whole
+  // enclosing form when alignment is active — bounds the shift region.
   scanner.scan(postText, tailOffset, eol);
   const firstAffected = scanner.stack.findIndex((f) => f.openOffset >= tailOffset);
-  if (firstAffected === -1) {
+  if (firstAffected === -1 && alignment === null) {
     return [];
   }
-  const targetDepth = firstAffected + 1;
+  const targetDepth = alignment !== null ? enclosingDepth : firstAffected + 1;
 
-  // Continue to the shallowest affected frame's closer, recording each line
-  // start on the way. An unclosed form means a mid-typing state — never
-  // shift the rest of the file on a guess.
-  const lineStarts: { line: number; offset: number; startsInString: boolean }[] = [];
+  // Continue to that closer, recording each line start on the way. An
+  // unclosed form means a mid-typing state — never shift on a guess.
+  const lineStarts: {
+    line: number;
+    offset: number;
+    startsInString: boolean;
+    anchorOffset: number | null;
+    anchorLine: number;
+  }[] = [];
   let closeLine: number | null = null;
   for (let i = eol; i < postText.length; i++) {
     if (scanner.line > tailLine + MAX_SHIFT_LINES) {
       return null;
     }
     if (scanner.col === 0) {
+      const top = scanner.stack[scanner.stack.length - 1];
       lineStarts.push({
         line: scanner.line,
         offset: i,
         startsInString: scanner.inString,
+        anchorOffset: top ? top.openOffset : null,
+        anchorLine: top ? top.openLine : -1,
       });
     }
     scanner.advance(postText[i], postText[i + 1], i);
@@ -134,6 +195,11 @@ export function planShift(postText: string, change: ContentChange): LineShift[] 
     return null;
   }
 
+  // Top-down cascade: a line shifts by the amount its anchor moved — the
+  // full delta for anchors on the edited line's moved tail, the anchor
+  // line's own (clamped) shift for anchors on already-shifted lines, and
+  // the delta for argument-aligned direct children of the enclosing form.
+  const lineShift = new Map<number, number>();
   const shifts: LineShift[] = [];
   for (const start of lineStarts) {
     if (start.line > closeLine) {
@@ -160,8 +226,20 @@ export function planShift(postText: string, change: ContentChange): LineShift[] 
       continue;
     }
     const leading = wsEnd - start.offset;
-    const effective = delta < 0 ? Math.max(delta, -leading) : delta;
+
+    let shift = 0;
+    if (start.anchorOffset !== null) {
+      if (alignment !== null && start.anchorOffset === alignment.anchorOffset) {
+        shift = leading === alignment.oldCol ? delta : 0;
+      } else if (start.anchorLine === tailLine && start.anchorOffset >= tailOffset) {
+        shift = delta;
+      } else if (start.anchorLine > tailLine) {
+        shift = lineShift.get(start.anchorLine) ?? 0;
+      }
+    }
+    const effective = shift < 0 ? Math.max(shift, -leading) : shift;
     if (effective !== 0) {
+      lineShift.set(start.line, effective);
       shifts.push({ line: start.line, deltaCols: effective });
     }
   }
