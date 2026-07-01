@@ -6,7 +6,7 @@
 
 **Tech Stack:** TypeScript (VS Code extension), a small hand-written Clojure scanner. No new runtime deps.
 
-**Prerequisite / relationship to Plan A:** Do this *only after* Plan A (`clj-pulse/docs/plans/2026-07-01-ontype-indentation-tier-a.md`) is merged, and *only if* the onTypeFormatting hop is unacceptable. This plan **reuses A partially**:
+**Prerequisite / relationship to Plan A:** Do this *after* Plan A (`clj-pulse/docs/plans/2026-07-01-ontype-indentation-tier-a.md`) is merged. Originally this was a contingency for an unacceptable onTypeFormatting hop; it is now planned regardless — the maintain-relative-indentation feature (`docs/plans/2026-07-01-maintain-relative-indentation.md`) requires the same client-side scanner (`src/indent.ts`), and once that exists, owning Enter is nearly free and strictly better UX. This plan **reuses A partially**:
 - clj-pulse's server-side indenter (from A) **stays** — it serves other editors (nvim/zed/emacs) and backs future explicit "reindent" / range-formatting.
 - The **indent rule is identical**; here it is mirrored in TypeScript for the VS Code hot path (the Calva-style "client-side hot path, authoritative server" split).
 - A's `editor.formatOnType` default is **flipped off** for Clojure, so the server's onTypeFormatting no longer drives Enter in VS Code (the keybinding does, atomically). clj-pulse keeps advertising the capability for other clients.
@@ -24,14 +24,15 @@
 `indent = (column just after the open delimiter) + offset`, `offset = 1` iff the delimiter is `(`/`#(` and the first form is a symbol:
 - `[] {} #{}` and non-symbol-headed `(` → align to first element.
 - `(` / `#()` with a symbol head → 2-space.
-- inside a string/regex → don't indent (fall back to a plain newline at column 0 / previous indent).
+- inside a string/regex → don't indent (insert a plain newline). *Deliberate deviation from Sublimed, which aligns under the open quote — adding alignment spaces changes the string's value.*
 - top level → 0.
 
 ### Key decisions
 
 - **Client-side scanner, not a parser dependency.** Compute the indent with a small forward tokenizer over the text *up to the cursor* that maintains a stack of open brackets, skipping Clojure lexical constructs (`;` line comments, `"…"` strings with `\"`, `#"…"` regexes, `\c` char literals; treat `#_` as transparent for bracket balance). The stack top at the cursor is the innermost open bracket → apply the rule. This mirrors Clojure Sublimed's `cs_parser`/`cs_indent`. Prefix-only ⇒ robust to unbalanced code and Parinfer-managed closers (same rationale as Plan A).
-- **Atomic, multi-cursor-safe edit.** The `clojurePulse.newline` command replaces each selection with `"\n" + " ".repeat(indent)` in a single `editor.edit`, then places each cursor after the inserted indent.
-- **Gate with a `when` clause, fall through otherwise.** Bind Enter only in a plain editing context; when it does not match, VS Code's default Enter runs — so autocomplete-accept, snippets, rename box, and panels are untouched (no manual handling needed).
+- **Structure the scanner for reuse.** The maintain-relative-indentation plan extends this same tokenizer with a forward scan (find a bracket's matching close, per-line innermost-anchor and in-string info). Keep the tokenizer core (character classification + stack transitions) separate from `indentColumnAt` so that plan adds scan modes instead of a second scanner.
+- **Atomic, multi-cursor-safe edit.** The `clojurePulse.newline` command replaces each selection **plus any spaces/tabs immediately after it** (Sublimed's `skip_spaces` — otherwise Enter at `(foo |  bar)` strands the old spaces after the new indent) with `"\n" + " ".repeat(indent)` in a single `editor.edit`, then places each cursor after the inserted indent.
+- **Gate with a `when` clause, fall through otherwise.** Bind Enter only in a plain editing context; when it does not match, VS Code's default Enter runs — so autocomplete-accept, code-action menu, snippets, rename box, and panels are untouched (no manual handling needed).
 - **Flip `formatOnType` off for Clojure** so the two mechanisms don't both fire. clj-pulse's onTypeFormatting stays available for other editors.
 - **Pure, testable core:** `indentColumnAt(text: string, offset: number): number | null` (`null` = plain newline, e.g. inside a string). Mirror Plan A's unit cases so both implementations agree.
 
@@ -82,13 +83,13 @@ clojure-pulse-vscode/
 - Modify: `src/extension.ts`, `package.json`
 
 - [ ] **Step 1: Register the command**
-  Add `clojurePulse.newline`: for each selection, compute `indentColumnAt(doc.getText(), offsetAt(sel.active))`; build the replacement `"\n" + " ".repeat(col ?? 0)`; apply all in one `editor.edit`; set cursors after the inserted indent. Push the registration in `activate`.
+  Add `clojurePulse.newline`: for each selection, compute `indentColumnAt(doc.getText(), offsetAt(sel.start))`; extend the replaced range from `sel.start` past any spaces/tabs following `sel.end` on the same line (`skip_spaces`); build the replacement `"\n" + " ".repeat(col ?? 0)`; apply all in one `editor.edit`; set cursors after the inserted indent. Push the registration in `activate`.
 
 - [ ] **Step 2: Contribute command + keybinding**
-  In `package.json`: add the command to `contributes.commands`; add a `contributes.keybindings` entry binding `enter` to `clojurePulse.newline` with `when`: `editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode`.
+  In `package.json`: add the command to `contributes.commands`; add a `contributes.keybindings` entry binding `enter` to `clojurePulse.newline` with `when`: `editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !codeActionMenuVisible`.
 
 - [ ] **Step 3: Flip formatOnType off**
-  In `contributes.configurationDefaults` `"[clojure]"`, set `"editor.formatOnType": false` (overriding Plan A's default; leave a comment noting clj-pulse still advertises onTypeFormatting for other editors).
+  In `contributes.configurationDefaults` `"[clojure]"`, set `"editor.formatOnType": false` (overriding Plan A's default). `package.json` is strict JSON — no comments — so record *why* in `README.md`: clj-pulse still advertises onTypeFormatting for other editors; VS Code's Enter is owned by the keybinding.
 
 - [ ] **Step 4: Compile + manual check**
   Run: `npm run compile`, then F5: press Enter inside `(let [a 1|])` (aligns under `a`, **no visible hop**), inside `(when x|)` (2-space), and with the suggest widget open (default accept still works). Test a multi-cursor Enter.
