@@ -128,6 +128,9 @@ Notes / deviations:
   sets `editor.selections` explicitly after the edit (integration-tested,
   including multi-cursor with line-offset accounting).
 - The newline command composes with maintain-relative-indentation: Enter
-  before a multiline form moves it and its body follows (integration test
-  "Enter before a multiline form carries its body along").
-- All 73 extension tests pass headlessly (`xvfb-run -a npm test`).
+  before a multiline form moves it and its body follows. Per the final
+  review checkpoint (`366c59e`), the shift is folded into the newline's own
+  atomic edit for a single cursor — one undo step — instead of relying on
+  the async listener, whose shift could not merge across the newline edit's
+  trailing undo stop.
+- All 74 extension tests pass headlessly (`xvfb-run -a npm test`).
