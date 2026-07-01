@@ -61,6 +61,11 @@
           "enum": ["off", "messages", "verbose"],
           "default": "off",
           "description": "Traces the communication between VS Code and the clj-pulse language server."
+        },
+        "clojurePulse.dimIgnoredForms": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Dim `#_` discard forms and `(comment …)` blocks (brackets included). Reload the window to toggle."
         }
       }
     },
