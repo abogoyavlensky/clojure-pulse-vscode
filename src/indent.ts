@@ -76,6 +76,11 @@ export class Scanner {
     return this.mode === Mode.Str || this.mode === Mode.StrEscape;
   }
 
+  /** True when the scan position is inside a `;` line comment. */
+  get inComment(): boolean {
+    return this.mode === Mode.Comment;
+  }
+
   /** Records the first form of the innermost open frame (no-op once seen). */
   private markFirstForm(isSymbol: boolean): void {
     const top = this.stack[this.stack.length - 1];
