@@ -76,6 +76,11 @@
         }
       }
     },
+    "configurationDefaults": {
+      "[clojure]": {
+        "editor.formatOnType": true
+      }
+    },
     "commands": [
       {
         "command": "clojurePulse.restart",
