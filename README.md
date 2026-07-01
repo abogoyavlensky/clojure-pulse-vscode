@@ -27,8 +27,13 @@ do not need any other Clojure extension.
   `clojure.core`) opens the real file, read-only.
 - **Indent on Enter** — pressing Enter indents the new line to the
   structurally correct column (vectors/maps align to the first element,
-  symbol-headed lists get a 2-space body), served by clj-pulse through
-  `editor.formatOnType`, which the extension enables for Clojure by default.
+  symbol-headed lists get a 2-space body). Handled client-side: the extension
+  owns the Enter key for Clojure and inserts newline + indent as one atomic
+  edit, so the cursor lands exactly right with no visible hop. clj-pulse still
+  serves `textDocument/onTypeFormatting` for other editors; the extension sets
+  `editor.formatOnType` to `false` for Clojure so the two never both fire.
+  Enter falls through to VS Code whenever a suggest widget, snippet, rename
+  box, or code-action menu is active.
 - **Maintained relative indentation** (Cursive-style) — when an edit moves
   code that later lines of a multiline form are anchored to, those lines
   follow automatically: add spaces before `(defn`, press Enter right before a
@@ -86,9 +91,9 @@ location or pass extra arguments in your `settings.json`:
 **Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
 both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
 (or disable Parinfer for Clojure). Parinfer's Indent Mode is complementary:
-Clojure Pulse indents and shifts, Parinfer places brackets. The same applies to
-indent-on-Enter: in Parinfer Paren/Smart mode set `"editor.formatOnType": false`
-for Clojure.
+Clojure Pulse indents and shifts, Parinfer places brackets. If you prefer
+Parinfer (or anything else) to drive the Enter key, remove or rebind the
+`clojurePulse.newline` keybinding in your Keyboard Shortcuts.
 
 ## Commands
 

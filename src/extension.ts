@@ -216,23 +216,42 @@ async function insertStructuralNewline(): Promise<void> {
   }
   const doc = editor.document;
   const text = doc.getText();
-  const edits = editor.selections.map((sel) => {
-    const lineText = doc.lineAt(sel.end.line).text;
-    let wsEnd = sel.end.character;
-    while (wsEnd < lineText.length && (lineText[wsEnd] === " " || lineText[wsEnd] === "\t")) {
-      wsEnd++;
-    }
-    const col = indentColumnAt(text, doc.offsetAt(sel.start));
-    return {
-      range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
-      text: "\n" + " ".repeat(col ?? 0),
-    };
-  });
-  await editor.edit((builder) => {
+  const edits = [...editor.selections]
+    .sort((a, b) => a.start.compareTo(b.start))
+    .map((sel) => {
+      const lineText = doc.lineAt(sel.end.line).text;
+      let wsEnd = sel.end.character;
+      while (
+        wsEnd < lineText.length &&
+        (lineText[wsEnd] === " " || lineText[wsEnd] === "\t")
+      ) {
+        wsEnd++;
+      }
+      return {
+        range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
+        indent: indentColumnAt(text, doc.offsetAt(sel.start)) ?? 0,
+      };
+    });
+  const applied = await editor.edit((builder) => {
     for (const edit of edits) {
-      builder.replace(edit.range, edit.text);
+      builder.replace(edit.range, "\n" + " ".repeat(edit.indent));
     }
   });
+  if (!applied) {
+    return;
+  }
+  // replace() leaves each cursor at the range start; place them after the
+  // inserted indent. Each edit adds one line and removes the lines its
+  // (multi-line) selection spanned.
+  let addedLines = 0;
+  editor.selections = edits.map((edit) => {
+    const line = edit.range.start.line + 1 + addedLines;
+    addedLines += 1 - (edit.range.end.line - edit.range.start.line);
+    return new vscode.Selection(line, edit.indent, line, edit.indent);
+  });
+  editor.revealRange(
+    new vscode.Range(editor.selection.active, editor.selection.active),
+  );
 }
 
 /** Set while this extension's own shift edit is in flight, so the change
