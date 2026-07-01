@@ -62,6 +62,11 @@
           "default": "off",
           "description": "Traces the communication between VS Code and the clj-pulse language server."
         },
+        "clojurePulse.maintainIndentation": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Keep relative indentation while editing (Cursive-style): when an edit moves code that later lines of a multiline form are anchored to — spaces before an opening bracket, a newline inserted before a form, a head symbol like `->` renamed to `cond->` — those lines shift by the same amount automatically. Disable this if you use Parinfer's Smart Mode, which does the same job."
+        },
         "clojurePulse.dimIgnoredForms": {
           "type": "boolean",
           "default": true,

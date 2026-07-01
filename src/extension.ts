@@ -8,6 +8,7 @@ import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
 } from "./ignoredForms";
+import { planShift } from "./maintainIndent";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -43,6 +44,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   setupIgnoredFormDimming(context);
+  setupMaintainIndentation(context);
 
   await start();
 }
@@ -194,6 +196,82 @@ function setupIgnoredFormDimming(context: vscode.ExtensionContext): void {
 
 function isClojure(doc: vscode.TextDocument): boolean {
   return doc.languageId === "clojure";
+}
+
+/** Set while this extension's own shift edit is in flight, so the change
+ *  event it raises is not re-processed. */
+let maintainIndentBusy = false;
+
+/**
+ * Maintains relative indentation (Cursive-style): when a single edit moves
+ * code that later lines of the same form are anchored to, shifts those
+ * lines' leading whitespace by the same delta. The shift merges into the
+ * user's typing undo group, so one undo reverts keystroke and shift together
+ * — which is also why Undo/Redo events themselves are skipped here.
+ */
+function setupMaintainIndentation(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((event) => void maintainIndent(event)),
+  );
+}
+
+async function maintainIndent(event: vscode.TextDocumentChangeEvent): Promise<void> {
+  if (
+    maintainIndentBusy ||
+    !isClojure(event.document) ||
+    event.reason !== undefined || // Undo/Redo already restore the shifts
+    event.contentChanges.length !== 1 || // multi-cursor / bulk edits: bail
+    !vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<boolean>("maintainIndentation", true)
+  ) {
+    return;
+  }
+
+  const change = event.contentChanges[0];
+  const shifts = planShift(event.document.getText(), {
+    range: {
+      start: {
+        line: change.range.start.line,
+        character: change.range.start.character,
+      },
+      end: { line: change.range.end.line, character: change.range.end.character },
+    },
+    text: change.text,
+  });
+  if (!shifts || shifts.length === 0) {
+    return;
+  }
+  const editor = vscode.window.visibleTextEditors.find(
+    (e) => e.document === event.document,
+  );
+  if (!editor) {
+    return;
+  }
+
+  maintainIndentBusy = true;
+  try {
+    await editor.edit(
+      (builder) => {
+        for (const shift of shifts) {
+          if (shift.deltaCols > 0) {
+            builder.insert(
+              new vscode.Position(shift.line, 0),
+              " ".repeat(shift.deltaCols),
+            );
+          } else {
+            builder.delete(
+              new vscode.Range(shift.line, 0, shift.line, -shift.deltaCols),
+            );
+          }
+        }
+      },
+      // Merge into the user's typing undo group: one undo reverts both.
+      { undoStopBefore: false, undoStopAfter: false },
+    );
+  } finally {
+    maintainIndentBusy = false;
+  }
 }
 
 /** Refreshes the dim decoration for a single Clojure editor. */
