@@ -91,16 +91,16 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/indent.ts`, `src/test/indent.test.ts`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
   For the new scan API: matching-close position for a given opener offset (`(a [b\n c]\n d)` — close of `[` and of `(`); `null` when unclosed; per-line info over a range (anchor identity, whether the line starts inside a string — cover a multiline string spanning 3 lines); comments/regex/char-literals still skipped in forward mode.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Refactor `indent.ts` so the character-classification + stack-transition core is a reusable generator/callback scan; `indentColumnAt` becomes a thin consumer. Add `scanForward` producing, per line: `{ line, indentCol, anchor (opener offset|null), startsInString }`, and matching-close lookup. UTF-16 columns throughout.
 
-- [ ] **Step 4: Run tests to verify they pass, lint, commit**
+- [x] **Step 4: Run tests to verify they pass, lint, commit**
   Run: `npm test && npm run lint`
   `git commit -m "feat: forward structural scan (matching close, per-line anchors)"`
 
@@ -109,16 +109,16 @@ clojure-pulse-vscode/
 **Files:**
 - Create: `src/maintainIndent.ts`, `src/test/maintainIndent.test.ts`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
   `planShift(postText, {range, text})` returns `{line, deltaCols}[]` (empty = nothing to do, `null` = bail). Cover: cases 1, 2, 4 from the Goal; deletion (negative delta); cascade through a nested form; clamp at 0; skip string-interior and tab-indented lines; bail on unclosed affected bracket, in-string edit, `delta === 0`, extent cap.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   The Design algorithm: delta formula → prefix scan to tail → affected-suffix detection → forward scan to shallowest affected close → top-down per-line shift via the cascade rule.
 
-- [ ] **Step 4: Run tests to verify they pass, lint, commit**
+- [x] **Step 4: Run tests to verify they pass, lint, commit**
   Run: `npm test && npm run lint`
   `git commit -m "feat: relative-indentation shift planner"`
 
@@ -127,16 +127,16 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/maintainIndent.ts`, `src/test/maintainIndent.test.ts`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
   `(-> foo\n    bar\n    baz)` + rename to `cond->` → both lines shift +4; same doc with 2-space body → no shift; `(let …)` → `(letfn …)` with 2-space body → no shift; aligned line whose own nested form spans further lines → cascade shifts those too; edit *after* the first argument → no alignment shift.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Per Design: innermost form only; opener before edit, first argument on the moved tail; match lines anchored to it at indent `== newFirstArgCol - delta`.
 
-- [ ] **Step 4: Run tests to verify they pass, lint, commit**
+- [x] **Step 4: Run tests to verify they pass, lint, commit**
   Run: `npm test && npm run lint`
   `git commit -m "feat: follow argument alignment when a head symbol resizes"`
 
@@ -145,16 +145,16 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/extension.ts`, `package.json`
 
-- [ ] **Step 1: Listener**
+- [x] **Step 1: Listener**
   In `activate` (near `setupIgnoredFormDimming`): subscribe `workspace.onDidChangeTextDocument`; apply the Design guards (language, reason, single change, in-flight flag, setting); call `planShift`; apply via `editor.edit(…, { undoStopBefore: false, undoStopAfter: false })` on a visible editor for the document, wrapped in the in-flight flag.
 
-- [ ] **Step 2: Setting**
+- [x] **Step 2: Setting**
   Add `clojurePulse.maintainIndentation` (boolean, default `true`, markdownDescription mentioning the Parinfer overlap) to `contributes.configuration`.
 
-- [ ] **Step 3: Compile + manual check**
+- [x] **Step 3: Compile + manual check**
   Run: `npm run compile`, then F5: type spaces before a multiline `(defn` (body follows live); Enter before a bracket (form stays intact); rename `->`→`cond->` in an aligned thread (stays aligned); one Ctrl+Z fully reverts each; typing inside a multiline string moves nothing.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "feat: maintain relative indentation while editing"`
 
 ### Task 5: Integration tests + docs
@@ -162,14 +162,36 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/test/` (new integration test), `README.md`
 
-- [ ] **Step 1: Integration tests**
+- [x] **Step 1: Integration tests**
   Extension Host: open an untitled `clojure` doc, make a single-character typing edit before a multiline form via `TextEditor.edit`, await the follow-up shift, assert the buffer; assert one `undo` command restores the pre-typing text; assert no shift when `clojurePulse.maintainIndentation` is `false`.
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
   Run: `xvfb-run -a npm test`
 
-- [ ] **Step 3: Docs**
+- [x] **Step 3: Docs**
   README: describe the feature with a small before/after, the setting, the Parinfer Smart Mode overlap (disable one), and the v1 limits (single-change edits only; tab-indented lines untouched).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "test+docs: maintain relative indentation"`
+
+---
+
+## Status: COMPLETE (2026-07-02)
+
+Implemented across commits `8284262` (forward scan), `2e74182` (planShift),
+`6939ae5` (alignment extension), `263f5c4` (listener + setting), `63e9118`
+(integration tests + README), `79064c9` (CRLF blank-line fix from review).
+
+Notes / deviations:
+- The bracket-shift and alignment mechanisms were unified into one
+  anchor-aware pass in `planShift` (per-line cascade via a line-shift map),
+  which also handles the composed case (head edit + moved nested form) —
+  covered by the "bracket shift and alignment compose in one edit" test.
+- Alignment requires the enclosing form to be closed; while it is unclosed
+  (mid-typing) the planner does nothing, by design.
+- Codex review checkpoints: one P2 fixed (CRLF blank lines gained spaces);
+  one P2 waived with test evidence (single-undo behavior holds for real
+  typing — verified via the `type` command in a real Extension Host; edits
+  that place their own undo stops keep the shift separately undoable, which
+  respects the edit author's stops and leaves a consistent buffer).
+- 21 planShift unit tests + 5 integration tests; all 73 extension tests pass.

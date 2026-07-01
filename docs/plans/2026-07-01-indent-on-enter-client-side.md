@@ -59,21 +59,21 @@ clojure-pulse-vscode/
 **Files:**
 - Create: `src/indent.ts`, `src/test/indent.test.ts`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
   `indentColumnAt(text, offset)` returns the target column (or `null`). Mirror Plan A's cases exactly, expressing each as `text` + cursor `offset` (byte/char index into `text`). Include skipping cases: an open bracket inside a `;` comment or a `"string"` before the cursor must **not** be counted.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test`
   Expected: FAIL — `src/indent.ts` missing.
 
-- [ ] **Step 3: Implement the scanner**
+- [x] **Step 3: Implement the scanner**
   Forward single pass over `text.slice(0, offset)` maintaining a stack; each stack frame records the open delimiter's column and whether a symbol has been seen as the first inner form. Skip `;`→EOL, `"…"`/`#"…"` (honor `\"`), `\<char>` literals; treat `#_` as transparent. Push on `(` `[` `{` `#{` `#(`, pop on `)` `]` `}`. At the end, if the innermost open frame is a string context → `null`; else compute `column-after-delimiter + offset` per the rule. Use UTF-16 code-unit columns (VS Code `Position.character`).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Lint + commit**
+- [x] **Step 5: Lint + commit**
   Run: `npm run lint`
   `git commit -m "feat: client-side structural indent computation"`
 
@@ -82,19 +82,19 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/extension.ts`, `package.json`
 
-- [ ] **Step 1: Register the command**
+- [x] **Step 1: Register the command**
   Add `clojurePulse.newline`: for each selection, compute `indentColumnAt(doc.getText(), offsetAt(sel.start))`; extend the replaced range from `sel.start` past any spaces/tabs following `sel.end` on the same line (`skip_spaces`); build the replacement `"\n" + " ".repeat(col ?? 0)`; apply all in one `editor.edit`; set cursors after the inserted indent. Push the registration in `activate`.
 
-- [ ] **Step 2: Contribute command + keybinding**
+- [x] **Step 2: Contribute command + keybinding**
   In `package.json`: add the command to `contributes.commands`; add a `contributes.keybindings` entry binding `enter` to `clojurePulse.newline` with `when`: `editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !codeActionMenuVisible`.
 
-- [ ] **Step 3: Flip formatOnType off**
+- [x] **Step 3: Flip formatOnType off**
   In `contributes.configurationDefaults` `"[clojure]"`, set `"editor.formatOnType": false` (overriding Plan A's default). `package.json` is strict JSON — no comments — so record *why* in `README.md`: clj-pulse still advertises onTypeFormatting for other editors; VS Code's Enter is owned by the keybinding.
 
-- [ ] **Step 4: Compile + manual check**
+- [x] **Step 4: Compile + manual check**
   Run: `npm run compile`, then F5: press Enter inside `(let [a 1|])` (aligns under `a`, **no visible hop**), inside `(when x|)` (2-space), and with the suggest widget open (default accept still works). Test a multi-cursor Enter.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: own Enter for jump-free indent-on-newline"`
 
 ### Task 3: Integration tests + docs
@@ -102,15 +102,32 @@ clojure-pulse-vscode/
 **Files:**
 - Modify: `src/test/` (new integration test), `README.md`
 
-- [ ] **Step 1: Integration test**
+- [x] **Step 1: Integration test**
   In the Extension Host: open an untitled `clojure` doc, set text `(let [a 1])` with the cursor before `]`, run `vscode.commands.executeCommand("clojurePulse.newline")`, assert the document is `(let [a 1\n      ])` and the cursor is at column 6; add a multi-cursor case.
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
   Run: `xvfb-run -a npm test`
   Expected: PASS.
 
-- [ ] **Step 3: Docs**
+- [x] **Step 3: Docs**
   In `README.md`, note that indent-on-Enter is handled client-side for a jump-free feel, and the Parinfer guidance (Indent Mode complementary; Paren/Smart mode — the keybinding still owns Enter, so remove/override the `clojurePulse.newline` keybinding if you prefer Parinfer to drive).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "test+docs: client-side indent-on-Enter"`
+
+---
+
+## Status: COMPLETE (2026-07-02)
+
+Implemented across commits `33b7a82` (indent.ts scanner + 13 unit tests),
+`e7d72b0` (clojurePulse.newline command, Enter keybinding, formatOnType→false),
+`41e37fc` (integration tests + README).
+
+Notes / deviations:
+- `builder.replace()` leaves the cursor at the range start, so the command
+  sets `editor.selections` explicitly after the edit (integration-tested,
+  including multi-cursor with line-offset accounting).
+- The newline command composes with maintain-relative-indentation: Enter
+  before a multiline form moves it and its body follows (integration test
+  "Enter before a multiline form carries its body along").
+- All 73 extension tests pass headlessly (`xvfb-run -a npm test`).
