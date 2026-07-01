@@ -8,6 +8,8 @@ import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
 } from "./ignoredForms";
+import { indentColumnAt } from "./indent";
+import { planShift } from "./maintainIndent";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -29,6 +31,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
     ),
+    vscode.commands.registerCommand("clojurePulse.newline", insertStructuralNewline),
     // `jar:` documents (library / clojure.core sources) are served by the
     // running server; the closure resolves the current client per request so it
     // keeps working across restarts.
@@ -43,6 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   setupIgnoredFormDimming(context);
+  setupMaintainIndentation(context);
 
   await start();
 }
@@ -194,6 +198,181 @@ function setupIgnoredFormDimming(context: vscode.ExtensionContext): void {
 
 function isClojure(doc: vscode.TextDocument): boolean {
   return doc.languageId === "clojure";
+}
+
+/**
+ * Enter, owned by the extension for Clojure (bound in package.json): inserts
+ * the newline *and* the structural indent as one atomic edit, so the cursor
+ * never lands at a guessed column and hops — unlike onTypeFormatting, which
+ * runs after the editor's own auto-indent. Inside a string the indent is
+ * omitted (plain newline). Whitespace immediately after each cursor is eaten
+ * (Sublimed's `skip_spaces`), so Enter before trailing spaces does not strand
+ * them as bogus indentation on the new line.
+ */
+async function insertStructuralNewline(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const doc = editor.document;
+  const text = doc.getText();
+  const edits = [...editor.selections]
+    .sort((a, b) => a.start.compareTo(b.start))
+    .map((sel) => {
+      const lineText = doc.lineAt(sel.end.line).text;
+      let wsEnd = sel.end.character;
+      while (
+        wsEnd < lineText.length &&
+        (lineText[wsEnd] === " " || lineText[wsEnd] === "\t")
+      ) {
+        wsEnd++;
+      }
+      return {
+        range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
+        indent: indentColumnAt(text, doc.offsetAt(sel.start)) ?? 0,
+      };
+    });
+
+  // Single cursor: fold the relative-indentation shift (Enter right before a
+  // multiline form carries its body along) into the same atomic edit — one
+  // operation, one undo step. Leaving it to the async listener would put the
+  // shift in a separate undo entry, since this edit's default trailing undo
+  // stop blocks merging. The listener stays out of the way on its own: a
+  // multi-part edit raises a multi-change event (it bails), and a shift-free
+  // newline re-derives the same empty plan.
+  let shiftEdits: { line: number; deltaCols: number }[] = [];
+  if (
+    edits.length === 1 &&
+    vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<boolean>("maintainIndentation", true)
+  ) {
+    const edit = edits[0];
+    const inserted = "\n" + " ".repeat(edit.indent);
+    const postText =
+      text.slice(0, doc.offsetAt(edit.range.start)) +
+      inserted +
+      text.slice(doc.offsetAt(edit.range.end));
+    shiftEdits =
+      planShift(postText, {
+        range: {
+          start: {
+            line: edit.range.start.line,
+            character: edit.range.start.character,
+          },
+          end: { line: edit.range.end.line, character: edit.range.end.character },
+        },
+        text: inserted,
+      }) ?? [];
+  }
+
+  const applied = await editor.edit((builder) => {
+    for (const edit of edits) {
+      builder.replace(edit.range, "\n" + " ".repeat(edit.indent));
+    }
+    // Shift lines come back in post-edit coordinates; the newline edit adds
+    // one line (minus any lines a multi-line selection removed) above them.
+    const lineDelta = 1 - (edits[0].range.end.line - edits[0].range.start.line);
+    for (const shift of shiftEdits) {
+      const preLine = shift.line - lineDelta;
+      if (shift.deltaCols > 0) {
+        builder.insert(new vscode.Position(preLine, 0), " ".repeat(shift.deltaCols));
+      } else {
+        builder.delete(new vscode.Range(preLine, 0, preLine, -shift.deltaCols));
+      }
+    }
+  });
+  if (!applied) {
+    return;
+  }
+  // replace() leaves each cursor at the range start; place them after the
+  // inserted indent. Each edit adds one line and removes the lines its
+  // (multi-line) selection spanned.
+  let addedLines = 0;
+  editor.selections = edits.map((edit) => {
+    const line = edit.range.start.line + 1 + addedLines;
+    addedLines += 1 - (edit.range.end.line - edit.range.start.line);
+    return new vscode.Selection(line, edit.indent, line, edit.indent);
+  });
+  editor.revealRange(
+    new vscode.Range(editor.selection.active, editor.selection.active),
+  );
+}
+
+/** Set while this extension's own shift edit is in flight, so the change
+ *  event it raises is not re-processed. */
+let maintainIndentBusy = false;
+
+/**
+ * Maintains relative indentation (Cursive-style): when a single edit moves
+ * code that later lines of the same form are anchored to, shifts those
+ * lines' leading whitespace by the same delta. The shift merges into the
+ * user's typing undo group, so one undo reverts keystroke and shift together
+ * — which is also why Undo/Redo events themselves are skipped here.
+ */
+function setupMaintainIndentation(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((event) => void maintainIndent(event)),
+  );
+}
+
+async function maintainIndent(event: vscode.TextDocumentChangeEvent): Promise<void> {
+  if (
+    maintainIndentBusy ||
+    !isClojure(event.document) ||
+    event.reason !== undefined || // Undo/Redo already restore the shifts
+    event.contentChanges.length !== 1 || // multi-cursor / bulk edits: bail
+    !vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<boolean>("maintainIndentation", true)
+  ) {
+    return;
+  }
+
+  const change = event.contentChanges[0];
+  const shifts = planShift(event.document.getText(), {
+    range: {
+      start: {
+        line: change.range.start.line,
+        character: change.range.start.character,
+      },
+      end: { line: change.range.end.line, character: change.range.end.character },
+    },
+    text: change.text,
+  });
+  if (!shifts || shifts.length === 0) {
+    return;
+  }
+  const editor = vscode.window.visibleTextEditors.find(
+    (e) => e.document === event.document,
+  );
+  if (!editor) {
+    return;
+  }
+
+  maintainIndentBusy = true;
+  try {
+    await editor.edit(
+      (builder) => {
+        for (const shift of shifts) {
+          if (shift.deltaCols > 0) {
+            builder.insert(
+              new vscode.Position(shift.line, 0),
+              " ".repeat(shift.deltaCols),
+            );
+          } else {
+            builder.delete(
+              new vscode.Range(shift.line, 0, shift.line, -shift.deltaCols),
+            );
+          }
+        }
+      },
+      // Merge into the user's typing undo group: one undo reverts both.
+      { undoStopBefore: false, undoStopAfter: false },
+    );
+  } finally {
+    maintainIndentBusy = false;
+  }
 }
 
 /** Refreshes the dim decoration for a single Clojure editor. */
