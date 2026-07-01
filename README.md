@@ -25,6 +25,18 @@ do not need any other Clojure extension.
   - Keyword and Integrant-key navigation, and built-in Java interop.
 - **Library navigation** — jumping into a `jar:` source (a dependency or
   `clojure.core`) opens the real file, read-only.
+- **Indent on Enter** — pressing Enter indents the new line to the
+  structurally correct column (vectors/maps align to the first element,
+  symbol-headed lists get a 2-space body), served by clj-pulse through
+  `editor.formatOnType`, which the extension enables for Clojure by default.
+- **Maintained relative indentation** (Cursive-style) — when an edit moves
+  code that later lines of a multiline form are anchored to, those lines
+  follow automatically: add spaces before `(defn`, press Enter right before a
+  form, or rename `->` to `cond->` in an argument-aligned thread, and the
+  body lines shift by the same amount. It only *translates* lines (never
+  reformats them), merges into the same undo step as your keystroke, and
+  stays away from multiline strings, tab-indented lines, unbalanced forms,
+  and multi-cursor edits.
 - **Status bar indicator** — the server's state (starting, running, stopped,
   error) shows at the bottom left; click it to open the server log.
 
@@ -69,6 +81,14 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.server.path` | `"clj-pulse"` | Path to the server binary. A bare name is resolved from `PATH`; an absolute or relative path is used as-is. |
 | `clojurePulse.server.args` | `[]` | Extra arguments passed to the server on startup. |
 | `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
+| `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
+
+**Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
+both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
+(or disable Parinfer for Clojure). Parinfer's Indent Mode is complementary:
+Clojure Pulse indents and shifts, Parinfer places brackets. The same applies to
+indent-on-Enter: in Parinfer Paren/Smart mode set `"editor.formatOnType": false`
+for Clojure.
 
 ## Commands
 
