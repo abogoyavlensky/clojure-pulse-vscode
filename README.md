@@ -1,5 +1,7 @@
 # Clojure Pulse
 
+<img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse icon" width="128" />
+
 A lightweight, powerful VS Code extension for Clojure and
 [let-go](https://github.com/nooga/let-go), powered by the
 [clj-pulse](https://github.com/abogoyavlensky/clj-pulse) language server.

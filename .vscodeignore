@@ -6,6 +6,7 @@ out/**
 node_modules/**
 .github/**
 docs/**
+scripts/**
 .images/**
 .tmp/**
 .claude/**

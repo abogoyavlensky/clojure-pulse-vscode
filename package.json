@@ -6,6 +6,7 @@
   "publisher": "abogoyavlensky",
   "license": "MIT",
   "author": "Andrey Bogoyavlenskiy",
+  "icon": "images/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/abogoyavlensky/clojure-pulse-vscode"
