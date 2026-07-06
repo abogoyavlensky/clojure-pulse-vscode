@@ -83,21 +83,21 @@ README.md, CHANGELOG.md   # docs
 - Create: `src/nrepl/bencode.ts`
 - Test: `src/test/bencode.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover: encoding a flat message object (strings, ints, string arrays; keys with `undefined` values omitted); decoding integers, strings (byte-length aware — UTF-8 multibyte values), lists, and nested dicts; `decodeBuffer(buf)` returning `{ decoded: object[], rest: Buffer }` where a partial trailing message stays in `rest` untouched; decoding two concatenated messages in one buffer.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `bencode.ts` does not exist.
 
-- [ ] **Step 3: Implement `bencode.ts`**
+- [x] **Step 3: Implement `bencode.ts`**
   `encode(value): Buffer` for strings/numbers/arrays/objects; `decodeBuffer(buf): { decoded: any[], rest: Buffer }` that decodes as many complete top-level values as available and returns the remainder. Byte-oriented (work on Buffers, not strings) so multibyte UTF-8 string lengths are correct. Reference: `bencodeUtil.ts` in the clojureVSCode repo, but typed and stream-safe.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add bencode encode/decode for nREPL"`
 
 ### Task 2: fake nREPL server test helper + NreplClient

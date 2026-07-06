@@ -97,11 +97,10 @@ function decodeInt(buf: Buffer, offset: number): DecodeResult {
     return INCOMPLETE;
   }
   const text = buf.toString("ascii", offset + 1, end);
-  const value = Number.parseInt(text, 10);
-  if (Number.isNaN(value)) {
+  if (!/^-?\d+$/.test(text)) {
     throw new Error(`bencode: invalid integer "${text}"`);
   }
-  return { value, next: end + 1 };
+  return { value: Number.parseInt(text, 10), next: end + 1 };
 }
 
 function decodeString(buf: Buffer, offset: number): DecodeResult {
@@ -109,10 +108,11 @@ function decodeString(buf: Buffer, offset: number): DecodeResult {
   if (colon === -1) {
     return INCOMPLETE;
   }
-  const length = Number.parseInt(buf.toString("ascii", offset, colon), 10);
-  if (Number.isNaN(length)) {
-    throw new Error("bencode: invalid string length");
+  const lengthText = buf.toString("ascii", offset, colon);
+  if (!/^\d+$/.test(lengthText)) {
+    throw new Error(`bencode: invalid string length "${lengthText}"`);
   }
+  const length = Number.parseInt(lengthText, 10);
   const end = colon + 1 + length;
   if (end > buf.length) {
     return INCOMPLETE;

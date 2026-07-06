@@ -77,6 +77,15 @@ suite("bencode decodeBuffer", () => {
     assert.strictEqual(rest.length, 0);
   });
 
+  test("rejects malformed integer fields", () => {
+    assert.throws(() => decodeBuffer(enc("i12xe")), /bencode/);
+    assert.throws(() => decodeBuffer(enc("ie")), /bencode/);
+  });
+
+  test("rejects malformed string length fields", () => {
+    assert.throws(() => decodeBuffer(enc("3x:abc")), /bencode/);
+  });
+
   test("returns everything as rest when nothing is complete", () => {
     const partial = enc("d2:op5:cl");
     const { decoded, rest } = decodeBuffer(partial);
