@@ -16,6 +16,8 @@ export interface FakeNrepl {
   respond(handler: Handler): void;
   /** Destroys all client sockets (simulates the server dying). */
   dropConnections(): void;
+  /** Number of client sockets currently open. */
+  socketCount(): number;
   close(): Promise<void>;
 }
 
@@ -61,6 +63,9 @@ export function startFakeNrepl(): Promise<FakeNrepl> {
           for (const socket of sockets) {
             socket.destroy();
           }
+        },
+        socketCount() {
+          return sockets.size;
         },
         close() {
           for (const socket of sockets) {

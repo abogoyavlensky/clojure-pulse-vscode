@@ -10,6 +10,16 @@ import {
 import { Transcript } from "../repl/transcript";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
+async function waitUntil(
+  condition: () => boolean,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 suite("ConnectionManager", () => {
   let server: FakeNrepl;
   let manager: ConnectionManager;
@@ -121,6 +131,32 @@ suite("ConnectionManager", () => {
     assert.ok(entries.includes("out|printed\n"), entries.join(", "));
     assert.ok(entries.includes("err|warned\n"), entries.join(", "));
     assert.ok(entries.includes("value|nil"), entries.join(", "));
+  });
+
+  test("connect times out when the server accepts TCP but never answers", async () => {
+    server.respond(() => {
+      // Swallow every message — a non-nREPL service holding the port.
+    });
+    const fast = new ConnectionManager(transcript, { connectTimeoutMs: 100 });
+    await assert.rejects(
+      fast.connect({ host: "127.0.0.1", port: server.port }),
+      /timed out/i,
+    );
+    assert.strictEqual(fast.state, "disconnected");
+  });
+
+  test("closes the socket when the handshake fails", async () => {
+    server.respond((msg, reply) => {
+      // clone answers "done" but without a session id: an invalid handshake.
+      reply({ status: ["done"] });
+    });
+    await assert.rejects(
+      manager.connect({ host: "127.0.0.1", port: server.port }),
+      /session/i,
+    );
+    assert.strictEqual(manager.state, "disconnected");
+    await waitUntil(() => server.socketCount() === 0, 1000);
+    assert.strictEqual(server.socketCount(), 0);
   });
 
   test("eval without a connection rejects", async () => {

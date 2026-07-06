@@ -41,8 +41,14 @@ export class ConnectionManager {
   private connections: ActiveConnection[] = [];
   private currentState: ReplState = "disconnected";
   private stateListeners: Array<(state: ReplState) => void> = [];
+  private readonly connectTimeoutMs: number;
 
-  constructor(readonly transcript: Transcript) {}
+  constructor(
+    readonly transcript: Transcript,
+    options: { connectTimeoutMs?: number } = {},
+  ) {
+    this.connectTimeoutMs = options.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
+  }
 
   get state(): ReplState {
     return this.currentState;
@@ -62,14 +68,24 @@ export class ConnectionManager {
       throw new Error("Already connected to an nREPL server");
     }
     this.setState("connecting");
+    let client: NreplClient | undefined;
     try {
-      const client = await NreplClient.connect(
+      client = await NreplClient.connect(
         info.host,
         info.port,
-        CONNECT_TIMEOUT_MS,
+        this.connectTimeoutMs,
       );
-      const session = await client.clone();
-      const described = await client.describe();
+      // A non-nREPL service can accept TCP and never answer; time the
+      // handshake out rather than sticking in "connecting" forever.
+      const opened = client;
+      const { session, described } = await withTimeout(
+        (async () => ({
+          session: await opened.clone(),
+          described: await opened.describe(),
+        }))(),
+        this.connectTimeoutMs,
+        `nREPL handshake with ${describeInfo(info)} timed out`,
+      );
       const connection: ActiveConnection = { info, client, session };
       this.connections = [connection];
 
@@ -79,6 +95,7 @@ export class ConnectionManager {
       this.transcript.append({ kind: "banner", text: banner(info, described) });
       this.setState("connected");
     } catch (err) {
+      client?.close();
       this.connections = [];
       this.setState("disconnected");
       throw err;
@@ -161,6 +178,26 @@ export class ConnectionManager {
       listener(state);
     }
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
 }
 
 function describeInfo(info: ReplConnectionInfo): string {
