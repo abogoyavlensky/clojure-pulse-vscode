@@ -182,6 +182,19 @@ suite("ConnectionManager", () => {
     assert.strictEqual(server.socketCount(), 0);
   });
 
+  test("cancelling an unresponsive handshake reports cancellation, not the timeout", async () => {
+    server.respond(() => {
+      // Never answer — the handshake can only end by timing out.
+    });
+    const fast = new ConnectionManager(transcript, { connectTimeoutMs: 200 });
+    const pending = fast.connect({ host: "127.0.0.1", port: server.port });
+    await waitUntil(() => fast.state === "connecting", 1000);
+    await fast.disconnect();
+
+    await assert.rejects(pending, ConnectCancelledError);
+    assert.strictEqual(fast.state, "disconnected");
+  });
+
   test("eval without a connection rejects", async () => {
     await assert.rejects(manager.eval("(+ 1 2)"), /not connected/i);
   });

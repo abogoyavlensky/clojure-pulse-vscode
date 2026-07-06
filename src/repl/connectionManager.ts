@@ -112,12 +112,14 @@ export class ConnectionManager {
       this.setState("connected");
     } catch (err) {
       client?.close();
-      // A stale (cancelled) attempt must not clobber the state a newer
-      // connect may have established since.
-      if (attempt === this.connectAttempt) {
-        this.connections = [];
-        this.setState("disconnected");
+      if (attempt !== this.connectAttempt) {
+        // The user cancelled while this attempt was still failing: report
+        // the cancellation, not the stale underlying error — and leave the
+        // state alone in case a newer connect has established since.
+        throw new ConnectCancelledError();
       }
+      this.connections = [];
+      this.setState("disconnected");
       throw err;
     }
   }
