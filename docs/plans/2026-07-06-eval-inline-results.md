@@ -129,21 +129,21 @@ README.md, CHANGELOG.md   # MODIFY: docs
 - Create: `src/repl/forms.ts`
 - Test: `src/test/forms.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover `formAtCursor` rules in order: (2) cursor inside a symbol, keyword, number, or string, and immediately after its last character; (3) cursor right after `)`/`]`/`}`/closing `"` returns the whole balanced form; (4) cursor immediately before a token's first character returns that token, but `(foo)|bar` returns `(foo)` (rule 3 wins the sandwich); (5) cursor in whitespace inside `(foo | bar)` returns the enclosing list; (6) cursor in top-level whitespace after a form walks back to it; nothing before → `null`. Refinements: `'`, `` ` ``, `~`, `~@`, `@`, `#'`, `#(...)`, `#{...}`, `#"..."`, `^:kw form` prefixes included; `#_form` returns the form without `#_`; cursor inside a form within `(comment ...)` returns the inner form. Robustness: brackets inside strings/regex/char literals/line comments are ignored; unbalanced text → `null`; empty text; offsets 0 and `text.length`. Cover `nsBefore`: plain `(ns foo.bar)`, ns with metadata/docstring, nearest of several ns forms, no ns → `undefined`, `ns` mentioned in nested position is not picked up.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `forms.ts` does not exist.
 
-- [ ] **Step 3: Implement `forms.ts`**
+- [x] **Step 3: Implement `forms.ts`**
   Single forward scan reusing/extending `Scanner` from `src/indent.ts`. While scanning up to the cursor offset, maintain: the open-frame stack (Scanner already does), the last completed form's `[start, end]` at each currently-open level (including top level), and the current token's start (tokens include contiguous reader-prefix characters; record the `#_` marker separately so it can be stripped). At the cursor, decide per the rule order; when the answer needs text past the cursor (token continues, or enclosing form must close), continue scanning forward just until the token ends / the frame closes. Return `null` whenever the needed frame never closes. `nsBefore(text, offset)`: during the same kind of scan, remember the name symbol of every completed top-level list whose first token is `ns`; return the last one whose start precedes `offset`. Keep both functions pure (no vscode imports), documented, and shaped like the existing `indent.ts`/`maintainIndent.ts` modules.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add form-at-cursor and ns detection for REPL eval"`
 
 ### Task 2: nREPL client — eval params and load-file (`client.ts`)

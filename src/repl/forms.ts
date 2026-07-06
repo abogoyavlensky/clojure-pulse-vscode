@@ -1,0 +1,340 @@
+// Form boundaries for REPL evaluation — pure text functions, no vscode
+// imports. A small recursive-descent reader walks forms left to right with
+// the same robustness rules as the `Scanner` in ../indent.ts (brackets inside
+// strings, regexes, char literals and line comments never count; mismatched
+// closers are skipped; unbalanced code yields no form rather than a garbage
+// range).
+//
+// `formAtCursor` resolves what "Evaluate Current Form" should send, in
+// priority order:
+//   1. (selections are handled by the command, not here)
+//   2. cursor inside an atom token or immediately after its last char → token
+//   3. closing bracket / string quote immediately before cursor → that form
+//   4. cursor immediately before a token's first char → that token
+//      (rules run in order, so in the sandwich `(foo)|bar` the preceding
+//      form wins)
+//   5. cursor in whitespace inside a list → the innermost enclosing form
+//   6. cursor in top-level whitespace → the previous top-level form
+//
+// Reader prefixes (`'`, `` ` ``, `~`, `~@`, `@`, `#'`, `^meta`, dispatch `#`)
+// belong to the form they precede; a `#_` discard marker is excluded from the
+// resolved range so evaluating a discarded form yields its actual value.
+
+/** Half-open [start, end) offsets of a form in the scanned text. */
+export interface FormRange {
+  start: number;
+  end: number;
+}
+
+/** One fully read form: prefixes + base. */
+interface ReadForm {
+  /** Start including reader prefixes (and any `#_` markers). */
+  start: number;
+  /** Start with leading `#_` markers stripped (== start when none). */
+  innerStart: number;
+  /** Start of the base form after all prefixes. */
+  baseStart: number;
+  end: number;
+  /** Offset of the opening bracket char, or null for atom bases. */
+  bracketOffset: number | null;
+  /** Offset of the matching closing bracket (set iff bracketOffset is). */
+  closerOffset: number | null;
+}
+
+type ReadResult =
+  | { kind: "form"; form: ReadForm }
+  /** Next non-trivia char is a closing bracket (not consumed). */
+  | { kind: "closer"; offset: number }
+  /** Reached the scan limit with nothing but trivia. */
+  | { kind: "end" }
+  /** A form started but never completed (unclosed bracket/string). */
+  | { kind: "unbalanced" };
+
+const WHITESPACE = " \t\r\n,";
+const CLOSERS: Record<string, true> = { ")": true, "]": true, "}": true };
+const MATCHING: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+/** Code units that end an atom token. `'` and `#` stay inside (`foo'`, `x#`). */
+const ATOM_DELIMITERS = WHITESPACE + ';()[]{}"`~@^\\';
+
+function isLetter(c: string): boolean {
+  return /\p{L}/u.test(c);
+}
+
+/** Skips whitespace, commas and `;` line comments. */
+function skipTrivia(text: string, pos: number, limit: number): number {
+  while (pos < limit) {
+    const c = text[pos];
+    if (WHITESPACE.includes(c)) {
+      pos++;
+    } else if (c === ";") {
+      while (pos < limit && text[pos] !== "\n") {
+        pos++;
+      }
+    } else {
+      return pos;
+    }
+  }
+  return pos;
+}
+
+/** Reads the next form starting at or after `pos`, stopping at `limit`. */
+function readForm(text: string, pos: number, limit: number): ReadResult {
+  pos = skipTrivia(text, pos, limit);
+  if (pos >= limit) {
+    return { kind: "end" };
+  }
+  if (CLOSERS[text[pos]]) {
+    return { kind: "closer", offset: pos };
+  }
+
+  const start = pos;
+  let innerStart: number | null = null;
+
+  // Reader prefixes; each iteration must advance `pos`.
+  prefixes: while (pos < limit) {
+    const c = text[pos];
+    switch (c) {
+      case "'":
+      case "`":
+      case "@":
+        pos = skipTrivia(text, pos + 1, limit);
+        break;
+      case "~":
+        pos++;
+        if (text[pos] === "@") {
+          pos++;
+        }
+        pos = skipTrivia(text, pos, limit);
+        break;
+      case "^": {
+        // Metadata: `^` plus one form, then the annotated form follows.
+        const meta = readForm(text, pos + 1, limit);
+        if (meta.kind !== "form") {
+          return { kind: "unbalanced" };
+        }
+        pos = skipTrivia(text, meta.form.end, limit);
+        break;
+      }
+      case "#": {
+        const c2 = text[pos + 1];
+        if (c2 === "_") {
+          pos = skipTrivia(text, pos + 2, limit);
+          if (innerStart === null) {
+            innerStart = pos;
+          }
+        } else if (c2 === "'") {
+          pos = skipTrivia(text, pos + 2, limit);
+        } else if (c2 === "?") {
+          // Reader conditional `#?(...)` / `#?@(...)`; the list follows.
+          pos += text[pos + 2] === "@" ? 3 : 2;
+        } else if (c2 === "(" || c2 === "{" || c2 === '"') {
+          pos++; // dispatch form: the bracket / regex string is the base
+        } else {
+          // Tagged literal (`#inst "…"`) or namespaced map (`#:ns{…}`):
+          // the tag token prefixes the following form.
+          pos++;
+          while (pos < limit && !ATOM_DELIMITERS.includes(text[pos])) {
+            pos++;
+          }
+          pos = skipTrivia(text, pos, limit);
+        }
+        break;
+      }
+      default:
+        break prefixes;
+    }
+  }
+  if (pos >= limit) {
+    return { kind: "unbalanced" }; // prefixes with nothing to prefix
+  }
+
+  const baseStart = pos;
+  const c = text[pos];
+  let end: number;
+  let bracketOffset: number | null = null;
+  let closerOffset: number | null = null;
+
+  if (MATCHING[c]) {
+    // Bracketed base: read children until the matching closer.
+    bracketOffset = pos;
+    const closer = MATCHING[c];
+    let p = pos + 1;
+    for (;;) {
+      const child = readForm(text, p, limit);
+      if (child.kind === "form") {
+        p = child.form.end;
+      } else if (child.kind === "closer") {
+        if (text[child.offset] === closer) {
+          closerOffset = child.offset;
+          break;
+        }
+        p = child.offset + 1; // mismatched stray closer: skip it
+      } else {
+        return { kind: "unbalanced" };
+      }
+    }
+    end = closerOffset + 1;
+  } else if (c === '"') {
+    // String / regex base.
+    let p = pos + 1;
+    for (;;) {
+      if (p >= limit) {
+        return { kind: "unbalanced" };
+      }
+      if (text[p] === "\\") {
+        p += 2;
+      } else if (text[p] === '"') {
+        break;
+      } else {
+        p++;
+      }
+    }
+    end = p + 1;
+  } else if (c === "\\") {
+    // Char literal: `\(`, `\newline`, `A`.
+    if (pos + 1 >= limit) {
+      return { kind: "unbalanced" };
+    }
+    end = pos + 2;
+    if (isLetter(text[pos + 1])) {
+      while (end < limit && /[\p{L}\p{Nd}-]/u.test(text[end])) {
+        end++;
+      }
+    }
+  } else {
+    // Atom token.
+    end = pos;
+    while (end < limit && !ATOM_DELIMITERS.includes(text[end])) {
+      end++;
+    }
+  }
+
+  return {
+    kind: "form",
+    form: {
+      start,
+      innerStart: innerStart ?? start,
+      baseStart,
+      end,
+      bracketOffset,
+      closerOffset,
+    },
+  };
+}
+
+/** The form's evaluable range: leading `#_` markers stripped. */
+function stripped(form: ReadForm): FormRange {
+  return { start: form.innerStart, end: form.end };
+}
+
+/**
+ * Walks the sibling forms of one nesting level ([contentStart, contentEnd))
+ * and applies the resolution rules for a cursor at `offset`. `enclosing` is
+ * this level's own form range (null at top level).
+ */
+function resolveIn(
+  text: string,
+  contentStart: number,
+  contentEnd: number,
+  enclosing: FormRange | null,
+  offset: number,
+): FormRange | null {
+  let prev: ReadForm | null = null;
+  let p = contentStart;
+  for (;;) {
+    // Decide gaps from the next form's *start* before parsing it, so
+    // incomplete code after the cursor cannot block the earlier rules
+    // (e.g. rule 6 with an unfinished form further down the buffer).
+    const nextStart = skipTrivia(text, p, contentEnd);
+    if (nextStart >= contentEnd || nextStart > offset) {
+      // Cursor sits in trivia: enclosing form (rule 5) or the previous
+      // form at this level (rule 6).
+      return enclosing ?? (prev ? stripped(prev) : null);
+    }
+    const result = readForm(text, nextStart, contentEnd);
+    if (result.kind === "closer") {
+      p = result.offset + 1; // stray closer at this level: skip
+      continue;
+    }
+    if (result.kind === "unbalanced" || result.kind === "end") {
+      return null; // the cursor's own form never completes
+    }
+    const form = result.form;
+    if (form.end < offset) {
+      prev = form;
+      p = form.end;
+      continue;
+    }
+    if (form.end === offset) {
+      return stripped(form); // rules 2 (after token) and 3 (after closer)
+    }
+    if (form.start >= offset) {
+      if (form.start === offset) {
+        return stripped(form); // rule 4 (immediately before a token)
+      }
+      // Cursor in the trivia gap before this form: rules 5 / 6.
+      return enclosing ?? (prev ? stripped(prev) : null);
+    }
+    // form.start < offset < form.end — the cursor is inside this form.
+    if (form.bracketOffset === null || offset <= form.bracketOffset) {
+      // Atom base (rule 2), or inside the prefix run: the whole form.
+      return stripped(form);
+    }
+    return resolveIn(
+      text,
+      form.bracketOffset + 1,
+      form.closerOffset!,
+      stripped(form),
+      offset,
+    );
+  }
+}
+
+/**
+ * The form "Evaluate Current Form" should send for a cursor at `offset`, or
+ * null when there is none (blank text, or unbalanced code the reader cannot
+ * trust).
+ */
+export function formAtCursor(text: string, offset: number): FormRange | null {
+  const clamped = Math.max(0, Math.min(offset, text.length));
+  return resolveIn(text, 0, text.length, null, clamped);
+}
+
+/**
+ * The name in the nearest top-level `(ns …)` form that ends before `offset`
+ * (pass the start of the form being evaluated), or undefined. Evaluating the
+ * ns form itself therefore gets no ns param — it must run in the default
+ * namespace to create its own.
+ */
+export function nsBefore(text: string, offset: number): string | undefined {
+  let name: string | undefined;
+  let p = 0;
+  for (;;) {
+    const result = readForm(text, p, text.length);
+    if (result.kind === "closer") {
+      p = result.offset + 1;
+      continue;
+    }
+    if (result.kind !== "form" || result.form.start >= offset) {
+      return name; // end/unbalanced: best effort with what was seen
+    }
+    const form = result.form;
+    p = form.end;
+    if (form.end > offset || form.bracketOffset === null) {
+      continue;
+    }
+    // A reader prefix (`#_`, `'`, `` ` ``, …) means the ns form would not
+    // actually execute — never take a namespace from it.
+    if (form.baseStart !== form.start || text[form.bracketOffset] !== "(") {
+      continue;
+    }
+    const head = readForm(text, form.bracketOffset + 1, form.closerOffset!);
+    if (head.kind !== "form" || text.slice(head.form.baseStart, head.form.end) !== "ns") {
+      continue;
+    }
+    const second = readForm(text, head.form.end, form.closerOffset!);
+    if (second.kind === "form" && second.form.bracketOffset === null) {
+      name = text.slice(second.form.baseStart, second.form.end);
+    }
+  }
+}
