@@ -12,6 +12,13 @@ export interface ReplConnectionInfo {
 
 const CONNECT_TIMEOUT_MS = 5000;
 
+/** Thrown when disconnect() is called while a connect is still in flight. */
+export class ConnectCancelledError extends Error {
+  constructor() {
+    super("nREPL connection attempt cancelled");
+  }
+}
+
 /** Reads the port from `<dir>/.nrepl-port`, as written by nREPL servers. */
 export function readNreplPort(dir: string): number | undefined {
   try {
@@ -42,6 +49,8 @@ export class ConnectionManager {
   private currentState: ReplState = "disconnected";
   private stateListeners: Array<(state: ReplState) => void> = [];
   private readonly connectTimeoutMs: number;
+  /** Bumped by disconnect() to invalidate an in-flight connect(). */
+  private connectAttempt = 0;
 
   constructor(
     readonly transcript: Transcript,
@@ -67,6 +76,7 @@ export class ConnectionManager {
     if (this.currentState !== "disconnected") {
       throw new Error("Already connected to an nREPL server");
     }
+    const attempt = ++this.connectAttempt;
     this.setState("connecting");
     let client: NreplClient | undefined;
     try {
@@ -75,6 +85,9 @@ export class ConnectionManager {
         info.port,
         this.connectTimeoutMs,
       );
+      if (attempt !== this.connectAttempt) {
+        throw new ConnectCancelledError();
+      }
       // A non-nREPL service can accept TCP and never answer; time the
       // handshake out rather than sticking in "connecting" forever.
       const opened = client;
@@ -86,6 +99,9 @@ export class ConnectionManager {
         this.connectTimeoutMs,
         `nREPL handshake with ${describeInfo(info)} timed out`,
       );
+      if (attempt !== this.connectAttempt) {
+        throw new ConnectCancelledError();
+      }
       const connection: ActiveConnection = { info, client, session };
       this.connections = [connection];
 
@@ -96,15 +112,23 @@ export class ConnectionManager {
       this.setState("connected");
     } catch (err) {
       client?.close();
-      this.connections = [];
-      this.setState("disconnected");
+      // A stale (cancelled) attempt must not clobber the state a newer
+      // connect may have established since.
+      if (attempt === this.connectAttempt) {
+        this.connections = [];
+        this.setState("disconnected");
+      }
       throw err;
     }
   }
 
   async disconnect(): Promise<void> {
+    // Invalidate any in-flight connect() so "Disconnect" during "connecting"
+    // cannot be overtaken by the handshake finishing a moment later.
+    this.connectAttempt++;
     const connection = this.connections[0];
     if (!connection) {
+      this.setState("disconnected");
       return;
     }
     this.connections = [];

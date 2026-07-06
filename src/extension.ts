@@ -12,6 +12,7 @@ import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
 import { Transcript } from "./repl/transcript";
 import {
+  ConnectCancelledError,
   ConnectionManager,
   readNreplPort,
 } from "./repl/connectionManager";
@@ -244,6 +245,9 @@ async function connectRepl(
     });
     panel.reveal();
   } catch (err: unknown) {
+    if (err instanceof ConnectCancelledError) {
+      return; // the user disconnected mid-attempt; nothing to report
+    }
     const reason = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(
       `Clojure Pulse: could not connect to nREPL — ${reason}`,

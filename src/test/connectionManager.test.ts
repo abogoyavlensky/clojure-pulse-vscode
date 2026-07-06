@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+  ConnectCancelledError,
   ConnectionManager,
   ReplState,
   readNreplPort,
@@ -154,6 +155,28 @@ suite("ConnectionManager", () => {
       manager.connect({ host: "127.0.0.1", port: server.port }),
       /session/i,
     );
+    assert.strictEqual(manager.state, "disconnected");
+    await waitUntil(() => server.socketCount() === 0, 1000);
+    assert.strictEqual(server.socketCount(), 0);
+  });
+
+  test("disconnect during connecting cancels the in-flight attempt", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        // Hold the handshake open long enough to disconnect mid-attempt.
+        setTimeout(
+          () => reply({ "new-session": "sess-1", status: ["done"] }),
+          150,
+        );
+        return;
+      }
+      reply({ versions: {}, status: ["done"] });
+    });
+    const pending = manager.connect({ host: "127.0.0.1", port: server.port });
+    await waitUntil(() => manager.state === "connecting", 1000);
+    await manager.disconnect();
+
+    await assert.rejects(pending, ConnectCancelledError);
     assert.strictEqual(manager.state, "disconnected");
     await waitUntil(() => server.socketCount() === 0, 1000);
     assert.strictEqual(server.socketCount(), 0);
