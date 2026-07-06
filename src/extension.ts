@@ -10,6 +10,14 @@ import {
 } from "./ignoredForms";
 import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
+import { Transcript } from "./repl/transcript";
+import {
+  ConnectCancelledError,
+  ConnectionManager,
+  readNreplPort,
+} from "./repl/connectionManager";
+import { ReplPanelProvider } from "./repl/replPanel";
+import { createReplStatusBar } from "./repl/replStatusBar";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -20,7 +28,14 @@ let stateListener: vscode.Disposable | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+/** What activate() returns; consumed by integration tests. */
+export interface ExtensionApi {
+  replManager: ConnectionManager;
+}
+
+export async function activate(
+  context: vscode.ExtensionContext,
+): Promise<ExtensionApi> {
   outputChannel = vscode.window.createOutputChannel("Clojure Pulse");
   statusBar = createStatusBar();
 
@@ -47,8 +62,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   setupIgnoredFormDimming(context);
   setupMaintainIndentation(context);
+  const replManager = setupRepl(context);
 
   await start();
+  return { replManager };
 }
 
 export async function deactivate(): Promise<void> {
@@ -142,6 +159,148 @@ async function stop(): Promise<void> {
 async function restart(): Promise<void> {
   await stop();
   await start();
+}
+
+/**
+ * Wires the nREPL connection feature: connection manager, REPL webview pane
+ * in the bottom panel, status bar item, and the connect/disconnect/eval
+ * commands. Fully independent of the clj-pulse language server.
+ */
+function setupRepl(context: vscode.ExtensionContext): ConnectionManager {
+  const transcript = new Transcript();
+  const manager = new ConnectionManager(transcript);
+  const panel = new ReplPanelProvider(transcript);
+  panel.register(context);
+
+  const replStatus = createReplStatusBar();
+  replStatus.update(manager.state);
+  manager.onDidChangeState((state) =>
+    replStatus.update(state, manager.connectionInfo),
+  );
+
+  context.subscriptions.push(
+    replStatus,
+    { dispose: () => manager.dispose() },
+    vscode.commands.registerCommand("clojurePulse.connectRepl", () =>
+      connectRepl(manager, panel),
+    ),
+    vscode.commands.registerCommand("clojurePulse.disconnectRepl", async () => {
+      if (manager.state === "disconnected") {
+        vscode.window.showInformationMessage("Not connected to an nREPL server.");
+        return;
+      }
+      await manager.disconnect();
+    }),
+    vscode.commands.registerCommand("clojurePulse.evalSelection", () =>
+      evalSelection(manager, panel),
+    ),
+    vscode.commands.registerCommand("clojurePulse.replMenu", () =>
+      replMenu(manager, panel),
+    ),
+  );
+  return manager;
+}
+
+async function connectRepl(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+): Promise<void> {
+  if (manager.state !== "disconnected") {
+    vscode.window.showInformationMessage(
+      "Already connected to an nREPL server. Disconnect first.",
+    );
+    return;
+  }
+
+  const host = await vscode.window.showInputBox({
+    prompt: "nREPL host",
+    value: "localhost",
+    ignoreFocusOut: true,
+  });
+  if (!host) {
+    return;
+  }
+
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const detectedPort = workspaceRoot ? readNreplPort(workspaceRoot) : undefined;
+  const portText = await vscode.window.showInputBox({
+    prompt: "nREPL port",
+    value: detectedPort ? String(detectedPort) : undefined,
+    ignoreFocusOut: true,
+    validateInput: (value) =>
+      /^\d+$/.test(value.trim()) &&
+      Number.parseInt(value, 10) > 0 &&
+      Number.parseInt(value, 10) <= 65535
+        ? undefined
+        : "Enter a port number between 1 and 65535",
+  });
+  if (!portText) {
+    return;
+  }
+
+  try {
+    await manager.connect({
+      host: host.trim(),
+      port: Number.parseInt(portText.trim(), 10),
+    });
+    panel.reveal();
+  } catch (err: unknown) {
+    if (err instanceof ConnectCancelledError) {
+      return; // the user disconnected mid-attempt; nothing to report
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    void vscode.window.showErrorMessage(
+      `Clojure Pulse: could not connect to nREPL — ${reason}`,
+    );
+  }
+}
+
+async function evalSelection(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+): Promise<void> {
+  if (manager.state !== "connected") {
+    // Not awaited: the command should finish while the notification lingers.
+    void vscode.window
+      .showWarningMessage("Not connected to an nREPL server.", "Connect")
+      .then((choice) =>
+        choice === "Connect" ? connectRepl(manager, panel) : undefined,
+      );
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  const code = editor?.document.getText(editor.selection);
+  if (!code || code.trim().length === 0) {
+    vscode.window.showWarningMessage("Select an expression to evaluate.");
+    return;
+  }
+  panel.reveal();
+  try {
+    await manager.eval(code);
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    void vscode.window.showErrorMessage(
+      `Clojure Pulse: evaluation failed — ${reason}`,
+    );
+  }
+}
+
+async function replMenu(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+): Promise<void> {
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: "$(output) Show REPL", action: "show" },
+      { label: "$(debug-disconnect) Disconnect", action: "disconnect" },
+    ],
+    { placeHolder: "nREPL actions" },
+  );
+  if (choice?.action === "show") {
+    panel.reveal();
+  } else if (choice?.action === "disconnect") {
+    await manager.disconnect();
+  }
 }
 
 /** Surfaces a not-found error without blocking activation on the dialog. */

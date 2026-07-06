@@ -46,6 +46,8 @@ do not need any other Clojure extension.
   and multi-cursor edits.
 - **Status bar indicator** — the server's state (starting, running, stopped,
   error) shows at the bottom left; click it to open the server log.
+- **REPL** — connect to an already-running nREPL server and evaluate code from
+  the editor. See [REPL](#repl) below.
 
 The available language features track whatever your installed `clj-pulse`
 version supports — see the [clj-pulse README](https://github.com/abogoyavlensky/clj-pulse#features).
@@ -97,12 +99,39 @@ Clojure Pulse indents and shifts, Parinfer places brackets. If you prefer
 Parinfer (or anything else) to drive the Enter key, remove or rebind the
 `clojurePulse.newline` keybinding in your Keyboard Shortcuts.
 
+## REPL
+
+Start an nREPL server in your project as usual (`clj -M -m nrepl.cmdline`,
+`lein repl`, or an editor-agnostic alias), then run **Clojure Pulse: Connect to
+Running nREPL** from the Command Palette. The port is pre-filled from the
+project's `.nrepl-port` file when present.
+
+- **REPL pane** — output lives in a **REPL** tab in the bottom panel, next to
+  Terminal and Output: a connection banner with nREPL/Clojure versions,
+  evaluated forms, results, and anything printed to stdout/stderr, styled to
+  match your theme.
+- **Evaluate Selection** — select an expression and run **Clojure Pulse:
+  Evaluate Selection**; the code, its value, and any output stream into the
+  REPL pane.
+- **Status bar** — `nREPL host:port` at the bottom left shows the connection.
+  Click it to connect when disconnected, or for a Show REPL / Disconnect menu
+  when connected. If the server goes away, the status flips back and the pane
+  notes the lost connection.
+
+The REPL connection is independent of the `clj-pulse` language server — either
+works without the other.
+
 ## Commands
 
 Run these from the Command Palette:
 
 - **Clojure Pulse: Restart Server** — restart the language server.
 - **Clojure Pulse: Show Output** — open the server output channel.
+- **Clojure Pulse: Connect to Running nREPL** — connect to an nREPL server by
+  host and port.
+- **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
+  connected REPL.
+- **Clojure Pulse: Disconnect from nREPL** — close the REPL connection.
 
 ## Using it on its own
 

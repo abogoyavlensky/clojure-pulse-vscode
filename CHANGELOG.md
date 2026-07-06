@@ -4,6 +4,12 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- nREPL support: **Connect to Running nREPL** (port pre-filled from
+  `.nrepl-port`), **Evaluate Selection**, and **Disconnect** commands; a
+  Cursive-style **REPL** pane in the bottom panel streaming banners, evaluated
+  forms, values, and stdout/stderr; and an `nREPL host:port` status bar item
+  with a connect / Show REPL / Disconnect menu.
+
 ## [0.0.1]
 
 Initial release.
