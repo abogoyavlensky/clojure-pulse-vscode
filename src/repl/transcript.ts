@@ -21,18 +21,24 @@ const DEFAULT_CAP = 5000;
 
 export class Transcript {
   private items: TranscriptEntry[] = [];
-  private appendListeners: Array<(entry: TranscriptEntry) => void> = [];
+  private appendListeners: Array<
+    (entry: TranscriptEntry, evicted: number) => void
+  > = [];
   private clearListeners: Array<() => void> = [];
 
   constructor(private readonly cap: number = DEFAULT_CAP) {}
 
   append(entry: TranscriptEntry): void {
     this.items.push(entry);
-    if (this.items.length > this.cap) {
-      this.items.splice(0, this.items.length - this.cap);
+    // Live consumers mirror appends into their own copy (e.g. webview DOM
+    // nodes); they must drop the same number of oldest items to stay in
+    // sync with entries().
+    const evicted = Math.max(0, this.items.length - this.cap);
+    if (evicted > 0) {
+      this.items.splice(0, evicted);
     }
     for (const listener of this.appendListeners) {
-      listener(entry);
+      listener(entry, evicted);
     }
   }
 
@@ -47,7 +53,9 @@ export class Transcript {
     }
   }
 
-  onDidAppend(listener: (entry: TranscriptEntry) => void): void {
+  onDidAppend(
+    listener: (entry: TranscriptEntry, evicted: number) => void,
+  ): void {
     this.appendListeners.push(listener);
   }
 

@@ -29,6 +29,16 @@ suite("Transcript", () => {
     );
   });
 
+  test("reports evictions to append listeners so live views stay in sync", () => {
+    const transcript = new Transcript(2);
+    const evictions: number[] = [];
+    transcript.onDidAppend((_entry, evicted) => evictions.push(evicted));
+    transcript.append({ kind: "out", text: "1" });
+    transcript.append({ kind: "out", text: "2" });
+    transcript.append({ kind: "out", text: "3" });
+    assert.deepStrictEqual(evictions, [0, 0, 1]);
+  });
+
   test("entries returns a snapshot, not the live array", () => {
     const transcript = new Transcript();
     transcript.append({ kind: "info", text: "a" });
