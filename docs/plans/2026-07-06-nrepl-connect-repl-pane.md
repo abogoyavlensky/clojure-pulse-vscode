@@ -107,24 +107,24 @@ README.md, CHANGELOG.md   # docs
 - Create: `src/test/fakeNreplServer.ts`
 - Test: `src/test/nreplClient.test.ts`
 
-- [ ] **Step 1: Write the fake server helper**
+- [x] **Step 1: Write the fake server helper**
   `startFakeNrepl(): Promise<{ port, received: any[], respond(fn), close() }>` — a `net.createServer` that decodes incoming bencode messages and lets tests script responses per `op`. Default behaviors: `clone` → `{ "new-session": "sess-1", status: ["done"] }`; `describe` → versions map + `done`; `eval` → configurable multi-message sequence (e.g. `out` chunk, then `value`, then `done`).
 
-- [ ] **Step 2: Write failing NreplClient tests**
+- [x] **Step 2: Write failing NreplClient tests**
   Cover: `connect()` resolves and `clone()` returns a session id; `send()` correlates by `id` when responses arrive interleaved; `eval()` invokes an `onMessage` callback per partial message (out, value) and resolves on `done`; responses split across TCP chunks decode correctly (fake server writes a response in two `socket.write` calls); server socket close fires the client's `onClose` and pending requests reject.
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `client.ts` does not exist.
 
-- [ ] **Step 4: Implement `NreplClient`**
+- [x] **Step 4: Implement `NreplClient`**
   `NreplClient.connect(host, port, timeoutMs)` → persistent `net.Socket`; outgoing messages get a monotonically increasing `id`; incoming data accumulates in a buffer through `decodeBuffer`; each decoded message dispatches to the pending request matching its `id` (a request completes when a message contains `status` including `"done"`); messages without a matching id go to a general `onUnhandled` callback. Public API: `clone()`, `describe()`, `eval(code, session, onMessage)`, `close()`, `onClose(cb)`.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: add persistent nREPL client with id-correlated requests"`
 
 ### Task 3: transcript model
@@ -133,21 +133,21 @@ README.md, CHANGELOG.md   # docs
 - Create: `src/repl/transcript.ts`
 - Test: `src/test/transcript.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover: `append(entry)` stores typed entries and fires a listener; entries beyond the 5000 cap drop the oldest; `entries()` returns a snapshot; `clear()` empties and notifies.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL
 
-- [ ] **Step 3: Implement `transcript.ts`**
+- [x] **Step 3: Implement `transcript.ts`**
   `TranscriptEntry = { kind: "banner" | "in" | "value" | "out" | "err" | "info"; text: string }`. Small class with `append`, `entries`, `clear`, `onDidAppend`, `onDidClear`. No vscode imports — keep it pure.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add REPL transcript model"`
 
 ### Task 4: connection manager
@@ -156,21 +156,21 @@ README.md, CHANGELOG.md   # docs
 - Create: `src/repl/connectionManager.ts`
 - Test: `src/test/connectionManager.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Using the fake nREPL server (real `NreplClient`): `connect({host, port})` moves state `disconnected → connecting → connected`, appends a banner entry containing host:port and versions from `describe`; connect to a closed port rejects and state returns to `disconnected`; `disconnect()` closes the socket and appends an `info` entry; server-side socket drop flips state to `disconnected` and appends an `info` entry; `eval("(+ 1 2)")` appends `in` then `value` entries; `readNreplPort(dir)` returns the number from a `.nrepl-port` file and `undefined` when absent (use a temp dir).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL
 
-- [ ] **Step 3: Implement `connectionManager.ts`**
+- [x] **Step 3: Implement `connectionManager.ts`**
   Holds `NreplClient | undefined`, a `Transcript`, and `ReplState = "disconnected" | "connecting" | "connected"` with connection info. Exposes `connect(info)`, `disconnect()`, `eval(code)`, `state`, `onDidChangeState`, plus `readNreplPort(workspaceRoot)` as an exported pure helper. On connect: TCP connect (5s timeout) → `clone` → `describe` → eval `(clojure-version)` → banner. Wires client `onUnhandled` out/err messages for the active session into the transcript. `eval` streams each partial message into the transcript as it arrives (`out` → out entry, `err` → err entry, `value` → value entry). Design the internal shape as "list of connections with one active" (an array field, not a rewrite hook).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add REPL connection manager with .nrepl-port discovery"`
 
 ### Task 5: REPL status bar item
@@ -179,21 +179,21 @@ README.md, CHANGELOG.md   # docs
 - Create: `src/repl/replStatusBar.ts`
 - Test: `src/test/replStatusBar.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Mirror `src/test/statusBar.test.ts`: a pure `replStatusPresentation(state, info?)` returns text/tooltip/command — disconnected: `$(debug-disconnect) nREPL`, command `clojurePulse.connectRepl`; connecting: `$(loading~spin) nREPL`; connected: `$(plug) nREPL <host>:<port>`, command `clojurePulse.replMenu`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL
 
-- [ ] **Step 3: Implement `replStatusBar.ts`**
+- [x] **Step 3: Implement `replStatusBar.ts`**
   Pure presentation function plus `createReplStatusBar()` factory (StatusBarItem, Left alignment, priority 99 so it sits next to the clj-pulse item) with `update(state, info)` and `dispose()` — same shape as `src/statusBar.ts`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add nREPL connection status bar item"`
 
 ### Task 6: REPL webview panel
@@ -203,17 +203,17 @@ README.md, CHANGELOG.md   # docs
 - Create: `images/repl-icon.svg`
 - Modify: `package.json`
 
-- [ ] **Step 1: Contribute the panel view in `package.json`**
+- [x] **Step 1: Contribute the panel view in `package.json`**
   Add `contributes.viewsContainers.panel`: `[{ "id": "clojurePulseRepl", "title": "REPL", "icon": "images/repl-icon.svg" }]` and `contributes.views.clojurePulseRepl`: `[{ "type": "webview", "id": "clojurePulse.replView", "name": "REPL" }]`. Create a simple monochrome `repl-icon.svg` (e.g. a `λ` or prompt glyph, `currentColor` fill).
 
-- [ ] **Step 2: Implement `replPanel.ts`**
+- [x] **Step 2: Implement `replPanel.ts`**
   `ReplPanelProvider implements vscode.WebviewViewProvider`, registered for `clojurePulse.replView`. The webview HTML is a self-contained string: a scrolling log `<div>`, CSS on `--vscode-editor-font-family` / `--vscode-terminal-ansi*` theme variables (values in editor foreground, `err` in `--vscode-errorForeground`, `in` lines prefixed with a dimmed `=>`, banner/info dimmed italic), auto-scroll pinned to bottom unless the user scrolled up. Content Security Policy with a nonce, no external resources. Protocol: webview posts `{type: "ready"}` → extension replies `{type: "reset", entries}` (full transcript); extension pushes `{type: "append", entry}` on new entries. Escape entry text in the webview before inserting (`textContent`, not `innerHTML`). Provider subscribes to the transcript's `onDidAppend`/`onDidClear` and exposes `reveal()` (focus the view via `clojurePulse.replView.focus` command).
 
-- [ ] **Step 3: Verify manually**
+- [x] **Step 3: Verify manually**
   Run: `make compile` then launch the Extension Development Host (F5), run "View: Open View… → REPL".
   Expected: empty REPL pane appears in the bottom panel next to Terminal.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "feat: add REPL webview panel in the bottom panel area"`
 
 ### Task 7: commands and wiring
@@ -223,17 +223,17 @@ README.md, CHANGELOG.md   # docs
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write failing integration tests**
+- [x] **Step 1: Write failing integration tests**
   After activation: `clojurePulse.connectRepl`, `clojurePulse.disconnectRepl`, `clojurePulse.evalSelection`, `clojurePulse.replMenu` are in `vscode.commands.getCommands()`; executing `clojurePulse.evalSelection` with no connection resolves without throwing (shows a warning); full loop against the fake nREPL server — connect via the manager, execute eval on a selection in a scratch Clojure document, assert the transcript contains the `in` and `value` entries.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — commands not registered.
 
-- [ ] **Step 3: Register commands in `package.json`**
+- [x] **Step 3: Register commands in `package.json`**
   Category "Clojure Pulse": `connectRepl` ("Connect to Running nREPL"), `disconnectRepl` ("Disconnect from nREPL"), `evalSelection` ("Evaluate Selection"), `replMenu` ("REPL Menu"). Add an `enablement`/`when` is not needed — commands guard at runtime.
 
-- [ ] **Step 4: Wire everything in `extension.ts`**
+- [x] **Step 4: Wire everything in `extension.ts`**
   Instantiate `ConnectionManager`, `ReplPanelProvider`, `createReplStatusBar()` in `activate`; push all into `context.subscriptions`.
   - `connectRepl`: if connected, info message and return. Prompt host (`showInputBox`, value `localhost`), then port (pre-filled from `readNreplPort(workspaceRoot)`), validate integer 1–65535, then `manager.connect()`; reveal the REPL panel on success; `showErrorMessage` on failure.
   - `disconnectRepl`: `manager.disconnect()`, info message when not connected.
@@ -242,11 +242,11 @@ README.md, CHANGELOG.md   # docs
   - Subscribe status bar updates to `manager.onDidChangeState`.
   Keep `deactivate` closing the REPL connection alongside the LSP client.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS (all suites).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: add nREPL connect/disconnect/eval commands with REPL pane and status bar"`
 
 ### Task 8: end-to-end check and docs
@@ -254,15 +254,45 @@ README.md, CHANGELOG.md   # docs
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Manual end-to-end verification**
+- [x] **Step 1: Manual end-to-end verification**
   Start a real nREPL in any Clojure project (`clj -M -m nrepl.cmdline` or `lein repl`), F5 the extension, run "Connect to Running nREPL" (port should pre-fill from `.nrepl-port`), confirm: banner with versions in the REPL pane, status bar shows `$(plug) nREPL localhost:<port>`, evaluating a selection prints code + value, `println` output appears as an `out` entry, disconnect updates pane and status bar, killing the nREPL process flips status to disconnected with an info entry.
 
-- [ ] **Step 2: Full check**
+- [x] **Step 2: Full check**
   Run: `make check`
   Expected: lint, compile, and tests all pass.
 
-- [ ] **Step 3: Update docs**
+- [x] **Step 3: Update docs**
   README: new "REPL" section — connect command, `.nrepl-port` pre-fill, REPL pane, eval selection, status bar. CHANGELOG: entry under the unreleased version.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "docs: document nREPL connection and REPL pane"`
+
+---
+
+## Completion Summary (2026-07-06)
+
+All 8 tasks implemented and committed; `make check` passes with 122 tests.
+
+**What was built:** hand-rolled bencode codec (`src/nrepl/bencode.ts`), persistent
+id-correlated `NreplClient` (`src/nrepl/client.ts`), capped `Transcript` model,
+`ConnectionManager` with `.nrepl-port` discovery, REPL webview pane in the bottom
+panel, REPL status bar item, and the `connectRepl` / `disconnectRepl` /
+`evalSelection` / `replMenu` commands wired in `extension.ts` (which now returns
+an `ExtensionApi` for integration tests).
+
+**Deviations from the plan:**
+- The connect banner uses `describe` versions only; the redundant
+  `(clojure-version)` eval was dropped.
+- This machine is headless, so the two manual GUI checks were replaced with
+  equivalents: the REPL view resolution is exercised in the VS Code test host
+  (`replCommands.integration.test.ts`), and Task 8's end-to-end run was done
+  programmatically against a real nREPL 1.3.1 / Clojure 1.12.4 server
+  (port discovery, banner, eval value, stdout streaming, divide-by-zero error
+  as `err`, disconnect — all verified). A quick F5 smoke test on a desktop is
+  still worthwhile.
+
+**Issues found by per-task codex reviews, all fixed with regression tests:**
+malformed bencode numeric fields accepted; transcript cap evictions invisible
+to live views; handshake hang against non-nREPL services; socket leak on failed
+handshake; disconnect-during-connecting not cancelling the attempt; stale
+handshake failures reported as errors instead of cancellations.
