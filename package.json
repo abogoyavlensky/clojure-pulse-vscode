@@ -87,6 +87,24 @@
         "editor.formatOnType": false
       }
     },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "clojurePulseRepl",
+          "title": "REPL",
+          "icon": "images/repl-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "clojurePulseRepl": [
+        {
+          "type": "webview",
+          "id": "clojurePulse.replView",
+          "name": "REPL"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "clojurePulse.restart",
