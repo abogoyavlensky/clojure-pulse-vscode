@@ -120,6 +120,26 @@
         "command": "clojurePulse.newline",
         "title": "Insert Newline and Indent",
         "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.connectRepl",
+        "title": "Connect to Running nREPL",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.disconnectRepl",
+        "title": "Disconnect from nREPL",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.evalSelection",
+        "title": "Evaluate Selection",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.replMenu",
+        "title": "REPL Menu",
+        "category": "Clojure Pulse"
       }
     ],
     "keybindings": [
