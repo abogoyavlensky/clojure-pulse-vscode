@@ -93,6 +93,7 @@ function defaultHandler(msg: Message, reply: Reply): void {
       });
       break;
     case "eval":
+    case "load-file":
       reply({ session: msg.session, value: "42" });
       reply({ session: msg.session, status: ["done"] });
       break;
