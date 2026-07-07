@@ -96,7 +96,7 @@
       "activitybar": [
         {
           "id": "clojurePulseSidebar",
-          "title": "Clojure Pulse",
+          "title": "External Libraries",
           "icon": "images/activity-icon.svg"
         }
       ],

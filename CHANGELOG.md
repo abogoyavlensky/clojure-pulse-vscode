@@ -4,8 +4,8 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
-- **External Libraries panel**: a tree view in a new Clojure Pulse activity-bar
-  container listing the dependencies `clj-pulse` resolved for the project
+- **External Libraries panel**: a tree view in a new activity-bar container
+  (pulse icon) listing the dependencies `clj-pulse` resolved for the project
   (deps.edn transitive classpath, lgx deps, or Leiningen direct deps). Expand a
   library to browse its files — jar entries open read-only, directory deps are
   read from disk. Refreshes on classpath re-indexing (via the
