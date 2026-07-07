@@ -10,7 +10,6 @@ import { EvalOutcome } from "./connectionManager";
 // (no vscode imports) so it can be unit-tested without an editor.
 
 const NBSP = "\u00a0"; // regular spaces collapse in decoration text
-const ARROW = `${NBSP}=>${NBSP}`;
 const MAX_INLINE = 120;
 const NAMESPACE_NOT_LOADED =
   "Namespace not loaded — run 'Evaluate File' first";
@@ -31,14 +30,29 @@ export interface SimpleChange {
   text: string;
 }
 
-/** The ghost text for a value: first line only, capped, spaces → NBSP. */
+/** The ghost text for a value: first line only, capped, spaces → NBSP. The
+ *  gap from the code is a decoration `after.margin`, not a prefix — Cursive
+ *  shows the bare value. */
 export function formatInlineText(value: string): string {
   const firstLine = value.split("\n")[0];
   const capped =
     firstLine.length > MAX_INLINE
       ? firstLine.slice(0, MAX_INLINE - 1) + "…"
       : firstLine;
-  return ARROW + capped.replace(/ /g, NBSP);
+  return capped.replace(/ /g, NBSP);
+}
+
+/** The decoration range for a result: from the form's start to the end of its
+ *  last line, so the `after` ghost text lands at the end of the line — never
+ *  between brackets. `endLineLength` is the character length of that last line. */
+export function renderRange(
+  formRange: SimpleRange,
+  endLineLength: number,
+): SimpleRange {
+  return {
+    start: formRange.start,
+    end: { line: formRange.end.line, character: endLineLength },
+  };
 }
 
 /** The hover body: the full value in a clojure fence plus a Copy command link. */
@@ -152,16 +166,18 @@ export class InlineResultsManager {
     const after = (color: string): vscode.DecorationRenderOptions => ({
       after: {
         color: new vscode.ThemeColor(color),
-        margin: "0 0 0 0",
+        // A gap from the code — the result reads as a trailing hint, not a token.
+        margin: "0 0 0 2ch",
         fontStyle: "italic",
       },
       rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
     });
+    // Cursive-style muted grey for pending/success; red for errors.
     this.pendingType = vscode.window.createTextEditorDecorationType(
-      after("descriptionForeground"),
+      after("editorInlayHint.foreground"),
     );
     this.successType = vscode.window.createTextEditorDecorationType(
-      after("terminal.ansiGreen"),
+      after("editorInlayHint.foreground"),
     );
     this.errorType = vscode.window.createTextEditorDecorationType(
       after("errorForeground"),
@@ -379,7 +395,7 @@ export class InlineResultsManager {
       error: [],
     };
     for (const result of list) {
-      buckets[result.state].push(this.toOptions(result));
+      buckets[result.state].push(this.toOptions(doc, result));
     }
     for (const editor of editors) {
       editor.setDecorations(this.pendingType, buckets.pending);
@@ -388,11 +404,21 @@ export class InlineResultsManager {
     }
   }
 
-  private toOptions(result: InlineResult): vscode.DecorationOptions {
+  private toOptions(
+    doc: vscode.TextDocument,
+    result: InlineResult,
+  ): vscode.DecorationOptions {
     const contentText =
-      result.state === "pending" ? ARROW + "…" : formatInlineText(result.fullText);
+      result.state === "pending" ? "…" : formatInlineText(result.fullText);
+    // Anchor the ghost text to the end of the form's last line — never between
+    // brackets. Clamp the line in case a stored range briefly outruns the doc
+    // mid-edit.
+    const endLine = Math.min(result.range.end.line, doc.lineCount - 1);
+    const endLineLength = doc.lineAt(endLine).range.end.character;
     const options: vscode.DecorationOptions = {
-      range: toVscodeRange(result.range),
+      range: toVscodeRange(
+        renderRange({ ...result.range, end: { ...result.range.end, line: endLine } }, endLineLength),
+      ),
       renderOptions: { after: { contentText } },
     };
     if (result.state !== "pending") {

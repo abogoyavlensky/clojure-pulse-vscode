@@ -2,6 +2,7 @@ import * as assert from "assert";
 import {
   buildHoverMarkdown,
   formatInlineText,
+  renderRange,
   shiftRange,
   SimpleRange,
 } from "../repl/inlineResults";
@@ -9,34 +10,54 @@ import {
 const NBSP = "\u00a0";
 
 suite("formatInlineText", () => {
-  test("prefixes with an arrow and non-breaking spaces", () => {
-    assert.strictEqual(formatInlineText("42"), `${NBSP}=>${NBSP}42`);
+  test("returns the bare value with no arrow prefix", () => {
+    assert.strictEqual(formatInlineText("42"), "42");
   });
 
   test("keeps only the first line", () => {
     assert.strictEqual(
       formatInlineText("line one\nline two"),
-      `${NBSP}=>${NBSP}line${NBSP}one`,
+      `line${NBSP}one`,
     );
   });
 
   test("replaces every space so nothing collapses", () => {
     assert.strictEqual(
       formatInlineText("{:a 1, :b 2}"),
-      `${NBSP}=>${NBSP}{:a${NBSP}1,${NBSP}:b${NBSP}2}`,
+      `{:a${NBSP}1,${NBSP}:b${NBSP}2}`,
     );
   });
 
   test("caps long values at 120 characters with an ellipsis", () => {
     const out = formatInlineText("x".repeat(200));
-    // The value portion is 120 chars: 119 x's plus the ellipsis.
-    const valuePart = out.replace(`${NBSP}=>${NBSP}`, "");
-    assert.strictEqual(valuePart.length, 120);
-    assert.ok(valuePart.endsWith("…"));
+    assert.strictEqual(out.length, 120);
+    assert.ok(out.endsWith("…"));
   });
 
   test("short values are not truncated", () => {
     assert.ok(!formatInlineText("small").includes("…"));
+  });
+});
+
+suite("renderRange", () => {
+  test("a single-line form extends to the end of its line", () => {
+    assert.deepStrictEqual(
+      renderRange(
+        { start: { line: 0, character: 3 }, end: { line: 0, character: 8 } },
+        15,
+      ),
+      { start: { line: 0, character: 3 }, end: { line: 0, character: 15 } },
+    );
+  });
+
+  test("a multi-line form ends at the end of its last line", () => {
+    assert.deepStrictEqual(
+      renderRange(
+        { start: { line: 0, character: 0 }, end: { line: 2, character: 4 } },
+        10,
+      ),
+      { start: { line: 0, character: 0 }, end: { line: 2, character: 10 } },
+    );
   });
 });
 
