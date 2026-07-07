@@ -1,5 +1,7 @@
 # External Libraries Panel Implementation Plan
 
+> **STATUS: ✅ COMPLETED (2026-07-07).** All 8 tasks implemented, reviewed, and verified end-to-end. See the Completion Summary at the bottom.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a Cursive-style "External Libraries" tree view to the left sidebar that lists every library the clj-pulse server resolved for the project (deps.edn, lgx.edn, Leiningen best-effort) and lets the user browse and open library files (jar contents read-only; directory-based libraries as ordinary files).
@@ -285,12 +287,42 @@ Errors with invalid-params when `path` is not an existing `.jar` file. Only call
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Document the panel**
-  README feature entry (what it shows per project type, read-only jar viewing, lein best-effort caveat); CHANGELOG entry.
+- [x] **Step 1: Document the panel**
+  README Features entry (per project type, read-only jar viewing, lein best-effort caveat, empty-state hint) + Commands entry; CHANGELOG `[Unreleased]` entry.
 
-- [ ] **Step 2: Final check**
-  Run: `npm run pretest`
-  Expected: PASS (compile, lint, tests all green)
+- [x] **Step 2: Final check**
+  Run: `npm run pretest` — PASS (compile-tests, compile, lint all clean).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document External Libraries panel"`
+
+---
+
+## Completion Summary
+
+**Implemented** (all 8 tasks). Cross-repo, on branch `external-libs-pane` in both repos.
+
+*Server — clj-pulse (6 commits):*
+- `src/libraries.rs` — pure classpath-entries → library-list derivation (Maven jar, non-Maven jar, tools.deps gitlibs dir, lgx gitlibs dir, generic dir; project-source exclusion; dedup; total sort). 15 unit tests.
+- `src/jar_content.rs` — `list_entries` (jar file entries, dirs excluded, sorted). 2 tests.
+- `src/server.rs` / `src/main.rs` — `clojurePulse/externalLibraries` + `clojurePulse/libraryEntries` custom requests, and the `clojurePulse/librariesChanged` notification pushed from both indexing-completion sites (init + watched-files re-index, success and zero-entries paths).
+
+*Extension — clojure-pulse-vscode (7 commits):*
+- `images/activity-icon.svg` + `package.json` — a new "Clojure Pulse" activity-bar container, the `clojurePulse.externalLibraries` tree view, `viewsWelcome` empty state, the `clojurePulse.refreshExternalLibraries` command + view-title button.
+- `src/externalLibraries.ts` — `ExternalLibrariesProvider` (lazy tree; jar libraries folded from one cached `libraryEntries` request, directory libraries read from disk; file leaves open via `vscode.open` on the `jar:`/file URI). 7 unit tests.
+- `src/extension.ts` — construct/register the provider, per-client `librariesChanged` handler + refresh-on-start, dispose/clear on stop. Activation test extended.
+- `README.md` / `CHANGELOG.md` — documented.
+
+**Verification.** clj-pulse: 273 unit tests + all integration targets pass. Extension: 205 tests pass (mocha under xvfb). End-to-end: drove the **real built server binary** over LSP stdio against a deps.edn project with a real `.cpcache` — `externalLibraries` returned `aero 1.1.6` / `babashka/fs 0.5.30` / `org.clojure/clojure 1.12.5` / gitlibs `io.github.clj-kondo/clj-kondo-bb @ adfc7df`, project's own `src` excluded, sorted; `libraryEntries` returned 3724 files incl. `clojure/core.clj`; a non-jar path was rejected with `-32602`; the `librariesChanged` notification fired.
+
+**Deviations from the plan** (all intent-preserving; details inline under each task):
+- **lgx gitlibs layout** is `$LGX_HOME/gitlibs/<host/org/repo>/<reff>[/src]`, not the tools.deps `libs/<group>/<artifact>/<sha>` shape the plan guessed. Added a distinct best-effort `parse_lgx_gitlib` (anchored on `.lgx/` or a host-like segment) so lgx deps render as `<repo>` + short reff instead of `src`.
+- **`ProjectKind`** has only `Clojure`/`LetGo` (no `Leiningen` variant) — the handler mirrors `resolve_and_index_libs` exactly (Leiningen is a `.cpcache`-empty fallback inside the Clojure arm).
+- **`from_entries` signature** changed from `(root, entries)` to `(own_paths, entries)` with **exact-match** exclusion (from `config::source_paths`), not prefix-match — so the project's own source is excluded while an in-workspace `:local/root` dep (even one nested under `test/`) is kept.
+- **Module registration** in both `lib.rs` and `main.rs` (server.rs is in the binary crate).
+- **Refresh-on-start** uses the `client.start().then(...)` callback, not a `State.Running` listener (the codebase deliberately avoids keying on `Running`).
+- **`SendRequest`** param generalized to `unknown`; provider gained an injected `log`.
+- **Reviews.** Four background codex reviews ran, pipelined with the next task. Fixed: a Maven-artifact-named-`repository` panic, over-broad exclusion (twice — prefix→exact), an incidental-`gitlibs` false positive, a non-total sort, blocking IO on the LSP executor (now `spawn_blocking`), and a jar-entry cache that could go stale on a `refresh()` racing an in-flight request (now caches the in-flight promise + generation guard). Declined with rationale: a `libraryEntries` path allowlist (LSP client is trusted, matches existing `dependency_contents`) and per-segment URI encoding (jar entries are namespace/class paths without reserved chars).
+- **Environment.** `bb check`'s full `cargo test` OOM-killed the linker (2 GiB sandbox, no swap); ran the equivalent as `cargo fmt` + `clippy --all-targets` + `CARGO_PROFILE_DEV_DEBUG=0 cargo test` (`debuginfo=0` shrinks link memory). Extension tests need `xvfb-run` (headless Linux). Neither affects shipped code.
+
+**What the plan could have specified better.** Two things would have saved rework: (1) it pinned `from_entries(root, entries)` with a simple "exclude entries under the project root" rule, which is subtly wrong — it drops in-workspace `:local/root` deps, and `source_paths` unioning in `test/` made it worse; the correct rule (exact-match against the project's declared source paths) only emerged from review. (2) It described the lgx gitlibs layout as "analogous" to tools.deps' and deferred confirmation to implementation — they are materially different, so the parsing design had to be reworked mid-task. A plan that pinned the exact exclusion semantics and read `lgx.rs`'s actual return shape up front would have avoided both. Otherwise the plan's task decomposition, pinned protocol contract, and testing strategy held up well.
