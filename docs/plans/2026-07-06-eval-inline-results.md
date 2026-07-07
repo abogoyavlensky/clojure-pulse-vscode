@@ -259,3 +259,61 @@ README.md, CHANGELOG.md   # MODIFY: docs
 
 - [x] **Step 4: Commit**
   `git commit -m "docs: document eval commands and inline results"`
+
+---
+
+## Completion Summary (2026-07-07)
+
+All 6 tasks implemented and committed; `make check` passes with 195 tests
+(45 new for `forms`, 20 for `inlineResults` helpers, plus client / manager /
+command-wiring cases).
+
+**What was built:**
+- `src/repl/forms.ts` — pure `formAtCursor` (six-rule innermost-form
+  resolution with reader-prefix / `#_` / `(comment …)` handling) and
+  `nsBefore`, via a small recursive-descent reader that shares the robustness
+  rules of `indent.ts`.
+- `src/nrepl/client.ts` — `eval` now forwards `ns`/`file`/`line`/`column`;
+  new `loadFile` sends the `load-file` op.
+- `src/repl/connectionManager.ts` — `eval`/`loadFile` resolve with an
+  `EvalOutcome` (`value` / concatenated `err` / `namespaceNotFound`) while
+  still streaming to the transcript.
+- `src/repl/inlineResults.ts` — `InlineResultsManager`: per-state ghost-text
+  decorations, form flash, trusted-only Copy hover, edit-tracking (shift /
+  drop), and pure helpers (`formatInlineText`, `buildHoverMarkdown`,
+  `shiftRange`).
+- `src/extension.ts` + `package.json` — `evalCurrentForm`, `evalFile`,
+  `clearInlineResults`, `copyEvalResult` commands, the
+  `clojurePulse.inlineEvalResults` setting (default on), and the wiring that
+  marks/resolves inline results around each eval.
+
+**Per-task codex reviews (all addressed):**
+- forms: skip reader-prefixed `ns` forms; don't let incomplete code *after*
+  the cursor block rule-6 walk-back — both fixed with regression tests.
+- inlineResults: restrict hover `isTrusted` to the Copy command only; drop
+  `byId`/`latestId` on document close; clear the prior editor's flash before
+  replacing its timer — all fixed.
+- commands: a mid-eval socket drop previously let disconnect's `clearAll()`
+  race ahead of the failure decoration. Resolved by **not** clearing inline
+  results on disconnect (nothing user-facing promised it, and Calva keeps them
+  too); the pending decoration now resolves to the failure via `runEval`'s
+  catch, and past results persist until edited or explicitly cleared.
+- Tasks 2 and 3 reviews found no issues.
+
+**Deviations from the plan:**
+- Inline results are no longer cleared on disconnect (see above); the plan's
+  lifecycle/error-handling notes were updated to match.
+- Namespace-not-found relies on nREPL's `status: ["namespace-not-found"]`.
+  This machine is headless, so the two GUI checks were replaced with an
+  end-to-end smoke run (`scripts/e2e-eval-smoke.mjs`) driving the compiled
+  modules against a real Babashka nREPL, plus a JVM nREPL (Clojure 1.12)
+  check: form-at-cursor eval in the detected namespace, `load-file`, an
+  exception surfacing as `err`, and namespace-not-found all verified. (Only
+  the JVM server emits the `namespace-not-found` status; Babashka returns a
+  plain `err`, so that one assertion is JVM-only — expected, since clj-pulse
+  targets JVM Clojure.) The GUI decoration rendering itself is covered
+  structurally by the manager tests and the command integration tests; an F5
+  smoke test on a desktop is still worthwhile.
+- The final confirming codex pass over the disconnect fix could not run (codex
+  usage limit); the change is a single-branch removal fully covered by the
+  passing suite.
