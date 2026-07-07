@@ -206,6 +206,7 @@ export class InlineResultsManager {
       }
     }
     this.byDoc.delete(uri);
+    this.updateContext();
   }
 
   /** Marks the evaluated range pending and flashes it. Returns the result id. */
@@ -231,6 +232,7 @@ export class InlineResultsManager {
 
     this.flash(editor, range);
     this.render(editor.document);
+    this.updateContext();
     return result.id;
   }
 
@@ -289,11 +291,27 @@ export class InlineResultsManager {
     return this.latestId ? this.byId.get(this.latestId)?.fullText : undefined;
   }
 
+  /** Whether any inline results are currently shown. */
+  hasResults(): boolean {
+    return this.byId.size > 0;
+  }
+
   clearAll(): void {
     this.byDoc.clear();
     this.byId.clear();
     this.latestId = undefined;
     this.renderAll();
+    this.updateContext();
+  }
+
+  /** Publishes `clojurePulse.hasInlineResults` so the Escape keybinding only
+   *  intercepts Escape while results are on screen. */
+  private updateContext(): void {
+    void vscode.commands.executeCommand(
+      "setContext",
+      "clojurePulse.hasInlineResults",
+      this.byId.size > 0,
+    );
   }
 
   dispose(): void {
@@ -307,6 +325,9 @@ export class InlineResultsManager {
     this.successType.dispose();
     this.errorType.dispose();
     this.flashType.dispose();
+    this.byDoc.clear();
+    this.byId.clear();
+    this.updateContext(); // reset the context key so Escape isn't left bound
   }
 
   private onEdit(event: vscode.TextDocumentChangeEvent): void {
@@ -339,6 +360,7 @@ export class InlineResultsManager {
     }
     this.byDoc.set(uri, survivors);
     this.render(event.document);
+    this.updateContext();
   }
 
   private flash(editor: vscode.TextEditor, range: vscode.Range): void {

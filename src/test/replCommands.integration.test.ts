@@ -83,6 +83,30 @@ suite("REPL commands", () => {
     }
   });
 
+  test("Escape clears inline results (hasResults toggles)", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns scratch)\n(+ 1 2)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(1, 7, 1, 7);
+
+      await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
+      assert.strictEqual(api.inlineResults.hasResults(), true);
+
+      // The Escape keybinding is bound to this command; invoke it directly.
+      await vscode.commands.executeCommand("clojurePulse.clearInlineResults");
+      assert.strictEqual(api.inlineResults.hasResults(), false);
+    } finally {
+      await server?.close();
+    }
+  });
+
   test("evalCurrentForm with no form at the cursor sends nothing", async () => {
     let server: FakeNrepl | undefined;
     try {

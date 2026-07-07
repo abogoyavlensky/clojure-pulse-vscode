@@ -172,6 +172,11 @@
         "command": "clojurePulse.newline",
         "key": "enter",
         "when": "editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !codeActionMenuVisible"
+      },
+      {
+        "command": "clojurePulse.clearInlineResults",
+        "key": "escape",
+        "when": "editorTextFocus && editorLangId == clojure && clojurePulse.hasInlineResults && !suggestWidgetVisible && !renameInputVisible && !parameterHintsVisible && !findWidgetVisible && !inSnippetMode && !editorHasSelection"
       }
     ]
   },
