@@ -93,6 +93,13 @@
       }
     },
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "clojurePulseSidebar",
+          "title": "External Libraries",
+          "icon": "images/activity-icon.svg"
+        }
+      ],
       "panel": [
         {
           "id": "clojurePulseRepl",
@@ -102,6 +109,12 @@
       ]
     },
     "views": {
+      "clojurePulseSidebar": [
+        {
+          "id": "clojurePulse.externalLibraries",
+          "name": "External Libraries"
+        }
+      ],
       "clojurePulseRepl": [
         {
           "type": "webview",
@@ -110,6 +123,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "clojurePulse.externalLibraries",
+        "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: direct dependencies only (best effort).\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
+      }
+    ],
     "commands": [
       {
         "command": "clojurePulse.restart",
@@ -165,8 +184,23 @@
         "command": "clojurePulse.replMenu",
         "title": "REPL Menu",
         "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.refreshExternalLibraries",
+        "title": "Refresh External Libraries",
+        "category": "Clojure Pulse",
+        "icon": "$(refresh)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "clojurePulse.refreshExternalLibraries",
+          "when": "view == clojurePulse.externalLibraries",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "clojurePulse.newline",
