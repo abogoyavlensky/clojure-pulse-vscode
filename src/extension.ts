@@ -4,6 +4,7 @@ import { createClient } from "./client";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
+import { ExternalLibrariesProvider } from "./externalLibraries";
 import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
@@ -28,6 +29,8 @@ let client: LanguageClient | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 let statusBar: StatusBar | undefined;
 let stateListener: vscode.Disposable | undefined;
+let librariesChangedListener: vscode.Disposable | undefined;
+let externalLibraries: ExternalLibrariesProvider | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -61,6 +64,27 @@ export async function activate(
           ? client.sendRequest(method, param)
           : Promise.reject(new Error("clj-pulse language server is not running")),
       ),
+    ),
+  );
+
+  // External Libraries panel. The request closure resolves the current client
+  // per call (same seam as the jar content provider) so it survives restarts;
+  // with no client the tree simply shows its empty/welcome state.
+  externalLibraries = new ExternalLibrariesProvider(
+    (method, param) =>
+      client
+        ? client.sendRequest(method, param)
+        : Promise.reject(new Error("clj-pulse language server is not running")),
+    undefined,
+    (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+  );
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider(
+      "clojurePulse.externalLibraries",
+      externalLibraries,
+    ),
+    vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", () =>
+      externalLibraries?.refresh(),
     ),
   );
 
@@ -112,6 +136,14 @@ async function start(): Promise<void> {
     });
   });
 
+  // Refresh the panel whenever the server (re)indexes libraries. Registered per
+  // client (handlers do not carry across restarts) and before start() so the
+  // startup indexing notification can't race ahead of the handler.
+  librariesChangedListener = newClient.onNotification(
+    "clojurePulse/librariesChanged",
+    () => externalLibraries?.refresh(),
+  );
+
   // Do not await: a failed spawn should surface as an error, not block (or
   // fail) extension activation. Drop the reference on failure so a later
   // restart spawns a fresh client instead of stopping a dead one.
@@ -119,13 +151,20 @@ async function start(): Promise<void> {
     .start()
     // First paint after start() resolves: by then the client has sent its
     // initial `didOpen`s, so the server's live cache holds already-open files
-    // (querying on the `Running` state can race ahead of that sync).
-    .then(() => refreshAllVisible())
+    // (querying on the `Running` state can race ahead of that sync). Also load
+    // the library list now, in case indexing already finished before the
+    // notification handler was live.
+    .then(() => {
+      refreshAllVisible();
+      externalLibraries?.refresh();
+    })
     .catch((err: unknown) => {
       outputChannel?.appendLine(`[clojure-pulse] failed to start server: ${String(err)}`);
       if (client === newClient) {
         stateListener?.dispose();
         stateListener = undefined;
+        librariesChangedListener?.dispose();
+        librariesChangedListener = undefined;
         client = undefined;
         statusBar?.update("error", { message: "failed to start the language server" });
       }
@@ -146,8 +185,13 @@ function toServerStatus(state: State): ServerStatus {
 async function stop(): Promise<void> {
   stateListener?.dispose();
   stateListener = undefined;
+  librariesChangedListener?.dispose();
+  librariesChangedListener = undefined;
   const current = client;
   client = undefined;
+  // Drop the previous client's libraries so the panel doesn't show stale rows
+  // while the next client (if any) starts up.
+  externalLibraries?.refresh();
   if (!current) {
     return;
   }

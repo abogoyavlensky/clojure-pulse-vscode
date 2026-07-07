@@ -42,6 +42,10 @@ suite("extension activation", () => {
       commands.includes("clojurePulse.showOutput"),
       "clojurePulse.showOutput should be registered",
     );
+    assert.ok(
+      commands.includes("clojurePulse.refreshExternalLibraries"),
+      "clojurePulse.refreshExternalLibraries should be registered",
+    );
   });
 
   test("restart recovers after a failed server start", async () => {
