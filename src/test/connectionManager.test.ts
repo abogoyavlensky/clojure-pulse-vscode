@@ -134,6 +134,88 @@ suite("ConnectionManager", () => {
     assert.ok(entries.includes("value|nil"), entries.join(", "));
   });
 
+  test("eval resolves with the value outcome", async () => {
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(+ 1 2)");
+    assert.deepStrictEqual(outcome, { value: "42", namespaceNotFound: false });
+  });
+
+  test("eval resolves with concatenated err and no value on an eval error", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        reply({ "new-session": "sess-1", status: ["done"] });
+        return;
+      }
+      if (msg.op === "describe") {
+        reply({ versions: {}, status: ["done"] });
+        return;
+      }
+      reply({ session: msg.session, err: "Syntax error " });
+      reply({ session: msg.session, err: "compiling\n" });
+      reply({ session: msg.session, status: ["eval-error", "done"] });
+    });
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(foo");
+    assert.strictEqual(outcome.value, undefined);
+    assert.strictEqual(outcome.err, "Syntax error compiling\n");
+    assert.strictEqual(outcome.namespaceNotFound, false);
+  });
+
+  test("eval flags namespace-not-found", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        reply({ "new-session": "sess-1", status: ["done"] });
+        return;
+      }
+      if (msg.op === "describe") {
+        reply({ versions: {}, status: ["done"] });
+        return;
+      }
+      reply({ session: msg.session, status: ["namespace-not-found", "done"] });
+    });
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(+ 1 2)", { ns: "missing.ns" });
+    assert.strictEqual(outcome.namespaceNotFound, true);
+  });
+
+  test("eval passes ns, file, line and column through to the server", async () => {
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    await manager.eval("(+ 1 2)", {
+      ns: "foo.bar",
+      file: "/p/a.clj",
+      line: 3,
+      column: 1,
+    });
+    const msg = server.received.find((m) => m.op === "eval");
+    assert.ok(msg);
+    assert.strictEqual(msg.ns, "foo.bar");
+    assert.strictEqual(msg.file, "/p/a.clj");
+    assert.strictEqual(msg.line, 3);
+    assert.strictEqual(msg.column, 1);
+  });
+
+  test("loadFile appends an info entry, streams value, and resolves", async () => {
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.loadFile("(ns a) :done", {
+      fileName: "a.clj",
+      filePath: "/p/a.clj",
+    });
+
+    const entries = transcript.entries();
+    const info = entries.find((e) => e.kind === "info" && e.text.includes("a.clj"));
+    assert.ok(info, `expected a load info entry, got: ${texts().join(", ")}`);
+    // The whole file text is not echoed as an `in` entry.
+    assert.ok(!entries.some((e) => e.kind === "in" && e.text.includes("(ns a)")));
+    assert.ok(entries.some((e) => e.kind === "value" && e.text === "42"));
+    assert.strictEqual(outcome.value, "42");
+
+    const msg = server.received.find((m) => m.op === "load-file");
+    assert.ok(msg);
+    assert.strictEqual(msg.file, "(ns a) :done");
+    assert.strictEqual(msg["file-path"], "/p/a.clj");
+    assert.strictEqual(msg["file-name"], "a.clj");
+  });
+
   test("connect times out when the server accepts TCP but never answers", async () => {
     server.respond(() => {
       // Swallow every message — a non-nREPL service holding the port.

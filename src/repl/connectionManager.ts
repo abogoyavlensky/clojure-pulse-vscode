@@ -1,6 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
-import { NreplClient, NreplMessage } from "../nrepl/client";
+import {
+  EvalExtras,
+  LoadFileExtras,
+  NreplClient,
+  NreplMessage,
+} from "../nrepl/client";
 import { Transcript } from "./transcript";
 
 export type ReplState = "disconnected" | "connecting" | "connected";
@@ -8,6 +13,26 @@ export type ReplState = "disconnected" | "connecting" | "connected";
 export interface ReplConnectionInfo {
   host: string;
   port: number;
+}
+
+/** Source-location params carried through to the nREPL `eval` op. */
+export type EvalOptions = EvalExtras;
+
+/** Path params carried through to the nREPL `load-file` op. */
+export type LoadFileOptions = LoadFileExtras;
+
+/**
+ * The distilled result of one evaluation, for callers that show it (e.g.
+ * inline decorations). The transcript still receives every streamed message
+ * regardless; this is additive.
+ */
+export interface EvalOutcome {
+  /** The last `value` the server sent, if any. */
+  value?: string;
+  /** All `err` chunks concatenated in arrival order, if any. */
+  err?: string;
+  /** True when any message's status reported `namespace-not-found`. */
+  namespaceNotFound: boolean;
 }
 
 const CONNECT_TIMEOUT_MS = 5000;
@@ -142,16 +167,45 @@ export class ConnectionManager {
     this.setState("disconnected");
   }
 
-  /** Evaluates code in the active session, streaming results to the transcript. */
-  async eval(code: string): Promise<void> {
+  /** Evaluates code in the active session, streaming results to the
+   *  transcript and resolving with the distilled outcome. */
+  async eval(code: string, opts?: EvalOptions): Promise<EvalOutcome> {
+    const connection = this.requireConnection();
+    this.transcript.append({ kind: "in", text: code });
+    const outcome = newOutcome();
+    await connection.client.eval(
+      code,
+      connection.session,
+      (msg) => this.collectEvalMessage(msg, outcome),
+      opts,
+    );
+    return outcome;
+  }
+
+  /** Loads the whole buffer via `load-file`, streaming results to the
+   *  transcript and resolving with the distilled outcome. */
+  async loadFile(content: string, opts?: LoadFileOptions): Promise<EvalOutcome> {
+    const connection = this.requireConnection();
+    this.transcript.append({
+      kind: "info",
+      text: `Loading ${opts?.fileName ?? "buffer"}…`,
+    });
+    const outcome = newOutcome();
+    await connection.client.loadFile(
+      content,
+      connection.session,
+      (msg) => this.collectEvalMessage(msg, outcome),
+      opts,
+    );
+    return outcome;
+  }
+
+  private requireConnection(): ActiveConnection {
     const connection = this.connections[0];
     if (!connection || this.currentState !== "connected") {
       throw new Error("Not connected to an nREPL server");
     }
-    this.transcript.append({ kind: "in", text: code });
-    await connection.client.eval(code, connection.session, (msg) =>
-      this.appendEvalMessage(msg),
-    );
+    return connection;
   }
 
   dispose(): void {
@@ -169,6 +223,20 @@ export class ConnectionManager {
     }
     if (typeof msg.value === "string") {
       this.transcript.append({ kind: "value", text: msg.value });
+    }
+  }
+
+  /** Streams a message to the transcript and accumulates it into `outcome`. */
+  private collectEvalMessage(msg: NreplMessage, outcome: EvalOutcome): void {
+    this.appendEvalMessage(msg);
+    if (typeof msg.value === "string") {
+      outcome.value = msg.value;
+    }
+    if (typeof msg.err === "string") {
+      outcome.err = (outcome.err ?? "") + msg.err;
+    }
+    if (Array.isArray(msg.status) && msg.status.includes("namespace-not-found")) {
+      outcome.namespaceNotFound = true;
     }
   }
 
@@ -204,6 +272,10 @@ export class ConnectionManager {
       listener(state);
     }
   }
+}
+
+function newOutcome(): EvalOutcome {
+  return { namespaceNotFound: false };
 }
 
 function withTimeout<T>(
