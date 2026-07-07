@@ -243,21 +243,20 @@ Errors with invalid-params when `path` is not an existing `.jar` file. Only call
 - Create: `src/externalLibraries.ts`
 - Test: `src/test/externalLibraries.test.ts`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
   With a fake `sendRequest` (and a fake dir reader): roots map libraries to `name version` labels; a jar node's children come from one `libraryEntries` call folded into folders-before-files, alphabetical; the fold handles nested paths (`aero/impl/walk.cljc`); the jar entry leaf carries the exact URI `jar:file:///abs/to.jar!/aero/impl/walk.cljc`; `libraryEntries` is called once per jar until `refresh()`; a rejected request yields empty children (no throw); `dir` libraries read children via the injected dir reader.
 
-- [ ] **Step 2: Run tests to verify they fail**
-  Run: `npm test`
-  Expected: FAIL / compile error for the new module.
+- [x] **Step 2: Run tests to verify they fail** — new module imported before it existed (compile error).
 
-- [ ] **Step 3: Implement the provider**
-  `ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNode>` with an `onDidChangeTreeData` emitter and `refresh()` that clears caches and fires. Constructor takes `sendRequest` (same `SendRequest` shape as `jarContentProvider.ts`) and a dir-reader function defaulting to `vscode.workspace.fs.readDirectory`. Node kinds: library root, folder (inside jar or dir), file. File nodes get `command: vscode.open` with the `jar:` URI (built via `vscode.Uri.file(jarPath)` then `jar:${fileUri}!/${entry}` string parse, matching the server's `parse_jar_uri`) or the plain file URI for dir libraries. Use `ThemeIcon("library")` for roots; default folder/file icons elsewhere.
+- [x] **Step 3: Implement the provider**
+  `ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNode>` with `onDidChangeTreeData` and `refresh()`. Constructor takes `sendRequest` + a dir-reader (default `vscode.workspace.fs.readDirectory`) + a log fn. File nodes open via `vscode.open` on the `jar:` URI or plain file URI. `ThemeIcon("library")` for roots; default folder/file icons elsewhere.
 
-- [ ] **Step 4: Run tests to verify they pass**
-  Run: `npm test`
-  Expected: PASS
+> Deviation: generalized `SendRequest` param to `unknown` (the two methods send `{}` vs `{ path }`, unlike jarContentProvider's fixed `{ uri }`). Added a third injected `log` param for output-channel logging.
+> Deviation (review fixup, commit 5204b99): cache the in-flight `libraryEntries` **promise** (not the resolved value) plus a generation counter, so concurrent expands share one request and a `refresh()` racing an in-flight request can't repopulate the cleared cache. Deduped file entries per folder level. Accepted risk: `jarEntryUri` doesn't percent-encode exotic chars (`#`/`?`/space) in entry paths — jar entries are namespace/class paths without reserved URI chars.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run tests to verify they pass** — `xvfb-run -a npm test`, 205 passing.
+
+- [x] **Step 5: Commit**
   `git commit -m "Add External Libraries tree data provider"`
 
 ### Task 7: Wire the provider into activation
@@ -266,20 +265,19 @@ Errors with invalid-params when `path` is not an existing `.jar` file. Only call
 - Modify: `src/extension.ts`
 - Test: `src/test/extension.test.ts`
 
-- [ ] **Step 1: Register the view and refresh triggers**
-  In `activate`: construct the provider with the same resolve-client-per-request closure used for the jar content provider; `vscode.window.registerTreeDataProvider` (or `createTreeView`) for `clojurePulse.externalLibraries`; register `clojurePulse.refreshExternalLibraries` → `provider.refresh()`. In `start()`'s state listener, call `provider.refresh()` when the state becomes `Running`; register `client.onNotification("clojurePulse/librariesChanged", ...)` → `provider.refresh()` on each new client (inside `start()`, since handlers do not carry across clients).
+- [x] **Step 1: Register the view and refresh triggers**
+  In `activate`: construct the provider with the resolve-client-per-request closure; `registerTreeDataProvider` for `clojurePulse.externalLibraries`; register `clojurePulse.refreshExternalLibraries` → `provider.refresh()`. Register `client.onNotification("clojurePulse/librariesChanged", ...)` → `provider.refresh()` per client inside `start()`; also refresh on start.
 
-- [ ] **Step 2: Extend the activation integration test**
-  Assert `clojurePulse.refreshExternalLibraries` is among registered commands after activation (mirror the existing command assertions in `extension.test.ts`).
+> Deviation: the refresh-on-startup trigger uses the `client.start().then(...)` callback (mirroring `refreshAllVisible`), not a `State.Running` listener — the codebase deliberately avoids keying work on `Running` (it races the initial `didOpen` sync; see the comment at `start()`). The notification handler is registered *before* `start()` so the startup indexing notification can't race ahead of it; `stop()` disposes it and clears the panel.
 
-- [ ] **Step 3: Run tests**
-  Run: `npm test`
-  Expected: PASS
+- [x] **Step 2: Extend the activation integration test** — asserts `clojurePulse.refreshExternalLibraries` is registered.
 
-- [ ] **Step 4: Manual verification (Extension Development Host)**
-  F5 with a deps.edn project that has `.cpcache`: sidebar icon appears; libraries listed sorted with versions; expanding a jar shows its folder tree; clicking a `.clj` file opens it read-only via `jar:`; editing deps.edn + re-running `clojure -Spath` refreshes the panel; the refresh button works; an lgx project shows dir libraries browsable from disk.
+- [x] **Step 3: Run tests** — `xvfb-run -a npm test`, 205 passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Manual verification (Extension Development Host)**
+  Interactive F5 can't run in this headless sandbox. Instead drove the **real built server binary** over LSP stdio against a deps.edn project with a hand-crafted `.cpcache` (real m2 jars + a gitlibs dir). Verified: `externalLibraries` returns `aero 1.1.6`, `babashka/fs 0.5.30`, `org.clojure/clojure 1.12.5`, gitlibs dir `io.github.clj-kondo/clj-kondo-bb` @ `adfc7df` — sorted, project's own `src` excluded, correct `kind`; `libraryEntries` on the clojure jar returns 3724 files incl. `clojure/core.clj` (dirs excluded, sorted); a non-jar path is rejected with `-32602`; `clojurePulse/librariesChanged` fires after indexing. The provider→TreeItem URI/label/caching logic is covered by unit tests; only the literal click-to-open in a live VS Code window is unverified (uses the pre-existing, working `jar:` content provider).
+
+- [x] **Step 5: Commit**
   `git commit -m "Wire External Libraries panel into activation"`
 
 ### Task 8: Docs
