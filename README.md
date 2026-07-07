@@ -27,6 +27,16 @@ do not need any other Clojure extension.
   - Keyword and Integrant-key navigation, and built-in Java interop.
 - **Library navigation** — jumping into a `jar:` source (a dependency or
   `clojure.core`) opens the real file, read-only.
+- **External Libraries panel** — a Cursive-style tree, in its own activity-bar
+  container, lists every dependency `clj-pulse` resolved for the project:
+  deps.edn's full transitive classpath, an lgx project's git/`:local/root`
+  deps, or a Leiningen project's direct dependencies (best effort — Leiningen
+  resolution is direct-deps-only). Expand a library to browse its contents —
+  jar entries open read-only via the same `jar:` provider, and directory-based
+  deps are browsed straight from disk. The panel refreshes itself whenever the
+  classpath is re-indexed, and a refresh button is on the view title. If
+  nothing is resolved yet, the empty state tells you how to generate a
+  classpath for your project type (e.g. `clojure -Spath` for deps.edn).
 - **Indent on Enter** — pressing Enter indents the new line to the
   structurally correct column (vectors/maps align to the first element,
   symbol-headed lists get a 2-space body). Handled client-side: the extension
@@ -155,6 +165,8 @@ Run these from the Command Palette:
 
 - **Clojure Pulse: Restart Server** — restart the language server.
 - **Clojure Pulse: Show Output** — open the server output channel.
+- **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
+  tree (also available as a button on the view title).
 - **Clojure Pulse: Connect to Running nREPL** — connect to an nREPL server by
   host and port.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor

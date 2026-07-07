@@ -4,6 +4,13 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **External Libraries panel**: a tree view in a new Clojure Pulse activity-bar
+  container listing the dependencies `clj-pulse` resolved for the project
+  (deps.edn transitive classpath, lgx deps, or Leiningen direct deps). Expand a
+  library to browse its files — jar entries open read-only, directory deps are
+  read from disk. Refreshes on classpath re-indexing (via the
+  `clojurePulse/librariesChanged` server notification) and via a
+  **Refresh External Libraries** command / view-title button.
 - nREPL support: **Connect to Running nREPL** (port pre-filled from
   `.nrepl-port`), **Evaluate Selection**, and **Disconnect** commands; a
   Cursive-style **REPL** pane in the bottom panel streaming banners, evaluated
