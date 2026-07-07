@@ -14,10 +14,13 @@ import { Transcript } from "./repl/transcript";
 import {
   ConnectCancelledError,
   ConnectionManager,
+  EvalOptions,
   readNreplPort,
 } from "./repl/connectionManager";
 import { ReplPanelProvider } from "./repl/replPanel";
 import { createReplStatusBar } from "./repl/replStatusBar";
+import { InlineResultsManager } from "./repl/inlineResults";
+import { formAtCursor, nsBefore } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -31,6 +34,7 @@ let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
   replManager: ConnectionManager;
+  inlineResults: InlineResultsManager;
 }
 
 export async function activate(
@@ -62,10 +66,10 @@ export async function activate(
 
   setupIgnoredFormDimming(context);
   setupMaintainIndentation(context);
-  const replManager = setupRepl(context);
+  const repl = setupRepl(context);
 
   await start();
-  return { replManager };
+  return repl;
 }
 
 export async function deactivate(): Promise<void> {
@@ -166,20 +170,26 @@ async function restart(): Promise<void> {
  * in the bottom panel, status bar item, and the connect/disconnect/eval
  * commands. Fully independent of the clj-pulse language server.
  */
-function setupRepl(context: vscode.ExtensionContext): ConnectionManager {
+function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   const transcript = new Transcript();
   const manager = new ConnectionManager(transcript);
   const panel = new ReplPanelProvider(transcript);
   panel.register(context);
+  const inlineResults = new InlineResultsManager();
 
   const replStatus = createReplStatusBar();
   replStatus.update(manager.state);
-  manager.onDidChangeState((state) =>
-    replStatus.update(state, manager.connectionInfo),
-  );
+  manager.onDidChangeState((state) => {
+    replStatus.update(state, manager.connectionInfo);
+    // Inline results belong to a live session; drop them when it ends.
+    if (state === "disconnected") {
+      inlineResults.clearAll();
+    }
+  });
 
   context.subscriptions.push(
     replStatus,
+    inlineResults,
     { dispose: () => manager.dispose() },
     vscode.commands.registerCommand("clojurePulse.connectRepl", () =>
       connectRepl(manager, panel),
@@ -192,13 +202,50 @@ function setupRepl(context: vscode.ExtensionContext): ConnectionManager {
       await manager.disconnect();
     }),
     vscode.commands.registerCommand("clojurePulse.evalSelection", () =>
-      evalSelection(manager, panel),
+      evalSelection(manager, panel, inlineResults),
+    ),
+    vscode.commands.registerCommand("clojurePulse.evalCurrentForm", () =>
+      evalCurrentForm(manager, panel, inlineResults),
+    ),
+    vscode.commands.registerCommand("clojurePulse.evalFile", () =>
+      evalFile(manager, panel),
+    ),
+    vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
+      inlineResults.clearAll(),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.copyEvalResult",
+      (id?: string) => copyEvalResult(inlineResults, id),
     ),
     vscode.commands.registerCommand("clojurePulse.replMenu", () =>
       replMenu(manager, panel),
     ),
   );
-  return manager;
+  return { replManager: manager, inlineResults };
+}
+
+/** True when inline eval results are enabled in settings (default on). */
+function inlineEnabled(): boolean {
+  return vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<boolean>("inlineEvalResults", true);
+}
+
+/** Guards eval commands on a live connection; warns with a Connect action and
+ *  returns false when disconnected. */
+function ensureConnected(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+): boolean {
+  if (manager.state === "connected") {
+    return true;
+  }
+  void vscode.window
+    .showWarningMessage("Not connected to an nREPL server.", "Connect")
+    .then((choice) =>
+      choice === "Connect" ? connectRepl(manager, panel) : undefined,
+    );
+  return false;
 }
 
 async function connectRepl(
@@ -258,31 +305,184 @@ async function connectRepl(
 async function evalSelection(
   manager: ConnectionManager,
   panel: ReplPanelProvider,
+  inlineResults: InlineResultsManager,
 ): Promise<void> {
-  if (manager.state !== "connected") {
-    // Not awaited: the command should finish while the notification lingers.
-    void vscode.window
-      .showWarningMessage("Not connected to an nREPL server.", "Connect")
-      .then((choice) =>
-        choice === "Connect" ? connectRepl(manager, panel) : undefined,
-      );
+  if (!ensureConnected(manager, panel)) {
     return;
   }
   const editor = vscode.window.activeTextEditor;
   const code = editor?.document.getText(editor.selection);
-  if (!code || code.trim().length === 0) {
+  if (!editor || !code || code.trim().length === 0) {
     vscode.window.showWarningMessage("Select an expression to evaluate.");
     return;
   }
   panel.reveal();
-  try {
-    await manager.eval(code);
-  } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(
-      `Clojure Pulse: evaluation failed — ${reason}`,
+  await runEval(manager, inlineResults, {
+    editor,
+    range: editor.selection,
+    code,
+    opts: sourceParams(editor, editor.selection.start),
+  });
+}
+
+async function evalCurrentForm(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+  inlineResults: InlineResultsManager,
+): Promise<void> {
+  if (!ensureConnected(manager, panel)) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+
+  // A non-empty selection wins; otherwise resolve the form at the cursor.
+  let range: vscode.Range;
+  if (!editor.selection.isEmpty) {
+    range = editor.selection;
+  } else {
+    const text = editor.document.getText();
+    const found = formAtCursor(text, editor.document.offsetAt(editor.selection.active));
+    if (!found) {
+      void vscode.window.setStatusBarMessage(
+        "Clojure Pulse: no form found at cursor",
+        3000,
+      );
+      return;
+    }
+    range = new vscode.Range(
+      editor.document.positionAt(found.start),
+      editor.document.positionAt(found.end),
     );
   }
+
+  const code = editor.document.getText(range);
+  const nsName = nsBefore(editor.document.getText(), editor.document.offsetAt(range.start));
+  // Inline results make the value visible in place; reveal the pane only when
+  // they are off.
+  if (!inlineEnabled()) {
+    panel.reveal();
+  }
+  await runEval(manager, inlineResults, {
+    editor,
+    range,
+    code,
+    opts: { ...sourceParams(editor, range.start), ns: nsName },
+  });
+}
+
+async function evalFile(
+  manager: ConnectionManager,
+  panel: ReplPanelProvider,
+): Promise<void> {
+  if (!ensureConnected(manager, panel)) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  panel.reveal();
+  const doc = editor.document;
+  const onDisk = doc.uri.scheme === "file";
+  try {
+    await manager.loadFile(doc.getText(), {
+      filePath: onDisk ? doc.uri.fsPath : undefined,
+      fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
+    });
+  } catch (err: unknown) {
+    reportEvalError(err);
+  }
+}
+
+/** Source-location params for a position, for stack traces. `file` is sent
+ *  only for on-disk documents; line/column are 1-based. */
+function sourceParams(
+  editor: vscode.TextEditor,
+  position: vscode.Position,
+): EvalOptions {
+  const uri = editor.document.uri;
+  return {
+    file: uri.scheme === "file" ? uri.fsPath : undefined,
+    line: position.line + 1,
+    column: position.character + 1,
+  };
+}
+
+interface EvalRequest {
+  editor: vscode.TextEditor;
+  range: vscode.Range;
+  code: string;
+  opts: EvalOptions;
+}
+
+/** Runs one evaluation: marks the range pending (when inline results are on),
+ *  streams to the pane via the manager, and resolves the inline decoration. */
+async function runEval(
+  manager: ConnectionManager,
+  inlineResults: InlineResultsManager,
+  req: EvalRequest,
+): Promise<void> {
+  const id = inlineEnabled()
+    ? inlineResults.markPending(req.editor, req.range)
+    : undefined;
+  try {
+    const outcome = await manager.eval(req.code, req.opts);
+    if (id) {
+      inlineResults.resolve(id, outcome);
+    }
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    if (id) {
+      inlineResults.fail(id, reason);
+    }
+    reportEvalError(err);
+  }
+}
+
+function reportEvalError(err: unknown): void {
+  const reason = err instanceof Error ? err.message : String(err);
+  void vscode.window.showErrorMessage(
+    `Clojure Pulse: evaluation failed — ${reason}`,
+  );
+}
+
+/** Copies a result's full value: the given id (from the hover link), else the
+ *  result under the cursor, else the most recent one. */
+async function copyEvalResult(
+  inlineResults: InlineResultsManager,
+  id?: string,
+): Promise<void> {
+  let text = id ? inlineResults.fullTextOf(id) : undefined;
+  if (text === undefined) {
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      text = inlineResults.resultAt(
+        editor.document.uri.toString(),
+        editor.selection.active.line,
+      );
+    }
+  }
+  if (text === undefined) {
+    text = inlineResults.latest();
+  }
+  if (text === undefined) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no evaluation result to copy",
+      3000,
+    );
+    return;
+  }
+  await vscode.env.clipboard.writeText(text);
+  void vscode.window.setStatusBarMessage("Clojure Pulse: result copied", 2000);
+}
+
+/** Basename of a filesystem path (portable — no node:path import needed). */
+function basename(fsPath: string): string {
+  const parts = fsPath.split(/[\\/]/);
+  return parts[parts.length - 1] || fsPath;
 }
 
 async function replMenu(

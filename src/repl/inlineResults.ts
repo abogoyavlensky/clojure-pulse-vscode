@@ -145,6 +145,7 @@ export class InlineResultsManager {
   private nextId = 1;
   private latestId: string | undefined;
   private flashTimer: ReturnType<typeof setTimeout> | undefined;
+  private flashEditor: vscode.TextEditor | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor() {
@@ -173,10 +174,22 @@ export class InlineResultsManager {
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument((e) => this.onEdit(e)),
       vscode.workspace.onDidCloseTextDocument((doc) =>
-        this.byDoc.delete(doc.uri.toString()),
+        this.forget(doc.uri.toString()),
       ),
       vscode.window.onDidChangeVisibleTextEditors(() => this.renderAll()),
     );
+  }
+
+  /** Drops all state for a document (e.g. when it closes), so a late-resolving
+   *  eval and copy/latest lookups never touch stale results. */
+  private forget(uri: string): void {
+    for (const result of this.byDoc.get(uri) ?? []) {
+      this.byId.delete(result.id);
+      if (this.latestId === result.id) {
+        this.latestId = undefined;
+      }
+    }
+    this.byDoc.delete(uri);
   }
 
   /** Marks the evaluated range pending and flashes it. Returns the result id. */
@@ -315,11 +328,16 @@ export class InlineResultsManager {
   private flash(editor: vscode.TextEditor, range: vscode.Range): void {
     if (this.flashTimer) {
       clearTimeout(this.flashTimer);
+      // Clear the earlier flash — it may be in a different editor that the
+      // replaced timer would otherwise have left highlighted.
+      this.flashEditor?.setDecorations(this.flashType, []);
     }
     editor.setDecorations(this.flashType, [range]);
+    this.flashEditor = editor;
     this.flashTimer = setTimeout(() => {
       editor.setDecorations(this.flashType, []);
       this.flashTimer = undefined;
+      this.flashEditor = undefined;
     }, FLASH_MS);
   }
 
@@ -381,7 +399,9 @@ export class InlineResultsManager {
       const md = new vscode.MarkdownString(
         buildHoverMarkdown(result.fullText, result.id),
       );
-      md.isTrusted = true;
+      // Trust only our Copy command — result text is untrusted and could
+      // otherwise smuggle an active `command:` link into the hover.
+      md.isTrusted = { enabledCommands: ["clojurePulse.copyEvalResult"] };
       options.hoverMessage = md;
     }
     return options;

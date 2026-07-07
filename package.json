@@ -79,6 +79,11 @@
           "minimum": 0.1,
           "maximum": 1,
           "markdownDescription": "Opacity for dimmed `#_`/`(comment …)` forms — lower is more faded. Reload the window to apply."
+        },
+        "clojurePulse.inlineEvalResults": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show evaluation results inline in the editor as ghost text (` => value`) at the end of the evaluated form. Hover the result for the full value and a Copy link. When off, results appear only in the REPL pane."
         }
       }
     },
@@ -134,6 +139,26 @@
       {
         "command": "clojurePulse.evalSelection",
         "title": "Evaluate Selection",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.evalCurrentForm",
+        "title": "Evaluate Current Form",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.evalFile",
+        "title": "Evaluate File",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.clearInlineResults",
+        "title": "Clear Inline Results",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.copyEvalResult",
+        "title": "Copy Evaluation Result",
         "category": "Clojure Pulse"
       },
       {

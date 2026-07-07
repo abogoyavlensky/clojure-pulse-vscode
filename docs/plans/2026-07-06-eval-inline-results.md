@@ -152,21 +152,21 @@ README.md, CHANGELOG.md   # MODIFY: docs
 - Modify: `src/nrepl/client.ts`
 - Test: `src/test/nreplClient.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Using the fake nREPL server: `eval` with `{ ns: "foo.bar", file: "/p/a.clj", line: 3, column: 1 }` puts those keys on the wire message; `eval` without extras sends none of them; `loadFile("(ns a)", session, cb, { filePath: "/p/a.clj", fileName: "a.clj" })` sends `op: "load-file"` with `file`, `file-path`, `file-name`; `loadFile` without path extras omits `file-path`/`file-name`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `eval` drops extras / `loadFile` does not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `eval(code, session, onMessage?, extra?: { ns?, file?, line?, column? })` spreads defined extras into the request. `loadFile(file, session, onMessage?, extra?: { filePath?, fileName? })` sends `{ op: "load-file", file, session, "file-path"?, "file-name"? }`. The fake server may need a `load-file` default behavior mirroring `eval`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: support eval source params and load-file op in nREPL client"`
 
 ### Task 3: connection manager — eval outcome and loadFile
@@ -175,21 +175,21 @@ README.md, CHANGELOG.md   # MODIFY: docs
 - Modify: `src/repl/connectionManager.ts`
 - Test: `src/test/connectionManager.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `eval("(+ 1 2)")` resolves with `{ value: "3", namespaceNotFound: false }` and still appends `in`/`value` transcript entries; an eval whose responses carry `err` chunks and `status: ["eval-error", "done"]` resolves with concatenated `err` and no value; a response with `status: ["namespace-not-found", "done"]` sets `namespaceNotFound: true`; `eval` passes `ns`/`file`/`line`/`column` through to the client (assert on the fake server's received message); `loadFile("(ns a) :done", { fileName: "a.clj", filePath: "/p/a.clj" })` appends an `info` entry containing `a.clj` (not the file content as `in`), streams `value` to the transcript, and resolves with the outcome.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `EvalOptions` and `EvalOutcome` types. `eval(code, opts?)` keeps its current streaming behavior and additionally accumulates: last `value`, concatenated `err`, `namespaceNotFound` from any message's `status` array. `loadFile(content, opts)` mirrors `eval` but calls the client's `loadFile`, appends `{ kind: "info", text: "Loading <fileName ?? \"buffer\">…" }` first, and streams responses through the same `appendEvalMessage`. Existing callers (`eval(code)` in commands/tests) keep working — the return value is additive.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: return eval outcomes and support load-file in connection manager"`
 
 ### Task 4: inline results manager (`inlineResults.ts`)
@@ -198,21 +198,21 @@ README.md, CHANGELOG.md   # MODIFY: docs
 - Create: `src/repl/inlineResults.ts`
 - Test: `src/test/inlineResults.test.ts`
 
-- [ ] **Step 1: Write failing tests for the pure helpers**
+- [x] **Step 1: Write failing tests for the pure helpers**
   Inline text formatting: first line only, 120-char cap with ellipsis, spaces → NBSP, ` => ` prefix. Hover markdown: contains a ```clojure fence with the full value and a `command:clojurePulse.copyEvalResult` link with the encoded result id. Range shifting (structural `{start, end}` line/character shapes, no vscode imports): edit entirely above shifts a result down/up by the line delta; edit entirely below leaves it; intersecting edit marks it dropped; multi-line replacement deltas.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — module does not exist.
 
-- [ ] **Step 3: Implement `InlineResultsManager`**
+- [x] **Step 3: Implement `InlineResultsManager`**
   Pure helpers first (exported), then the manager: three long-lived decoration types (pending/success/error) with `ThemeColor`s per the design, plus a flash type (`editor.wordHighlightBackground` background) applied on `markPending` and cleared via `setTimeout` ~200 ms. State per document uri; `markPending(editor, range)` drops any existing result ending on the same line, assigns an id, renders. `resolve(id, outcome)` picks error text (`err` first line; namespace-not-found message when flagged) or value, re-renders all decorations for editors showing that document. `onDidChangeTextDocument` applies the pure shifting helper per content change and re-renders; `onDidCloseTextDocument` drops state. `clearAll()`, `resultAt(uri, position)`, `latest()`, `dispose()` (clear timers and decoration types). Re-render also on `onDidChangeVisibleTextEditors` so results survive tab switches.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add inline eval result decorations"`
 
 ### Task 5: commands, setting, and wiring
