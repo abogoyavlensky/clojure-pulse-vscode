@@ -53,7 +53,7 @@ No default keybindings — all commands are palette-only; users bind their own.
 - **Highlight flash:** the resolved form's exact range gets a short-lived background decoration (`editor.wordHighlightBackground`, removed after ~200 ms) — feedback showing precisely what was sent.
 - **Hover:** the evaluated range's `DecorationOptions.hoverMessage` is a trusted `MarkdownString`: the full value in a ```clojure code fence plus a `[Copy result](command:clojurePulse.copyEvalResult?...)` link. This is how the non-selectable ghost text is made copyable.
 - **stdout/stderr never render inline** — they stream to the REPL pane as today. Errors render their first line inline; the full trace is in the pane and hover.
-- **Lifecycle:** one result per line — a new eval whose result lands on the same end line replaces the previous result there. A document edit that intersects a result's range clears that result; edits entirely above/below shift the surviving results' ranges by the line delta so they stay glued to their form. Results otherwise persist until "Clear Inline Results", disconnect, or the document is closed.
+- **Lifecycle:** one result per line — a new eval whose result lands on the same end line replaces the previous result there. A document edit that intersects a result's range clears that result; edits entirely above/below shift the surviving results' ranges by the line delta so they stay glued to their form. Results otherwise persist until "Clear Inline Results" or the document is closed. They are **not** cleared on disconnect — a mid-eval socket drop then resolves its pending decoration to the failure instead of silently vanishing, and past results stay readable (Calva does the same).
 - **Setting:** `clojurePulse.inlineEvalResults` (boolean, default `true`). Off → no decorations at all; pane behavior unchanged.
 - **Focus behavior:** `evalCurrentForm` does **not** reveal the REPL pane when inline results are on (the result is visible in place); it reveals the pane when they are off. `evalFile` and `evalSelection` always reveal the pane.
 
@@ -76,7 +76,7 @@ Eval command (extension.ts)
 New/changed units:
 
 - **`src/repl/forms.ts` (new, pure):** `formAtCursor(text: string, offset: number): { start: number; end: number } | null` implementing the six rules plus refinements, and `nsBefore(text: string, offset: number): string | undefined`. Implemented as a single forward scan (extending or wrapping `Scanner` from `src/indent.ts`, which already handles strings, comments, regex, char literals, and dispatch): while scanning to the cursor, track the open-frame stack, the last completed form at each open level, and current-token boundaries; after the cursor, scan forward only as far as needed to close the relevant form. Forward-only scanning avoids unreliable backward parsing over strings. Malformed/unbalanced code returns `null` (or the best complete form) — never garbage ranges. No vscode imports.
-- **`src/repl/inlineResults.ts` (new):** `InlineResultsManager` owning the decoration types and per-document result state (`Map<uriString, InlineResult[]>` where `InlineResult = { id, range, state, text, fullText }`). API: `markPending(editor, range): id`, `resolve(id, outcome)` (a silent no-op when the id was already dropped by an edit, clear, or disconnect), `clearAll()`, `resultAt(uri, position)` / `latest()` for the copy command, `dispose()`. Subscribes to `onDidChangeTextDocument` (intersect → drop; above/below → shift) and `onDidCloseTextDocument` (drop state). Pure presentation helpers exported for unit tests: inline text formatting (first line/cap/NBSP), hover markdown building, and range shifting.
+- **`src/repl/inlineResults.ts` (new):** `InlineResultsManager` owning the decoration types and per-document result state (`Map<uriString, InlineResult[]>` where `InlineResult = { id, range, state, text, fullText }`). API: `markPending(editor, range): id`, `resolve(id, outcome)` (a silent no-op when the id was already dropped by an edit, an explicit clear, or the document closing), `fail(id, message)`, `clearAll()`, `resultAt(uri, line)` / `latest()` for the copy command, `dispose()`. Subscribes to `onDidChangeTextDocument` (intersect → drop; above/below → shift) and `onDidCloseTextDocument` (drop state). Pure presentation helpers exported for unit tests: inline text formatting (first line/cap/NBSP), hover markdown building, and range shifting.
 - **`src/nrepl/client.ts` (modify):** `eval(code, session, onMessage?, extra?)` where `extra` may carry `ns`, `file`, `line`, `column` (spread into the request); new `loadFile(file, session, onMessage?, extra?)` sending `op: "load-file"` with optional `file-path`/`file-name`. Both remain thin wrappers over `send`.
 - **`src/repl/connectionManager.ts` (modify):** `eval(code, opts?)` passes params through and now resolves with `EvalOutcome = { value?: string; err?: string; namespaceNotFound: boolean }` — last `value`, concatenated `err` chunks, `namespace-not-found` detected from response `status`. Transcript streaming is unchanged (existing callers unaffected). New `loadFile(content, { filePath?, fileName? })` with the same outcome shape; appends an `info` transcript entry (`Loading <name>…`) instead of an `in` entry with the whole file text.
 - **`src/extension.ts` (modify):** registers the new commands, wires guards (not connected → existing warning with Connect button; no active editor / no form → 3-second status-bar message, nothing sent), reads the setting, exposes the inline manager on `ExtensionApi` for integration tests.
@@ -222,24 +222,24 @@ README.md, CHANGELOG.md   # MODIFY: docs
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write failing integration tests**
+- [x] **Step 1: Write failing integration tests**
   After activation: `clojurePulse.evalCurrentForm`, `clojurePulse.evalFile`, `clojurePulse.clearInlineResults`, `clojurePulse.copyEvalResult` appear in `vscode.commands.getCommands()`. With the fake server connected: open a scratch Clojure document `(ns scratch)\n(+ 1 2)`, place the cursor inside `(+ 1 2)`, run `evalCurrentForm` → transcript gains `in` = `(+ 1 2)` and a `value` entry, the fake server received `ns: "scratch"`, and the exposed inline manager holds one resolved result; cursor in empty top-level whitespace of an empty doc → command resolves without throwing and sends nothing; `evalFile` → fake server receives a `load-file` op with the buffer content. Not-connected guard resolves without throwing (mirrors existing evalSelection test).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — commands not registered.
 
-- [ ] **Step 3: Add contributions to `package.json`**
+- [x] **Step 3: Add contributions to `package.json`**
   Commands (category "Clojure Pulse"): `evalCurrentForm` "Evaluate Current Form", `evalFile` "Evaluate File", `clearInlineResults` "Clear Inline Results", `copyEvalResult` "Copy Evaluation Result". Setting `clojurePulse.inlineEvalResults` (boolean, default `true`, markdownDescription explaining ghost-text results and the hover Copy link). No keybindings.
 
-- [ ] **Step 4: Wire in `extension.ts`**
-  Instantiate `InlineResultsManager` in `setupRepl`, expose it on `ExtensionApi`, push into subscriptions. `evalCurrentForm`: connected guard (reuse the evalSelection pattern) → active editor guard → target = non-empty selection, else `formAtCursor` (status-bar message + return on `null`) → code + `nsBefore` + 1-based line/column + `file` for file-scheme docs → if setting on: `markPending` + eval + `resolve`; reveal the pane only when the setting is off. `evalFile`: connected guard → `loadFile(document.getText(), { filePath?, fileName? })` → reveal pane. `evalSelection`: unchanged flow plus `markPending`/`resolve` on the selection range when the setting is on. `clearInlineResults` / `copyEvalResult` (with optional id arg from the hover link; fallback to result at cursor, then latest; `vscode.env.clipboard.writeText`). Clear all inline results on disconnect (subscribe to the manager's state change). Wrap eval rejections so a socket drop resolves the pending decoration to an error.
+- [x] **Step 4: Wire in `extension.ts`**
+  Instantiate `InlineResultsManager` in `setupRepl`, expose it on `ExtensionApi`, push into subscriptions. `evalCurrentForm`: connected guard (reuse the evalSelection pattern) → active editor guard → target = non-empty selection, else `formAtCursor` (status-bar message + return on `null`) → code + `nsBefore` + 1-based line/column + `file` for file-scheme docs → if setting on: `markPending` + eval + `resolve`; reveal the pane only when the setting is off. `evalFile`: connected guard → `loadFile(document.getText(), { filePath?, fileName? })` → reveal pane. `evalSelection`: unchanged flow plus `markPending`/`resolve` on the selection range when the setting is on. `clearInlineResults` / `copyEvalResult` (with optional id arg from the hover link; fallback to result at cursor, then latest; `vscode.env.clipboard.writeText`). Wrap eval rejections so a socket drop resolves the pending decoration to an error (inline results are intentionally not cleared on disconnect, so this failure stays visible).
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS (all suites).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: add eval current form and eval file commands with inline results"`
 
 ### Task 6: end-to-end check and docs
@@ -247,15 +247,15 @@ README.md, CHANGELOG.md   # MODIFY: docs
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Manual end-to-end verification**
+- [x] **Step 1: Manual end-to-end verification**
   Against a real nREPL (`clj -M -m nrepl.cmdline`): eval a form mid-`defn` (flash + pending + green result inline, entry in pane), cursor right after a closing paren, a `#_`-discarded form, a form inside `(comment ...)`, a form in a namespaced file before loading it (namespace-not-found inline hint), "Evaluate File" then the form again (works), an exception (red inline first line, full trace in pane, hover shows it), long value (truncated inline, full in hover, Copy link works), edit the form (result clears), edit above it (result stays glued), toggle the setting off (pane-only, pane revealed), "Clear Inline Results". On a headless machine, replace GUI checks with test-host equivalents where possible and note the deviation in the completion summary.
 
-- [ ] **Step 2: Full check**
+- [x] **Step 2: Full check**
   Run: `make check`
   Expected: lint, compile, and tests all pass.
 
-- [ ] **Step 3: Update docs**
+- [x] **Step 3: Update docs**
   README "REPL" section: the two new commands, form-selection rules in brief, inline results (hover/copy/clear, the setting), no default keybindings + an example custom keybinding snippet. CHANGELOG entry under the unreleased version.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "docs: document eval commands and inline results"`

@@ -110,9 +110,26 @@ project's `.nrepl-port` file when present.
   Terminal and Output: a connection banner with nREPL/Clojure versions,
   evaluated forms, results, and anything printed to stdout/stderr, styled to
   match your theme.
-- **Evaluate Selection** — select an expression and run **Clojure Pulse:
-  Evaluate Selection**; the code, its value, and any output stream into the
-  REPL pane.
+- **Evaluate Current Form** — with no selection, evaluates the form at the
+  cursor. It picks the token under (or just before) the cursor, the form that
+  ends just before the cursor, or the innermost enclosing form — so putting the
+  cursor right after a closing paren evaluates that whole form. A `#_` discard
+  is unwrapped so the form itself runs, and the form is evaluated in the file's
+  namespace (its nearest preceding `ns` form). A non-empty selection is
+  evaluated as-is.
+- **Evaluate File** — compiles the whole buffer (unsaved changes included) via
+  nREPL's `load-file`, so the file's own `ns` form takes effect and stack
+  traces carry real file/line locations.
+- **Evaluate Selection** — evaluate exactly the selected code.
+- **Inline results** — by default the value appears as ghost text (` => value`)
+  at the end of the evaluated form: dimmed while it runs, green on success, the
+  error's first line in red on failure. Hover the result for the full value and
+  a **Copy result** link. The evaluated form flashes briefly so you can see
+  what was sent. Editing the form clears its result; editing elsewhere keeps it
+  glued in place. **Clear Inline Results** removes them all, and **Copy
+  Evaluation Result** copies the value at the cursor. Turn the ghost text off
+  with the `clojurePulse.inlineEvalResults` setting — results still stream to
+  the REPL pane.
 - **Status bar** — `nREPL host:port` at the bottom left shows the connection.
   Click it to connect when disconnected, or for a Show REPL / Disconnect menu
   when connected. If the server goes away, the status flips back and the pane
@@ -120,6 +137,17 @@ project's `.nrepl-port` file when present.
 
 The REPL connection is independent of the `clj-pulse` language server — either
 works without the other.
+
+The eval commands ship without default keybindings. Bind the ones you use, for
+example in `keybindings.json`:
+
+```json
+{
+  "key": "cmd+enter",
+  "command": "clojurePulse.evalCurrentForm",
+  "when": "editorTextFocus && editorLangId == clojure"
+}
+```
 
 ## Commands
 
@@ -129,8 +157,14 @@ Run these from the Command Palette:
 - **Clojure Pulse: Show Output** — open the server output channel.
 - **Clojure Pulse: Connect to Running nREPL** — connect to an nREPL server by
   host and port.
+- **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor
+  (or the selection) in the connected REPL.
+- **Clojure Pulse: Evaluate File** — load the whole current file into the REPL.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
   connected REPL.
+- **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
+- **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
+  the cursor.
 - **Clojure Pulse: Disconnect from nREPL** — close the REPL connection.
 
 ## Using it on its own

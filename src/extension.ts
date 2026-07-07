@@ -179,13 +179,13 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
 
   const replStatus = createReplStatusBar();
   replStatus.update(manager.state);
-  manager.onDidChangeState((state) => {
-    replStatus.update(state, manager.connectionInfo);
-    // Inline results belong to a live session; drop them when it ends.
-    if (state === "disconnected") {
-      inlineResults.clearAll();
-    }
-  });
+  manager.onDidChangeState((state) =>
+    replStatus.update(state, manager.connectionInfo),
+  );
+  // Inline results are not cleared on disconnect: a mid-eval socket drop then
+  // resolves its pending decoration to the failure (via runEval's catch)
+  // instead of silently vanishing, and past results stay readable until the
+  // form is edited or "Clear Inline Results" runs.
 
   context.subscriptions.push(
     replStatus,
