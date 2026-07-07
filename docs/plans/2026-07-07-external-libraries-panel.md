@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a Cursive-style "External Libraries" tree view to the left sidebar that lists every library the clj-pulse server resolved for the project (deps.edn, lgx.edn, Leiningen best-effort) and opens library files read-only.
+**Goal:** Add a Cursive-style "External Libraries" tree view to the left sidebar that lists every library the clj-pulse server resolved for the project (deps.edn, lgx.edn, Leiningen best-effort) and lets the user browse and open library files (jar contents read-only; directory-based libraries as ordinary files).
 
 **Tech Stack:** Rust (clj-pulse server: tower-lsp, zip crate), TypeScript (VS Code extension: TreeDataProvider, vscode-languageclient).
 
@@ -31,6 +31,7 @@ clj-pulse already resolves each project's libraries: deps.edn via the `.cpcache`
 - `name`: `group/artifact`, collapsed to `artifact` when group equals artifact (Cursive convention: `aero`, not `aero/aero`).
 - `version`: omitted when unknown (for example a `:local/root` dir). For git deps it is the short sha (first 7 chars).
 - `kind`: `"jar"` or `"dir"`.
+- Deduplicated by absolute path before sorting (resolved classpaths can repeat entries).
 - Sorted by `name`, then `version`.
 - Entries under the project root (the project's own `src`, `resources`) are excluded.
 
@@ -118,7 +119,7 @@ Errors with invalid-params when `path` is not an existing `.jar` file. Only call
   Read `src/classpath.rs`, `src/leiningen.rs`, `src/lgx.rs` (especially `lgx::resolve` and `leiningen::resolve` return values) and note the exact m2/gitlibs/lgx directory layouts.
 
 - [ ] **Step 2: Write failing unit tests**
-  In `src/libraries.rs` `#[cfg(test)]`: an m2 jar path parses to name/version (`babashka/fs` 0.5.30 style and collapsed `aero` 1.1.6 style); a non-m2 jar falls back to file stem; a gitlibs dir yields `group/artifact` + 7-char sha; an unrecognized dir yields its basename with no version; entries under the project root are excluded; output is sorted by name then version. Define the public shape here since the handler and tests share it:
+  In `src/libraries.rs` `#[cfg(test)]`: an m2 jar path parses to name/version (`babashka/fs` 0.5.30 style and collapsed `aero` 1.1.6 style); a non-m2 jar falls back to file stem; a gitlibs dir yields `group/artifact` + 7-char sha; an unrecognized dir yields its basename with no version; entries under the project root are excluded; duplicate entries (same absolute path) collapse to one library; output is sorted by name then version. Define the public shape here since the handler and tests share it:
   ```rust
   #[derive(serde::Serialize, PartialEq, Debug)]
   pub struct Library {
