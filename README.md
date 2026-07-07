@@ -121,15 +121,15 @@ project's `.nrepl-port` file when present.
   nREPL's `load-file`, so the file's own `ns` form takes effect and stack
   traces carry real file/line locations.
 - **Evaluate Selection** — evaluate exactly the selected code.
-- **Inline results** — by default the value appears as ghost text (` => value`)
-  at the end of the evaluated form: dimmed while it runs, green on success, the
-  error's first line in red on failure. Hover the result for the full value and
-  a **Copy result** link. The evaluated form flashes briefly so you can see
-  what was sent. Editing the form clears its result; editing elsewhere keeps it
-  glued in place. **Clear Inline Results** removes them all, and **Copy
-  Evaluation Result** copies the value at the cursor. Turn the ghost text off
-  with the `clojurePulse.inlineEvalResults` setting — results still stream to
-  the REPL pane.
+- **Inline results** — by default the value appears at the **end of the line**
+  in a muted, Cursive-style hint (never wedged between brackets): faint while it
+  runs, and the error's first line in red on failure. Hover the result for the
+  full value and a **Copy result** link. The evaluated form flashes briefly so
+  you can see what was sent. Press **Escape** to hide the results; they also
+  clear when you edit the evaluated form. **Clear Inline Results** removes them
+  all, and **Copy Evaluation Result** copies the value at the cursor. Turn the
+  hints off with the `clojurePulse.inlineEvalResults` setting — results still
+  stream to the REPL pane.
 - **Status bar** — `nREPL host:port` at the bottom left shows the connection.
   Click it to connect when disconnected, or for a Show REPL / Disconnect menu
   when connected. If the server goes away, the status flips back and the pane
