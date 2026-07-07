@@ -79,6 +79,11 @@
           "minimum": 0.1,
           "maximum": 1,
           "markdownDescription": "Opacity for dimmed `#_`/`(comment …)` forms — lower is more faded. Reload the window to apply."
+        },
+        "clojurePulse.inlineEvalResults": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show evaluation results inline in the editor as ghost text (` => value`) at the end of the evaluated form. Hover the result for the full value and a Copy link. When off, results appear only in the REPL pane."
         }
       }
     },
@@ -137,6 +142,26 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.evalCurrentForm",
+        "title": "Evaluate Current Form",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.evalFile",
+        "title": "Evaluate File",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.clearInlineResults",
+        "title": "Clear Inline Results",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.copyEvalResult",
+        "title": "Copy Evaluation Result",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.replMenu",
         "title": "REPL Menu",
         "category": "Clojure Pulse"
@@ -147,6 +172,11 @@
         "command": "clojurePulse.newline",
         "key": "enter",
         "when": "editorTextFocus && !editorReadonly && editorLangId == clojure && !suggestWidgetVisible && !renameInputVisible && !inSnippetMode && !codeActionMenuVisible"
+      },
+      {
+        "command": "clojurePulse.clearInlineResults",
+        "key": "escape",
+        "when": "editorTextFocus && editorLangId == clojure && clojurePulse.hasInlineResults && !suggestWidgetVisible && !renameInputVisible && !parameterHintsVisible && !findWidgetVisible && !inSnippetMode && !editorHasSelection"
       }
     ]
   },

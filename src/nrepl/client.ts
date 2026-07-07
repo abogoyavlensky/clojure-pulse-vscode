@@ -8,6 +8,22 @@ export type NreplRequest = Record<string, BencodeValue | undefined> & {
   op: string;
 };
 
+/** Source-location params for `eval` (all optional). */
+export interface EvalExtras {
+  ns?: string;
+  file?: string;
+  /** 1-based. */
+  line?: number;
+  /** 1-based. */
+  column?: number;
+}
+
+/** Path params for `load-file` (all optional; untitled buffers send none). */
+export interface LoadFileExtras {
+  filePath?: string;
+  fileName?: string;
+}
+
 interface PendingRequest {
   messages: NreplMessage[];
   onMessage?: (msg: NreplMessage) => void;
@@ -91,8 +107,43 @@ export class NreplClient {
     code: string,
     session: string,
     onMessage?: (msg: NreplMessage) => void,
+    extra?: EvalExtras,
   ): Promise<NreplMessage[]> {
-    return this.send({ op: "eval", code, session }, onMessage);
+    // send() drops keys whose value is undefined, so absent extras never
+    // reach the wire.
+    return this.send(
+      {
+        op: "eval",
+        code,
+        session,
+        ns: extra?.ns,
+        file: extra?.file,
+        line: extra?.line,
+        column: extra?.column,
+      },
+      onMessage,
+    );
+  }
+
+  /** Sends the whole buffer via the `load-file` op, so the server compiles
+   *  it as a unit (the buffer's own `ns` form applies, stack traces get real
+   *  file/line locations). */
+  loadFile(
+    file: string,
+    session: string,
+    onMessage?: (msg: NreplMessage) => void,
+    extra?: LoadFileExtras,
+  ): Promise<NreplMessage[]> {
+    return this.send(
+      {
+        op: "load-file",
+        file,
+        session,
+        "file-path": extra?.filePath,
+        "file-name": extra?.fileName,
+      },
+      onMessage,
+    );
   }
 
   onClose(listener: () => void): void {

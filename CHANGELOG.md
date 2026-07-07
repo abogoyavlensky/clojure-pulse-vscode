@@ -9,6 +9,16 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   Cursive-style **REPL** pane in the bottom panel streaming banners, evaluated
   forms, values, and stdout/stderr; and an `nREPL host:port` status bar item
   with a connect / Show REPL / Disconnect menu.
+- **Evaluate Current Form** (form at the cursor, evaluated in the file's
+  namespace) and **Evaluate File** (whole buffer via nREPL `load-file`)
+  commands.
+- **Inline evaluation results**: the value appears at the end of the line in a
+  muted, Cursive-style hint (never between brackets) — faint while running, red
+  on error — with the full value and a Copy link on hover, and a brief flash of
+  the evaluated form. Press **Escape** to hide the results (they also clear when
+  you edit the form). Added **Clear Inline Results** and **Copy Evaluation
+  Result** commands and the `clojurePulse.inlineEvalResults` setting (default
+  on) to toggle the hints.
 
 ## [0.0.1]
 

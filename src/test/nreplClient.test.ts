@@ -117,6 +117,59 @@ suite("NreplClient", () => {
     server = await startFakeNrepl(); // teardown expects a live server
   });
 
+  test("eval sends ns, file, line and column when provided", async () => {
+    const c = await connect();
+    const session = await c.clone();
+    await c.eval("(+ 1 2)", session, undefined, {
+      ns: "foo.bar",
+      file: "/p/a.clj",
+      line: 3,
+      column: 1,
+    });
+    const msg = server.received.find((m) => m.op === "eval");
+    assert.ok(msg);
+    assert.strictEqual(msg.ns, "foo.bar");
+    assert.strictEqual(msg.file, "/p/a.clj");
+    assert.strictEqual(msg.line, 3);
+    assert.strictEqual(msg.column, 1);
+  });
+
+  test("eval without extras puts none of their keys on the wire", async () => {
+    const c = await connect();
+    const session = await c.clone();
+    await c.eval("(+ 1 2)", session);
+    const msg = server.received.find((m) => m.op === "eval");
+    assert.ok(msg);
+    for (const key of ["ns", "file", "line", "column"]) {
+      assert.ok(!(key in msg), `unexpected ${key} on the wire`);
+    }
+  });
+
+  test("loadFile sends the load-file op with path params", async () => {
+    const c = await connect();
+    const session = await c.clone();
+    await c.loadFile("(ns a)", session, undefined, {
+      filePath: "/p/a.clj",
+      fileName: "a.clj",
+    });
+    const msg = server.received.find((m) => m.op === "load-file");
+    assert.ok(msg);
+    assert.strictEqual(msg.file, "(ns a)");
+    assert.strictEqual(msg["file-path"], "/p/a.clj");
+    assert.strictEqual(msg["file-name"], "a.clj");
+    assert.strictEqual(msg.session, session);
+  });
+
+  test("loadFile without extras omits the path params", async () => {
+    const c = await connect();
+    const session = await c.clone();
+    await c.loadFile("(ns a)", session);
+    const msg = server.received.find((m) => m.op === "load-file");
+    assert.ok(msg);
+    assert.ok(!("file-path" in msg));
+    assert.ok(!("file-name" in msg));
+  });
+
   test("messages without a pending id go to onUnhandled", async () => {
     server.respond((msg, reply, socket) => {
       socket.write(encode({ session: "sess-1", out: "background\n" }));
