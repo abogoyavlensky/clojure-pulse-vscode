@@ -75,21 +75,21 @@ README.md, CHANGELOG.md     # MODIFY: docs
 - Modify: `src/repl/inlineResults.ts`
 - Test: `src/test/inlineResults.test.ts`
 
-- [ ] **Step 1: Update/extend the failing tests**
+- [x] **Step 1: Update/extend the failing tests**
   In `inlineResults.test.ts`: change the `formatInlineText` expectations to the prefix-free form — `formatInlineText("42")` → `"42"`; the "keeps only the first line" and "replaces every space" cases lose the `${NBSP}=>${NBSP}` prefix (value still NBSP-escaped); the truncation case asserts the whole return is 120 chars ending in `…`. Add a `renderRange` suite: a single-line form `{start:{0,3},end:{0,8}}` with `endLineLength` 15 → `{start:{0,3},end:{0,15}}`; a multi-line form `{start:{0,0},end:{2,4}}` with `endLineLength` 10 → end `{2,10}`, start unchanged.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `renderRange` missing and `formatInlineText` still prefixes ` => `.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add the pure `renderRange` helper. Drop the ` => ` prefix from `formatInlineText` (keep first-line/cap/NBSP). Change `toOptions` to `toOptions(doc, result)`: clamp `endLine = Math.min(result.range.end.line, doc.lineCount - 1)`, compute the render range with `renderRange` and `doc.lineAt(endLine).range.end.character`, use it as the decoration `range`; pending `contentText` = `…`. Update the `render` loop to pass `doc`. Recolor the decoration types (pending/success → `editorInlayHint.foreground`, error → `errorForeground`), add `after.margin` for the gap, keep italic. Leave the flash and all stored-range logic untouched.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: render inline eval results at end of line, Cursive-style"`
 
 ### Task 2: Hide inline results on Escape
@@ -99,21 +99,21 @@ README.md, CHANGELOG.md     # MODIFY: docs
 - Modify: `package.json`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   In `replCommands.integration.test.ts`, connect to the fake nREPL, open a Clojure doc, run `evalCurrentForm` on a form, assert `api.inlineResults.hasResults() === true`; then `await vscode.commands.executeCommand("clojurePulse.clearInlineResults")` and assert `hasResults() === false`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `hasResults` does not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `hasResults()` and a private `updateContext()` (sets `clojurePulse.hasInlineResults` via `setContext` to `byId.size > 0`); call `updateContext()` at the end of `markPending`, `clearAll`, `onEdit`, and `forget`, and once in `dispose()` (false). In `package.json` add a `keybindings` entry: `escape` → `clojurePulse.clearInlineResults`, `when` = `editorTextFocus && editorLangId == clojure && clojurePulse.hasInlineResults && !suggestWidgetVisible && !renameInputVisible && !parameterHintsVisible && !findWidgetVisible && !inSnippetMode && !editorHasSelection`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: hide inline eval results on Escape"`
 
 ### Task 3: Docs and verification
@@ -121,15 +121,52 @@ README.md, CHANGELOG.md     # MODIFY: docs
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
   README inline-results bullet: results now render at the end of the line in a muted style (not between brackets), and Escape hides them. CHANGELOG: entry under the unreleased version noting end-of-line Cursive-style rendering and Escape-to-hide.
 
-- [ ] **Step 2: Full check**
+- [x] **Step 2: Full check**
   Run: `make check`
   Expected: lint, compile, and tests all pass.
 
-- [ ] **Step 3: Manual/e2e sanity**
+- [x] **Step 3: Manual/e2e sanity**
   On a desktop (F5), or note the headless deviation: eval a nested form inside `(comment (let …))` and confirm the result shows at the end of the line (not between brackets), muted, no `=>`; eval an error and confirm it shows red; press Escape and confirm the results clear while Escape still works normally (deselect, close suggest widget) when no results are shown. The existing `scripts/e2e-eval-smoke.mjs` still passes for the eval wire behavior.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "docs: document end-of-line inline results and Escape-to-hide"`
+
+---
+
+## Completion Summary (2026-07-07)
+
+All 3 tasks implemented and committed; `make check` passes with 198 tests.
+
+**What changed:**
+- Inline results now render at the **end of the line**, never between brackets:
+  `toOptions` derives the decoration range from the evaluated form's start to
+  the end of its last line via the new pure `renderRange` helper (unit-tested,
+  single- and multi-line). The stored form range still drives the flash,
+  edit-tracking, and copy-at-cursor.
+- **Cursive-style styling**: dropped the `=>` prefix (`formatInlineText` now
+  returns the bare value; the gap is an `after.margin`), pending/success recolored
+  to the theme's muted `editorInlayHint.foreground`, errors stay `errorForeground`,
+  italic retained. Pending shows a bare `…`.
+- **Hide on Escape**: `InlineResultsManager.hasResults()` plus a
+  `clojurePulse.hasInlineResults` context key (published on every count-changing
+  mutation and reset on dispose) gate a new `escape` → `clojurePulse.clearInlineResults`
+  keybinding, guarded against IntelliSense/rename/find/snippet/selection so it
+  only intercepts Escape while results are shown.
+
+**Out of scope (as agreed):** gutter marker/bulb and any bracket/persistent form
+highlighting — the existing ~200 ms eval flash is unchanged.
+
+**Verification note:** the visual rendering is GUI-only, so on this headless
+machine it was covered by unit tests (`renderRange`, prefix-free `formatInlineText`),
+an integration test (`hasResults()` toggles on eval/clear in the VS Code host),
+and the existing `scripts/e2e-eval-smoke.mjs` for the unchanged eval wire path
+(7/8; the 1 miss is Babashka not emitting the `namespace-not-found` status,
+which works on JVM nREPL). An F5 smoke test on a desktop to eyeball the
+end-of-line placement, muted color, and Escape is still worthwhile.
+
+**Review note:** the per-task codex second-opinion checkpoints could not run —
+codex CLI was over its usage limit throughout. Each task was self-reviewed
+instead; re-running `review-with-codex` once the limit resets is advisable.
