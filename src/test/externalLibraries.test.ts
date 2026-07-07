@@ -90,6 +90,28 @@ suite("ExternalLibrariesProvider", () => {
     assert.strictEqual(entryCalls, 2);
   });
 
+  test("concurrent expands of the same jar share a single request", async () => {
+    let entryCalls = 0;
+    let resolveEntries: (v: string[]) => void = () => undefined;
+    const provider = new ExternalLibrariesProvider((method) => {
+      if (method === "clojurePulse/externalLibraries") {
+        return Promise.resolve([JAR_LIB]);
+      }
+      entryCalls += 1;
+      return new Promise<string[]>((res) => {
+        resolveEntries = res;
+      });
+    });
+
+    const [jar] = await provider.getChildren();
+    // Two expands before the first request resolves must reuse one request.
+    const first = provider.getChildren(jar);
+    const second = provider.getChildren(jar);
+    resolveEntries(["aero/core.cljc"]);
+    await Promise.all([first, second]);
+    assert.strictEqual(entryCalls, 1);
+  });
+
   test("a rejected request yields empty children (no throw)", async () => {
     const provider = new ExternalLibrariesProvider(() =>
       Promise.reject(new Error("server not running")),

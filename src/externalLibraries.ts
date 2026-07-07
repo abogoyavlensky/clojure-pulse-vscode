@@ -44,8 +44,17 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
   private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  /** Flat jar entry lists, cached per jar path until `refresh()`. */
-  private readonly jarEntries = new Map<string, string[]>();
+  /**
+   * In-flight or resolved jar entry lists, keyed by jar path, invalidated by
+   * `refresh()`. Caching the promise (not the resolved value) means concurrent
+   * expands of one jar share a single request.
+   */
+  private readonly jarEntries = new Map<string, Promise<string[]>>();
+  /**
+   * Bumped by `refresh()` so a request that resolves *after* a refresh can't
+   * repopulate (or evict from) the freshly-cleared cache.
+   */
+  private generation = 0;
 
   constructor(
     private readonly sendRequest: SendRequest,
@@ -56,6 +65,7 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
 
   /** Clears caches and repaints the tree (refresh triggers call this). */
   refresh(): void {
+    this.generation += 1;
     this.jarEntries.clear();
     this._onDidChangeTreeData.fire();
   }
@@ -144,20 +154,29 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
 
   /**
    * A jar's flat entry list, requested at most once per jar until `refresh()`.
-   * A failed request yields an empty list and is not cached, so a later expand
-   * (or refresh) can retry.
+   * The in-flight promise is cached synchronously so concurrent expands reuse
+   * it; a failed request is evicted so a later expand can retry.
    */
-  private async entriesFor(jarPath: string): Promise<string[]> {
+  private entriesFor(jarPath: string): Promise<string[]> {
     const cached = this.jarEntries.get(jarPath);
     if (cached) {
       return cached;
     }
+    const pending = this.requestEntries(jarPath, this.generation);
+    this.jarEntries.set(jarPath, pending);
+    return pending;
+  }
+
+  private async requestEntries(jarPath: string, generation: number): Promise<string[]> {
     try {
-      const entries = (await this.sendRequest(LIBRARY_ENTRIES, { path: jarPath })) as string[];
-      this.jarEntries.set(jarPath, entries);
-      return entries;
+      return (await this.sendRequest(LIBRARY_ENTRIES, { path: jarPath })) as string[];
     } catch (e) {
       this.log(`External Libraries: failed to list ${jarPath}: ${errMessage(e)}`);
+      // Allow a retry on the next expand — unless a refresh already replaced
+      // this cache entry, in which case leave the newer request in place.
+      if (generation === this.generation) {
+        this.jarEntries.delete(jarPath);
+      }
       return [];
     }
   }
@@ -188,7 +207,7 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
  */
 function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNode[] {
   const folders = new Set<string>();
-  const files: string[] = [];
+  const files = new Set<string>();
   for (const entry of entries) {
     if (!entry.startsWith(prefix)) {
       continue;
@@ -199,7 +218,7 @@ function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNo
     }
     const slash = rest.indexOf("/");
     if (slash === -1) {
-      files.push(rest);
+      files.add(rest);
     } else {
       folders.add(rest.slice(0, slash));
     }
@@ -207,7 +226,7 @@ function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNo
   const folderNodes: LibNode[] = [...folders]
     .sort(byName)
     .map((name) => ({ type: "jarFolder", jarPath, prefix: `${prefix}${name}/`, name }));
-  const fileNodes: LibNode[] = files
+  const fileNodes: LibNode[] = [...files]
     .sort(byName)
     .map((name) => ({ type: "jarFile", jarPath, entry: `${prefix}${name}`, name }));
   return [...folderNodes, ...fileNodes];
