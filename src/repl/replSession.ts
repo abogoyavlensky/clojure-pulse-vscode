@@ -119,6 +119,13 @@ export class ReplSession implements ReplSessionLike {
     if (this.currentState !== "stopped") {
       return;
     }
+    if (this.process) {
+      // A previous stop could not kill the server; starting now would leave
+      // two of them fighting over the project.
+      throw new Error(
+        `The nREPL process for "${this.name}" could not be stopped and is still running — see its output channel`,
+      );
+    }
     const attempt = ++this.startAttempt;
     this.ensureChannel();
     try {
@@ -178,8 +185,8 @@ export class ReplSession implements ReplSessionLike {
   async dispose(): Promise<void> {
     this.startAttempt++;
     this.manager.dispose();
-    // Rejects if the owned process survived: callers disposing several
-    // sessions must decide what to do with a server that would not die.
+    // Rejects if the owned process survived, so the registry can keep trying
+    // rather than lose track of a running server.
     await this.enterStopped();
   }
 
@@ -231,9 +238,12 @@ export class ReplSession implements ReplSessionLike {
   /**
    * Enters `stopped`, killing an owned process on the way out. `stopped` is
    * published only once that kill has finished, so nothing downstream can
-   * restart or replace the session while its old server is still alive.
-   * Concurrent callers (explicit stop, a dropped connection, dispose) share
-   * one shutdown.
+   * replace the session while its old server is still alive. Concurrent
+   * callers (explicit stop, a dropped connection, dispose) share one shutdown.
+   *
+   * A kill that fails still ends the session — the connection is closed
+   * either way — but keeps the process, so `start()` can refuse rather than
+   * spawn a second server, and rejects so the caller can report it.
    */
   private enterStopped(): Promise<void> {
     if (this.stopping) {
@@ -249,13 +259,8 @@ export class ReplSession implements ReplSessionLike {
     }
     this.stopping = proc
       .stop()
-      .then(() => {
-        this.setState("stopped");
-      })
       .catch((err: unknown) => {
-        // The server may well still be running, so the session must not claim
-        // to be stopped: keep the process so a retry can kill it, report the
-        // reason, and let the caller surface it.
+        // Keep the process: a later stop can try again, and start() checks it.
         this.process = proc;
         this.transcript.append({
           kind: "info",
@@ -265,6 +270,7 @@ export class ReplSession implements ReplSessionLike {
       })
       .finally(() => {
         this.stopping = undefined;
+        this.setState("stopped");
       });
     return this.stopping;
   }

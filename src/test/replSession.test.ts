@@ -361,7 +361,7 @@ suite("ReplSession", () => {
     assert.strictEqual(session.state, "stopped");
   });
 
-  test("a kill that fails leaves the session running and reports why", async () => {
+  test("a kill that fails is reported and blocks a restart", async () => {
     const proc = new FakeProcess();
     const session = make(createConfig(), { process: proc });
     const started = session.start();
@@ -372,12 +372,11 @@ suite("ReplSession", () => {
 
     await assert.rejects(session.stop(), /kill refused/);
 
-    assert.notStrictEqual(
-      session.state,
-      "stopped",
-      "a session whose server may still be alive must not report stopped",
-    );
+    // The connection is closed, so the session is stopped — but the server it
+    // spawned is still out there, and starting again would make a second one.
+    assert.strictEqual(session.state, "stopped");
     assert.ok(channel.text().includes("kill refused"), channel.text());
+    await assert.rejects(session.start(), /still running/);
   });
 
   test("showOutput reveals the channel, creating it when never started", () => {

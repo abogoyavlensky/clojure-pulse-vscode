@@ -70,7 +70,10 @@ class FakeSession implements ReplSessionLike {
     this.openGate?.();
   }
 
+  disposeCount = 0;
+
   async dispose(): Promise<void> {
+    this.disposeCount += 1;
     await this.disposeGate;
     if (this.disposeError) {
       throw this.disposeError;
@@ -293,34 +296,50 @@ suite("ReplRegistry", () => {
     assert.ok(changes > afterConfigs, "expected a change for the state transition");
   });
 
-  test("a removed session whose server will not die stays visible", async () => {
+  test("a removed session whose server will not die is killed again at shutdown", async () => {
     registry.setConfigs([createConfig("a")]);
-    const session = sessionNamed("a");
-    await session?.start();
-    session?.holdDispose();
-    if (session) {
-      session.disposeError = new Error("could not stop the nREPL process");
-    }
+    const session = sessionNamed("a") as FakeSession;
+    await session.start();
+    session.disposeError = new Error("could not stop the nREPL process");
     const channel = channels.find((c) => c.name === "a");
 
+    await registry.setConfigs([]);
+
+    assert.deepStrictEqual(registry.sessions, [], "its configuration is gone");
+    assert.strictEqual(session.disposeCount, 1);
+    assert.strictEqual(
+      channel?.disposed,
+      false,
+      "the channel holds the reason the server is still up",
+    );
+
+    session.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(session.disposeCount, 2, "shutdown must retry the kill");
+    assert.strictEqual(session.disposed, true);
+  });
+
+  test("a re-added name cannot shadow a session that would not die", async () => {
+    registry.setConfigs([createConfig("a")]);
+    const first = sessionNamed("a") as FakeSession;
+    await first.start();
+    first.disposeError = new Error("could not stop the nREPL process");
+    first.holdDispose();
+
     const removal = registry.setConfigs([]);
-    session?.releaseDispose();
+    registry.setConfigs([createConfig("a", "clj -M:other")]);
+    first.releaseDispose();
     await removal;
 
-    assert.deepStrictEqual(
-      registry.sessions.map((s) => s.name),
-      ["a"],
-      "a REPL that is still running must not vanish from the list",
-    );
-    assert.strictEqual(channel?.disposed, false, "its channel says why it is still up");
+    const second = sessionNamed("a") as FakeSession;
+    assert.notStrictEqual(second, first);
 
-    // Once it really does stop, the row goes away with it.
-    if (session) {
-      session.disposeError = undefined;
-    }
-    session?.moveTo("stopped");
-    assert.deepStrictEqual(registry.sessions, []);
-    assert.strictEqual(channel?.disposed, true);
+    first.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(first.disposed, true, "the old server must still be killed");
+    assert.strictEqual(second.disposed, true);
   });
 
   test("a channel is left alone when its name is re-added mid-removal", async () => {

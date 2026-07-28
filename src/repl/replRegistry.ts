@@ -32,9 +32,9 @@ export class ReplRegistry {
   private readonly pendingConfigs = new Map<string, ReplConfig>();
   /** Sessions from the ad-hoc connect flow: unsaved, and transient. */
   private readonly adHocNames = new Set<string>();
-  /** Sessions whose configuration is gone but whose server would not die;
-   *  dropped as soon as they do stop. */
-  private readonly orphaned = new Set<string>();
+  /** Retired sessions whose server would not die: off the list, but kept so
+   *  shutdown can try to kill them once more. */
+  private readonly undead = new Set<ReplSessionLike>();
   private activeName: string | undefined;
   private changeListeners: Array<() => void> = [];
 
@@ -81,7 +81,6 @@ export class ReplRegistry {
       }
       this.items.delete(name);
       this.pendingConfigs.delete(name);
-      this.orphaned.delete(name);
       if (this.activeName === name) {
         this.activeName = undefined;
       }
@@ -112,20 +111,16 @@ export class ReplRegistry {
   }
 
   /**
-   * Shuts down a session whose configuration is gone. A kill that fails puts
-   * the session back on the list: its server is still running, so it stays
-   * visible (and stoppable), keeps its channel — which says why — and gets
-   * killed again when the extension shuts down.
+   * Shuts down a session whose configuration is gone. If its server would not
+   * die, the session is remembered (by object, so a re-added configuration of
+   * the same name cannot shadow it) and killed again at shutdown; its channel
+   * is kept, since it holds the reason the server is still up.
    */
   private async retire(session: ReplSessionLike): Promise<void> {
     try {
       await session.dispose();
     } catch {
-      if (!this.items.has(session.name)) {
-        this.items.set(session.name, session);
-        this.orphaned.add(session.name);
-        this.emitChange();
-      }
+      this.undead.add(session);
       return;
     }
     // A settings change may have re-added this name while the shutdown was in
@@ -163,10 +158,12 @@ export class ReplRegistry {
   /** Stops every session and disposes every channel. Awaited by deactivate()
    *  so kills (and their grace periods) really complete. */
   async dispose(): Promise<void> {
-    const sessions = this.sessions;
+    // Everything still alive, including servers an earlier retirement failed
+    // to kill — this is the last chance to take them down with us.
+    const sessions = [...this.sessions, ...this.undead];
     this.items = new Map();
     this.adHocNames.clear();
-    this.orphaned.clear();
+    this.undead.clear();
     this.pendingConfigs.clear();
     this.activeName = undefined;
     await Promise.all(
@@ -204,9 +201,8 @@ export class ReplRegistry {
       if (this.activeName === session.name) {
         this.activeName = undefined;
       }
-      // Ad-hoc sessions live only as long as their connection; an orphaned
-      // one finally died, so its row can go too.
-      if (this.adHocNames.has(session.name) || this.orphaned.has(session.name)) {
+      // Ad-hoc sessions live only as long as their connection.
+      if (this.adHocNames.has(session.name)) {
         this.forget(session);
         this.emitChange();
         return;
@@ -219,13 +215,11 @@ export class ReplRegistry {
     this.emitChange();
   }
 
-  /** Drops a session that has no configuration behind it any more. */
+  /** Drops a transient session once its connection is over. */
   private forget(session: ReplSessionLike): void {
     this.items.delete(session.name);
     this.adHocNames.delete(session.name);
-    this.orphaned.delete(session.name);
-    void session.dispose().catch(() => {});
-    this.disposeChannel(session.name);
+    void this.retire(session);
   }
 
   private channelFor(name: string): ReplChannel {
