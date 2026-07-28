@@ -35,6 +35,8 @@ export interface ReplProcessOptions {
   cwd: string;
   /** Poll interval for the `.nrepl-port` fallback (tests shorten it). */
   portFilePollMs?: number;
+  /** Seam for observing the signals sent to the process group, in tests. */
+  kill?: (pid: number, signal: NodeJS.Signals) => void;
 }
 
 /** The slice of `ReplProcess` a session depends on, so tests can fake it. */
@@ -67,6 +69,9 @@ export class ReplProcess implements ReplProcessLike {
   private settled = false;
   private stopped = false;
   private ended = false;
+  /** Latched once the group is observed empty: its id may be recycled from
+   *  then on, so it must never be signalled again. */
+  private groupGone = false;
   private resolvePort!: (port: number) => void;
   private rejectPort!: (err: Error) => void;
   private readonly portPromise: Promise<number>;
@@ -168,22 +173,57 @@ export class ReplProcess implements ReplProcessLike {
     this.stopPolling();
     const child = this.child;
     const pid = child?.pid;
-    if (!child || pid === undefined) {
+    if (!child || pid === undefined || !this.groupIsOurs(child, pid)) {
       return;
     }
-    killGroup(child, "SIGTERM");
+    this.killGroup("SIGTERM");
     await this.waitForGroupExit(child, pid);
-    if (isRunning(child) || groupAlive(pid)) {
-      killGroup(child, "SIGKILL");
+    if (this.groupIsOurs(child, pid)) {
+      this.killGroup("SIGKILL");
       await this.waitForGroupExit(child, pid);
     }
+  }
+
+  /**
+   * True while the group is still ours to signal — the shell is running, or
+   * something it started is. Seeing the group empty latches `groupGone`: an
+   * empty group id can be recycled by an unrelated process, and signalling a
+   * recycled id would kill a stranger.
+   */
+  private groupIsOurs(child: ChildProcess, pid: number): boolean {
+    if (this.groupGone) {
+      return false;
+    }
+    if (isRunning(child) || groupAlive(pid)) {
+      return true;
+    }
+    this.groupGone = true;
+    return false;
   }
 
   /** Waits (up to the grace period) for the leader and its group to go away. */
   private async waitForGroupExit(child: ChildProcess, pid: number): Promise<void> {
     const deadline = Date.now() + KILL_GRACE_MS;
-    while (Date.now() < deadline && (isRunning(child) || groupAlive(pid))) {
+    while (Date.now() < deadline && this.groupIsOurs(child, pid)) {
       await delay(50);
+    }
+  }
+
+  /** Signals the whole group on POSIX; on Windows, kills the tree via taskkill. */
+  private killGroup(signal: NodeJS.Signals): void {
+    const pid = this.child?.pid;
+    if (pid === undefined) {
+      return;
+    }
+    try {
+      if (process.platform === "win32") {
+        // Windows has no process groups to signal; taskkill /T ends the tree.
+        spawn("taskkill", ["/PID", String(pid), "/T", "/F"]);
+      } else {
+        (this.options.kill ?? defaultKill)(-pid, signal);
+      }
+    } catch {
+      // Already gone (ESRCH), or the group leader vanished mid-kill.
     }
   }
 
@@ -257,22 +297,8 @@ export class ReplProcess implements ReplProcessLike {
   }
 }
 
-/** Signals the whole group on POSIX; on Windows, kills the tree via taskkill. */
-function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  const pid = child.pid;
-  if (pid === undefined) {
-    return;
-  }
-  try {
-    if (process.platform === "win32") {
-      // Windows has no process groups to signal; taskkill /T ends the tree.
-      spawn("taskkill", ["/PID", String(pid), "/T", "/F"]);
-    } else {
-      process.kill(-pid, signal);
-    }
-  } catch {
-    // Already gone (ESRCH), or the group leader vanished mid-kill.
-  }
+function defaultKill(pid: number, signal: NodeJS.Signals): void {
+  process.kill(pid, signal);
 }
 
 /** True while the spawned shell itself is still running. */

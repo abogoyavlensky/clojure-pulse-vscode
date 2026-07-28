@@ -179,6 +179,60 @@ suite("ReplProcess", () => {
     assert.strictEqual(ended, true, "expected the end to be reported");
   });
 
+  test("never signals a process group that has already gone away", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const signalled: Array<[number, string]> = [];
+    const proc = new ReplProcess({
+      command: "exit 0",
+      cwd: dir,
+      kill: (pid, signal) => {
+        signalled.push([pid, signal]);
+        process.kill(pid, signal);
+      },
+    });
+    running.push(proc);
+    let ended = false;
+    proc.onExit(() => {
+      ended = true;
+    });
+    proc.start();
+    const pid = proc.pid;
+    await waitUntil(() => ended && !groupAlive(pid), 5000);
+
+    await proc.stop();
+    await proc.stop();
+
+    // The pid is free for the OS to hand out again; signalling it would kill
+    // whatever inherited the id.
+    assert.deepStrictEqual(signalled, []);
+  });
+
+  test("signals the live group with SIGTERM first", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const signalled: Array<[number, string]> = [];
+    const proc = new ReplProcess({
+      command: "sleep 30",
+      cwd: dir,
+      kill: (pid, signal) => {
+        signalled.push([pid, signal]);
+        process.kill(pid, signal);
+      },
+    });
+    running.push(proc);
+    proc.start();
+    const pid = proc.pid;
+    assert.ok(pid);
+
+    await proc.stop();
+
+    assert.deepStrictEqual(signalled[0], [-pid, "SIGTERM"]);
+    assert.strictEqual(groupAlive(pid), false);
+  });
+
   test("stop() before start() is a no-op", async function () {
     const proc = spawn("sleep 30");
     await proc.stop();
