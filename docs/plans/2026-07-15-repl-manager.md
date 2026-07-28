@@ -249,20 +249,23 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 - Create: `src/repl/replTree.ts`, `src/test/replTree.test.ts`
 - Modify: `src/repl/replStatusBar.ts`, `src/test/replStatusBar.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `presentSession(session, isActive)` → `{ label, description, icon, contextValue }`: description per state (`stopped`, `starting`, `connecting`, `connected :7888`); contextValues `replCreateStopped` / `replCreateRunning` / `replConnectStopped` / `replConnectConnected` / `replAdHoc` (drive which inline actions show); active session gets the highlighted icon (`vscode-testing-run-icon`-style: use `circle-filled` vs `circle-outline`). Status bar: presentation takes the active session (name + info) and a no-active-but-sessions-exist state pointing at `clojurePulse.startRepl`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test` — FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `ReplTreeProvider` (flat list, refresh on registry `onDidChange`), item click command `clojurePulse.showReplOutput` with the session name as arg. Update `replStatusPresentation` signature; keep it pure.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add REPL tree presentation and multi-session status bar"`
+
+> Deviation: `presentSession(session, { isActive, isAdHoc })` — ad-hoc-ness comes from the registry, not the session, so it is passed alongside `isActive`. Items also carry a tooltip (the command line, or `host:port` / the port file). Icons: `debug-disconnect` when stopped, `loading~spin` while coming up, `circle-outline`/`circle-filled` for connected/active.
+> Deviation: the status bar takes `{ active?, busy, total }` rather than a single state. With nothing configured it points at `clojurePulse.connectRepl` (which offers the ad-hoc flow) instead of `addReplConfig` — that keeps the item working in this commit, where the manager commands are not registered yet, and remains the more useful action for someone with a REPL already running.
 
 ### Task 7: Wiring — commands, package.json, webview removal
 
