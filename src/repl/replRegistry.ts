@@ -32,6 +32,9 @@ export class ReplRegistry {
   private readonly pendingConfigs = new Map<string, ReplConfig>();
   /** Sessions from the ad-hoc connect flow: unsaved, and transient. */
   private readonly adHocNames = new Set<string>();
+  /** Sessions whose configuration is gone but whose server would not die;
+   *  dropped as soon as they do stop. */
+  private readonly orphaned = new Set<string>();
   private activeName: string | undefined;
   private changeListeners: Array<() => void> = [];
 
@@ -50,8 +53,11 @@ export class ReplRegistry {
     return this.activeName === undefined ? undefined : this.items.get(this.activeName);
   }
 
+  /** Points evaluations at a session. Only a connected session can be the
+   *  target — anything else would advertise a REPL that cannot evaluate. */
   setActive(name: string): void {
-    if (!this.items.has(name) || this.activeName === name) {
+    const session = this.items.get(name);
+    if (!session || session.state !== "connected" || this.activeName === name) {
       return;
     }
     this.activeName = name;
@@ -75,6 +81,7 @@ export class ReplRegistry {
       }
       this.items.delete(name);
       this.pendingConfigs.delete(name);
+      this.orphaned.delete(name);
       if (this.activeName === name) {
         this.activeName = undefined;
       }
@@ -83,6 +90,10 @@ export class ReplRegistry {
 
     for (const config of configs) {
       const existing = this.items.get(config.name);
+      // Saving a configuration under an ad-hoc session's `host:port` name
+      // promotes that session: it is now backed by settings, so it must
+      // outlive its next disconnect.
+      this.adHocNames.delete(config.name);
       if (!existing) {
         this.items.set(config.name, this.createSession(config));
       } else if (sameConfig(existing.config, config)) {
@@ -97,17 +108,31 @@ export class ReplRegistry {
     this.reorder(configs);
     this.emitChange();
 
-    await Promise.all(
-      removed.map(async (session) => {
-        try {
-          await session.dispose();
-          this.disposeChannel(session.name);
-        } catch {
-          // The session could not be shut down; keep its channel, which holds
-          // the reason its server may still be running.
-        }
-      }),
-    );
+    await Promise.all(removed.map((session) => this.retire(session)));
+  }
+
+  /**
+   * Shuts down a session whose configuration is gone. A kill that fails puts
+   * the session back on the list: its server is still running, so it stays
+   * visible (and stoppable), keeps its channel — which says why — and gets
+   * killed again when the extension shuts down.
+   */
+  private async retire(session: ReplSessionLike): Promise<void> {
+    try {
+      await session.dispose();
+    } catch {
+      if (!this.items.has(session.name)) {
+        this.items.set(session.name, session);
+        this.orphaned.add(session.name);
+        this.emitChange();
+      }
+      return;
+    }
+    // A settings change may have re-added this name while the shutdown was in
+    // flight; that new session owns the channel now.
+    if (!this.items.has(session.name)) {
+      this.disposeChannel(session.name);
+    }
   }
 
   /** Registers an unsaved `host:port` connection, named after the address. */
@@ -141,6 +166,7 @@ export class ReplRegistry {
     const sessions = this.sessions;
     this.items = new Map();
     this.adHocNames.clear();
+    this.orphaned.clear();
     this.pendingConfigs.clear();
     this.activeName = undefined;
     await Promise.all(
@@ -178,8 +204,10 @@ export class ReplRegistry {
       if (this.activeName === session.name) {
         this.activeName = undefined;
       }
-      if (this.adHocNames.has(session.name)) {
-        this.removeAdHoc(session);
+      // Ad-hoc sessions live only as long as their connection; an orphaned
+      // one finally died, so its row can go too.
+      if (this.adHocNames.has(session.name) || this.orphaned.has(session.name)) {
+        this.forget(session);
         this.emitChange();
         return;
       }
@@ -191,9 +219,11 @@ export class ReplRegistry {
     this.emitChange();
   }
 
-  private removeAdHoc(session: ReplSessionLike): void {
+  /** Drops a session that has no configuration behind it any more. */
+  private forget(session: ReplSessionLike): void {
     this.items.delete(session.name);
     this.adHocNames.delete(session.name);
+    this.orphaned.delete(session.name);
     void session.dispose().catch(() => {});
     this.disposeChannel(session.name);
   }

@@ -126,7 +126,11 @@ suite("ReplSession", () => {
   });
 
   teardown(async () => {
-    await Promise.all(sessions.map((session) => session.dispose()));
+    await Promise.all(
+      // A session whose kill deliberately fails rejects here; that is the
+      // test's assertion, not the teardown's problem.
+      sessions.map((session) => session.dispose().catch(() => {})),
+    );
     sessions = [];
     await server.close();
   });

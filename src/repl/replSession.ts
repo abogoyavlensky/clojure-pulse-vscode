@@ -178,9 +178,9 @@ export class ReplSession implements ReplSessionLike {
   async dispose(): Promise<void> {
     this.startAttempt++;
     this.manager.dispose();
-    // Shutdown is best-effort: a kill that fails is already in the channel,
-    // and rejecting here would abort disposal of the sessions after this one.
-    await this.enterStopped().catch(() => {});
+    // Rejects if the owned process survived: callers disposing several
+    // sessions must decide what to do with a server that would not die.
+    await this.enterStopped();
   }
 
   /** Spawns the server and waits for it to report its port. */
