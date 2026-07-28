@@ -66,6 +66,7 @@ export class ReplProcess implements ReplProcessLike {
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private settled = false;
   private stopped = false;
+  private ended = false;
   private resolvePort!: (port: number) => void;
   private rejectPort!: (err: Error) => void;
   private readonly portPromise: Promise<number>;
@@ -103,27 +104,44 @@ export class ReplProcess implements ReplProcessLike {
     child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk.toString()));
     child.stderr?.on("data", (chunk: Buffer) => this.onData(chunk.toString()));
     child.on("error", (err) => {
+      // A failed spawn (missing cwd, unusable shell) emits `error` and then
+      // `close`, never `exit` — so this path has to release the poll timer too.
+      this.stopPolling();
       this.emitOutput(`${err.message}\n`);
       this.fail(new Error(`Failed to start nREPL process: ${err.message}`));
     });
-    child.on("exit", (code, signal) => {
-      this.stopPolling();
-      this.fail(
-        new Error(
-          signal
-            ? `nREPL process exited on ${signal} before reporting a port`
-            : `nREPL process exited with code ${code ?? "unknown"} before reporting a port`,
-        ),
-      );
-      for (const listener of this.exitListeners) {
-        listener({ code, signal });
-      }
-    });
+    child.on("exit", (code, signal) => this.onEnded(code, signal));
+    // `close` covers the failed-spawn case, where `exit` never arrives;
+    // onEnded() is idempotent, so the usual exit-then-close pair is harmless.
+    child.on("close", (code, signal) => this.onEnded(code, signal));
 
-    this.pollTimer = setInterval(
+    const timer = setInterval(
       () => this.checkPortFile(),
       this.options.portFilePollMs ?? PORT_FILE_POLL_MS,
     );
+    // Never let the fallback poll hold the host process open by itself.
+    timer.unref?.();
+    this.pollTimer = timer;
+  }
+
+  /** The process ended: releases the timer, fails a pending port wait, and
+   *  notifies listeners exactly once. */
+  private onEnded(code: number | null, signal: NodeJS.Signals | null): void {
+    if (this.ended) {
+      return;
+    }
+    this.ended = true;
+    this.stopPolling();
+    this.fail(
+      new Error(
+        signal
+          ? `nREPL process exited on ${signal} before reporting a port`
+          : `nREPL process exited with code ${code ?? "unknown"} before reporting a port`,
+      ),
+    );
+    for (const listener of this.exitListeners) {
+      listener({ code, signal });
+    }
   }
 
   /** Resolves with the discovered port; rejects if the process ends first. */
@@ -139,20 +157,33 @@ export class ReplProcess implements ReplProcessLike {
     this.exitListeners.push(listener);
   }
 
-  /** Kills the whole process group and resolves once it is gone. */
+  /**
+   * Kills the whole process group and resolves once it is gone. The group,
+   * not the shell, is the unit that matters: a command that backgrounds or
+   * daemonizes its server leaves nREPL alive in the group after the shell
+   * itself has exited.
+   */
   async stop(): Promise<void> {
     this.stopped = true;
     this.stopPolling();
     const child = this.child;
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
+    const pid = child?.pid;
+    if (!child || pid === undefined) {
       return;
     }
-    const done = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     killGroup(child, "SIGTERM");
-    await Promise.race([done, delay(KILL_GRACE_MS)]);
-    if (child.exitCode === null && child.signalCode === null) {
+    await this.waitForGroupExit(child, pid);
+    if (isRunning(child) || groupAlive(pid)) {
       killGroup(child, "SIGKILL");
-      await Promise.race([done, delay(KILL_GRACE_MS)]);
+      await this.waitForGroupExit(child, pid);
+    }
+  }
+
+  /** Waits (up to the grace period) for the leader and its group to go away. */
+  private async waitForGroupExit(child: ChildProcess, pid: number): Promise<void> {
+    const deadline = Date.now() + KILL_GRACE_MS;
+    while (Date.now() < deadline && (isRunning(child) || groupAlive(pid))) {
+      await delay(50);
     }
   }
 
@@ -241,6 +272,27 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
     }
   } catch {
     // Already gone (ESRCH), or the group leader vanished mid-kill.
+  }
+}
+
+/** True while the spawned shell itself is still running. */
+function isRunning(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+/**
+ * True while any process remains in the group led by `pid`. Windows has no
+ * process groups to probe — `taskkill /T` is the whole answer there.
+ */
+function groupAlive(pid: number): boolean {
+  if (process.platform === "win32") {
+    return false;
+  }
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 

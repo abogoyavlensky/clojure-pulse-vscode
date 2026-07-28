@@ -137,6 +137,48 @@ suite("ReplProcess", () => {
     assert.strictEqual(groupAlive(pid), false, "process group should be gone");
   });
 
+  test("stop() kills a server left running after the shell exits", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    let exited = false;
+    // The shell backgrounds the "server" and exits — the process group lives on.
+    const proc = spawn("sleep 30 & exit 0");
+    proc.onExit(() => {
+      exited = true;
+    });
+    proc.start();
+    const pid = proc.pid;
+    assert.ok(pid, "expected a pid after start()");
+    await waitUntil(() => exited, 5000);
+    assert.strictEqual(groupAlive(pid), true, "the group should outlive the shell");
+
+    await proc.stop();
+
+    assert.strictEqual(groupAlive(pid), false, "process group should be gone");
+  });
+
+  test("a failed spawn rejects waitForPort and reports the end", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const proc = new ReplProcess({
+      command: "echo hi",
+      cwd: path.join(dir, "does-not-exist"),
+      portFilePollMs: 50,
+    });
+    running.push(proc);
+    let ended = false;
+    proc.onExit(() => {
+      ended = true;
+    });
+    proc.start();
+
+    await assert.rejects(proc.waitForPort());
+    await waitUntil(() => ended, 5000);
+    assert.strictEqual(ended, true, "expected the end to be reported");
+  });
+
   test("stop() before start() is a no-op", async function () {
     const proc = spawn("sleep 30");
     await proc.stop();
