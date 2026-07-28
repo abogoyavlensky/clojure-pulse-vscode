@@ -69,9 +69,12 @@ export class ReplProcess implements ReplProcessLike {
   private settled = false;
   private stopped = false;
   private ended = false;
-  /** Latched once the group is observed empty: its id may be recycled from
-   *  then on, so it must never be signalled again. */
-  private groupGone = false;
+  /**
+   * Whether the process group still held members when the shell exited —
+   * sampled at that moment, because a group id becomes recyclable as soon as
+   * the group empties, and a stale id must never be signalled.
+   */
+  private orphanGroup = false;
   private resolvePort!: (port: number) => void;
   private rejectPort!: (err: Error) => void;
   private readonly portPromise: Promise<number>;
@@ -136,6 +139,11 @@ export class ReplProcess implements ReplProcessLike {
       return;
     }
     this.ended = true;
+    // Sample group ownership now: the id can only be recycled once the group
+    // is empty, so a probe here still describes *our* group — a probe from a
+    // later stop() might not.
+    const pid = this.child?.pid;
+    this.orphanGroup = pid !== undefined && groupAlive(pid);
     this.stopPolling();
     this.fail(
       new Error(
@@ -185,19 +193,24 @@ export class ReplProcess implements ReplProcessLike {
   }
 
   /**
-   * True while the group is still ours to signal — the shell is running, or
-   * something it started is. Seeing the group empty latches `groupGone`: an
-   * empty group id can be recycled by an unrelated process, and signalling a
-   * recycled id would kill a stranger.
+   * True while the group is still ours to signal. While the shell runs, the
+   * group is ours by construction. After it exits, only the exit-time sample
+   * decides: a group that was already empty then is never signalled (its id
+   * may since belong to a stranger), and one that outlived its shell — a
+   * command that daemonized nREPL — stays ours until it empties, since an
+   * id cannot be recycled while the group still has members.
    */
   private groupIsOurs(child: ChildProcess, pid: number): boolean {
-    if (this.groupGone) {
-      return false;
-    }
-    if (isRunning(child) || groupAlive(pid)) {
+    if (isRunning(child)) {
       return true;
     }
-    this.groupGone = true;
+    if (!this.orphanGroup) {
+      return false;
+    }
+    if (groupAlive(pid)) {
+      return true;
+    }
+    this.orphanGroup = false;
     return false;
   }
 
