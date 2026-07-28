@@ -55,11 +55,11 @@ export class ReplSession {
   private stateListeners: Array<(state: ReplSessionState) => void> = [];
   private process: ReplProcessLike | undefined;
   private channel: ReplChannel | undefined;
-  /** Set while stop() drives the disconnect, so the manager's own
-   *  state change is not mistaken for an unexpected connection loss. */
-  private stopping = false;
-  /** The in-flight process kill, so callers can await the real shutdown. */
-  private pendingKill: Promise<void> = Promise.resolve();
+  /** Bumped by every stop, so a startup still waiting on a port cannot come
+   *  back and connect after the session was told to stop. */
+  private startAttempt = 0;
+  /** The in-flight shutdown, shared by everything that asks to stop. */
+  private stopping: Promise<void> | undefined;
 
   constructor(
     readonly config: ReplConfig,
@@ -74,8 +74,8 @@ export class ReplSession {
     // A connection that drops on its own (server died, socket closed) ends the
     // session — and takes an owned process with it.
     this.manager.onDidChangeState((state) => {
-      if (state === "disconnected" && !this.stopping && this.currentState !== "stopped") {
-        this.beginStop();
+      if (state === "disconnected" && this.currentState !== "stopped") {
+        void this.enterStopped();
       }
     });
   }
@@ -102,35 +102,44 @@ export class ReplSession {
     if (this.currentState !== "stopped") {
       return;
     }
+    const attempt = ++this.startAttempt;
     this.ensureChannel();
     try {
       const port =
         this.config.type === "create"
           ? await this.startProcess(this.config.command, this.config.cwd)
           : this.resolveConfiguredPort();
+      // A stop while the server was still coming up wins: connecting now
+      // would resurrect a session the user just shut down.
+      if (this.isStale(attempt)) {
+        return;
+      }
       const host = this.config.type === "connect" ? this.config.host : "127.0.0.1";
       this.setState("connecting");
       await this.manager.connect({ host, port });
+      if (this.isStale(attempt)) {
+        await this.manager.disconnect();
+        return;
+      }
       this.setState("connected");
     } catch (err: unknown) {
+      // A failure caused by our own stop (the kill ends the port wait) is not
+      // something to report.
+      if (this.isStale(attempt)) {
+        return;
+      }
       const reason = err instanceof Error ? err.message : String(err);
       this.transcript.append({ kind: "info", text: reason });
-      this.beginStop();
-      await this.pendingKill;
+      await this.enterStopped();
       throw err;
     }
   }
 
   /** Disconnects and kills an owned process; resolves once it is really gone. */
   async stop(): Promise<void> {
-    this.stopping = true;
-    try {
-      await this.manager.disconnect();
-    } finally {
-      this.stopping = false;
-    }
-    this.beginStop();
-    await this.pendingKill;
+    this.startAttempt++;
+    await this.manager.disconnect();
+    await this.enterStopped();
   }
 
   async eval(code: string, opts?: EvalOptions): Promise<EvalOutcome> {
@@ -149,10 +158,9 @@ export class ReplSession {
   /** Stops everything this session owns. The channel belongs to the registry
    *  and outlives the session, so it is not disposed here. */
   async dispose(): Promise<void> {
-    this.stopping = true;
+    this.startAttempt++;
     this.manager.dispose();
-    this.beginStop();
-    await this.pendingKill;
+    await this.enterStopped();
   }
 
   /** Spawns the server and waits for it to report its port. */
@@ -201,17 +209,38 @@ export class ReplSession {
   }
 
   /**
-   * Enters `stopped`, killing an owned process on the way out. The kill is
-   * started synchronously (so the state can never be observed as `stopped`
-   * with a live server behind it) and awaited through `pendingKill`.
+   * Enters `stopped`, killing an owned process on the way out. `stopped` is
+   * published only once that kill has finished, so nothing downstream can
+   * restart or replace the session while its old server is still alive.
+   * Concurrent callers (explicit stop, a dropped connection, dispose) share
+   * one shutdown.
    */
-  private beginStop(): void {
+  private enterStopped(): Promise<void> {
+    if (this.stopping) {
+      return this.stopping;
+    }
+    // Startups are invalidated by stop()/dispose() only: a stop triggered by
+    // a *failing* attempt must leave that attempt free to report its error.
     const proc = this.process;
     this.process = undefined;
-    if (proc) {
-      this.pendingKill = proc.stop();
+    if (!proc) {
+      this.setState("stopped");
+      return Promise.resolve();
     }
-    this.setState("stopped");
+    this.stopping = proc
+      .stop()
+      .catch(() => {})
+      .then(() => {
+        this.setState("stopped");
+      })
+      .finally(() => {
+        this.stopping = undefined;
+      });
+    return this.stopping;
+  }
+
+  private isStale(attempt: number): boolean {
+    return attempt !== this.startAttempt;
   }
 
   private ensureChannel(): ReplChannel {

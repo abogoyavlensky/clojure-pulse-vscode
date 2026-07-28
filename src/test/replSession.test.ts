@@ -52,8 +52,23 @@ class FakeProcess implements ReplProcessLike {
   onExit(listener: (exit: ProcessExit) => void): void {
     this.exitListeners.push(listener);
   }
+  /** Resolved by `releaseStop()` when a test holds the kill open. */
+  private stopGate: Promise<void> | undefined;
+  private openGate: (() => void) | undefined;
+
+  /** Makes stop() hang until releaseStop(), modelling a slow SIGTERM. */
+  holdStop(): void {
+    this.stopGate = new Promise<void>((resolve) => {
+      this.openGate = resolve;
+    });
+  }
+  releaseStop(): void {
+    this.openGate?.();
+  }
+
   async stop(): Promise<void> {
     this.stopCount += 1;
+    await this.stopGate;
   }
 
   emit(text: string): void {
@@ -293,6 +308,44 @@ suite("ReplSession", () => {
 
     assert.deepStrictEqual(states, []);
     assert.strictEqual(session.state, "connected");
+  });
+
+  test("a port arriving after stop() does not reconnect the session", async () => {
+    const proc = new FakeProcess();
+    const session = make(createConfig(), { process: proc });
+    const started = session.start();
+    await waitUntil(() => session.state === "starting", 1000);
+
+    await session.stop();
+    // The server got as far as reporting its port while it was being killed.
+    proc.reportPort(server.port);
+    await started;
+
+    assert.strictEqual(session.state, "stopped");
+    assert.strictEqual(session.connectionInfo, undefined);
+    assert.strictEqual(server.socketCount(), 0, "must not have connected");
+  });
+
+  test("stopped is published only once the process is really gone", async () => {
+    const proc = new FakeProcess();
+    const session = make(createConfig(), { process: proc });
+    const started = session.start();
+    await waitUntil(() => session.state === "starting", 1000);
+    proc.reportPort(server.port);
+    await started;
+    proc.holdStop();
+
+    const stopping = session.stop();
+    await waitUntil(() => proc.stopCount === 1, 1000);
+    assert.notStrictEqual(
+      session.state,
+      "stopped",
+      "the session claimed to be stopped while its server was still dying",
+    );
+
+    proc.releaseStop();
+    await stopping;
+    assert.strictEqual(session.state, "stopped");
   });
 
   test("showOutput reveals the channel, creating it when never started", () => {
