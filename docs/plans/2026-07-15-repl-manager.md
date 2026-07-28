@@ -133,22 +133,26 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 - Create: `src/repl/replConfig.ts`, `src/test/replConfig.test.ts`
 - Modify: `src/repl/connectionManager.ts` (move `readNreplPort` into `replConfig.ts`; re-export or update imports), `src/test/connectionManager.test.ts`, `src/extension.ts` (import path)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover: `parseReplConfigurations(raw: unknown)` → `{ configs, warnings }` — accepts valid create/connect entries, fills `host` default `localhost` and `cwd` default `"."`, rejects (with warning strings) entries missing `name`/`command`/`port`, wrong `type`, duplicate names, non-object items; `defaultCreateCommand(platform)` — POSIX string matches the design's command exactly, win32 uses double quotes with `\"` escaping, both contain `:clojure-pulse/nrepl` and `nrepl.cmdline` and no `--interactive`; `resolvePortSync(port, workspaceRoot)` — number passthrough, string reads the file (reuse `readNreplPort` logic generalized to a full path), missing/garbage file → undefined.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test`
   Expected: FAIL — new suite cannot resolve `../repl/replConfig`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Types: `ReplConfig = CreateReplConfig | ConnectReplConfig`; `CreateReplConfig { name; type: "create"; command; cwd }`; `ConnectReplConfig { name; type: "connect"; host; port: number | string }`. Pure module, no `vscode` import (settings raw value is passed in). Move `readNreplPort` here as `readPortFile(filePath)`; keep a thin re-export in `connectionManager.ts` if that avoids churn.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test`
   Expected: PASS (including existing connectionManager tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add REPL configuration model with validation and default create command"`
+
+> Deviation: `readNreplPort` moved out of `connectionManager.ts` entirely (no re-export) — `replConfig.ts` exports both `readPortFile(fullPath)` and `readNreplPort(dir)`, and the `readNreplPort` test suite moved to `replConfig.test.ts` so tests sit with the code.
+> Deviation: added `resolvePortFilePath(port, workspaceRoot)` so connect errors can name the port file they failed to read (the design calls for that error message).
+> Deviation (codex review, fixup `f09c207`): port-file contents are now matched against `^\d+$` before parsing — `parseInt` accepted `7888abc` as 7888.
 
 ### Task 2: Output channel renderer (`outputRenderer.ts`)
 
