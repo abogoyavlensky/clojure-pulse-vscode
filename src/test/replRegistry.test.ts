@@ -2,6 +2,7 @@ import * as assert from "assert";
 import { EvalOutcome, ReplConnectionInfo } from "../repl/connectionManager";
 import { ConnectReplConfig, CreateReplConfig, ReplConfig } from "../repl/replConfig";
 import { ReplRegistry } from "../repl/replRegistry";
+import { Transcript } from "../repl/transcript";
 import { ReplChannel, ReplSessionLike, ReplSessionState } from "../repl/replSession";
 
 function fakeChannel(name: string): ReplChannel & { name: string; disposed: boolean } {
@@ -18,6 +19,7 @@ function fakeChannel(name: string): ReplChannel & { name: string; disposed: bool
 }
 
 class FakeSession implements ReplSessionLike {
+  readonly transcript = new Transcript();
   state: ReplSessionState = "stopped";
   startCount = 0;
   stopCount = 0;

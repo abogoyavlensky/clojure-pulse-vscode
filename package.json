@@ -83,7 +83,68 @@
         "clojurePulse.inlineEvalResults": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Show evaluation results inline in the editor as ghost text (` => value`) at the end of the evaluated form. Hover the result for the full value and a Copy link. When off, results appear only in the REPL pane."
+          "markdownDescription": "Show evaluation results inline in the editor as ghost text (` => value`) at the end of the evaluated form. Hover the result for the full value and a Copy link. When off, results appear only in the REPL's output channel (`REPL: <name>` in the Output panel)."
+        },
+        "clojurePulse.replConfigurations": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Named REPLs shown in the **REPL** view. Each entry either starts a server (`\"type\": \"create\"`) or attaches to a running one (`\"type\": \"connect\"`).\n\n```json\n[\n  { \"name\": \"dev\", \"type\": \"create\",\n    \"command\": \"clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \\\"1.7.0\\\"}} :main-opts [\\\"-m\\\" \\\"nrepl.cmdline\\\"]}}}' -M:clojure-pulse/nrepl\" },\n  { \"name\": \"local\", \"type\": \"connect\", \"port\": \".nrepl-port\" }\n]\n```\n\nAdd your own aliases by editing the command — `-M:dev:test:clojure-pulse/nrepl` merges their `:extra-deps` and still starts nREPL.",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique name, shown in the REPL view. Also the name of its output channel (REPL: <name>)."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["create", "connect"],
+                "enumDescriptions": [
+                  "Start an nREPL server with the given command, then connect to it.",
+                  "Connect to an nREPL server that is already running."
+                ]
+              },
+              "command": {
+                "type": "string",
+                "markdownDescription": "`create` only — the command line that starts the server, run through your shell. Required for `create`."
+              },
+              "cwd": {
+                "type": "string",
+                "default": ".",
+                "markdownDescription": "`create` only — working directory for the command, relative to the workspace root."
+              },
+              "host": {
+                "type": "string",
+                "default": "localhost",
+                "markdownDescription": "`connect` only — host of the running server."
+              },
+              "port": {
+                "type": ["number", "string"],
+                "markdownDescription": "`connect` only — a port number, or a path to a file holding one (e.g. `\".nrepl-port\"`), relative to the workspace root. Required for `connect`."
+              }
+            },
+            "additionalProperties": false
+          },
+          "defaultSnippets": [
+            {
+              "label": "create — start an nREPL server",
+              "body": {
+                "name": "$1dev",
+                "type": "create",
+                "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
+              }
+            },
+            {
+              "label": "connect — attach to a running server",
+              "body": {
+                "name": "$1local",
+                "type": "connect",
+                "port": ".nrepl-port"
+              }
+            }
+          ]
         }
       }
     },
@@ -96,34 +157,28 @@
       "activitybar": [
         {
           "id": "clojurePulseSidebar",
-          "title": "External Libraries",
+          "title": "Clojure Pulse",
           "icon": "images/activity-icon.svg"
-        }
-      ],
-      "panel": [
-        {
-          "id": "clojurePulseRepl",
-          "title": "REPL",
-          "icon": "images/repl-icon.svg"
         }
       ]
     },
     "views": {
       "clojurePulseSidebar": [
         {
+          "id": "clojurePulse.replManager",
+          "name": "REPL"
+        },
+        {
           "id": "clojurePulse.externalLibraries",
           "name": "External Libraries"
-        }
-      ],
-      "clojurePulseRepl": [
-        {
-          "type": "webview",
-          "id": "clojurePulse.replView",
-          "name": "REPL"
         }
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "clojurePulse.replManager",
+        "contents": "No REPLs configured yet.\n\nAdd one to start an nREPL server for this project, or to connect to a server you already have running.\n\n[Add REPL Configuration](command:clojurePulse.addReplConfig)"
+      },
       {
         "view": "clojurePulse.externalLibraries",
         "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: direct dependencies only (best effort).\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
@@ -148,12 +203,55 @@
       {
         "command": "clojurePulse.connectRepl",
         "title": "Connect to Running nREPL",
-        "category": "Clojure Pulse"
+        "category": "Clojure Pulse",
+        "icon": "$(plug)"
       },
       {
         "command": "clojurePulse.disconnectRepl",
         "title": "Disconnect from nREPL",
         "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.startRepl",
+        "title": "Start REPL",
+        "category": "Clojure Pulse",
+        "icon": "$(play)"
+      },
+      {
+        "command": "clojurePulse.stopRepl",
+        "title": "Stop REPL",
+        "category": "Clojure Pulse",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "clojurePulse.addReplConfig",
+        "title": "Add REPL Configuration",
+        "category": "Clojure Pulse",
+        "icon": "$(add)"
+      },
+      {
+        "command": "clojurePulse.editReplConfig",
+        "title": "Edit REPL Configuration",
+        "category": "Clojure Pulse",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "clojurePulse.deleteReplConfig",
+        "title": "Delete REPL Configuration",
+        "category": "Clojure Pulse",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "clojurePulse.setActiveRepl",
+        "title": "Set Active REPL",
+        "category": "Clojure Pulse",
+        "icon": "$(target)"
+      },
+      {
+        "command": "clojurePulse.showReplOutput",
+        "title": "Show REPL Output",
+        "category": "Clojure Pulse",
+        "icon": "$(output)"
       },
       {
         "command": "clojurePulse.evalSelection",
@@ -195,9 +293,51 @@
     "menus": {
       "view/title": [
         {
+          "command": "clojurePulse.addReplConfig",
+          "when": "view == clojurePulse.replManager",
+          "group": "navigation"
+        },
+        {
           "command": "clojurePulse.refreshExternalLibraries",
           "when": "view == clojurePulse.externalLibraries",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "clojurePulse.startRepl",
+          "when": "view == clojurePulse.replManager && viewItem == replCreateStopped",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.connectRepl",
+          "when": "view == clojurePulse.replManager && viewItem == replConnectStopped",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.setActiveRepl",
+          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected|replAdHoc)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.stopRepl",
+          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected|replAdHoc)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "clojurePulse.showReplOutput",
+          "when": "view == clojurePulse.replManager",
+          "group": "1_output@1"
+        },
+        {
+          "command": "clojurePulse.editReplConfig",
+          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "group": "2_config@1"
+        },
+        {
+          "command": "clojurePulse.deleteReplConfig",
+          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "group": "2_config@2"
         }
       ]
     },

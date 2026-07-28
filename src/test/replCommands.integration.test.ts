@@ -1,13 +1,14 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { ConnectionManager } from "../repl/connectionManager";
 import { InlineResultsManager } from "../repl/inlineResults";
+import { ReplRegistry } from "../repl/replRegistry";
+import { ReplSessionLike } from "../repl/replSession";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
 
 interface ExtensionApi {
-  replManager: ConnectionManager;
+  repls: ReplRegistry;
   inlineResults: InlineResultsManager;
 }
 
@@ -18,22 +19,38 @@ suite("REPL commands", () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
     api = (await ext.activate()) as ExtensionApi;
-    assert.ok(api?.replManager, "activate() should expose replManager");
+    assert.ok(api?.repls, "activate() should expose the REPL registry");
   });
 
   teardown(async () => {
-    await api.replManager.disconnect();
-    // The extension is a singleton across tests; reset shared state so the
-    // transcript and inline results of one test don't leak into the next.
-    api.replManager.transcript.clear();
+    // The extension is a singleton across tests; drop every session so one
+    // test's connection and results do not leak into the next.
+    for (const session of api.repls.sessions) {
+      await session.stop();
+    }
     api.inlineResults.clearAll();
   });
+
+  /** Connects an unsaved session to `server`, the way the ad-hoc flow does. */
+  async function connect(server: FakeNrepl): Promise<ReplSessionLike> {
+    const session = api.repls.addAdHoc({ host: "127.0.0.1", port: server.port });
+    await session.start();
+    assert.strictEqual(session.state, "connected");
+    return session;
+  }
 
   test("registers the REPL commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
       "clojurePulse.connectRepl",
       "clojurePulse.disconnectRepl",
+      "clojurePulse.startRepl",
+      "clojurePulse.stopRepl",
+      "clojurePulse.addReplConfig",
+      "clojurePulse.editReplConfig",
+      "clojurePulse.deleteReplConfig",
+      "clojurePulse.setActiveRepl",
+      "clojurePulse.showReplOutput",
       "clojurePulse.evalSelection",
       "clojurePulse.replMenu",
       "clojurePulse.evalCurrentForm",
@@ -57,7 +74,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      const session = await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -69,7 +86,7 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
 
-      const entries = api.replManager.transcript.entries();
+      const entries = session.transcript.entries();
       assert.ok(
         entries.some((e) => e.kind === "in" && e.text === "(+ 1 2)"),
         "expected an in entry for the form",
@@ -87,7 +104,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -111,7 +128,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -132,7 +149,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -150,15 +167,25 @@ suite("REPL commands", () => {
     }
   });
 
-  test("the REPL view resolves in the panel", async () => {
-    await vscode.commands.executeCommand("clojurePulse.replView.focus");
+  test("showReplOutput reveals a session's channel without throwing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      await vscode.commands.executeCommand(
+        "clojurePulse.showReplOutput",
+        session.name,
+      );
+    } finally {
+      await server?.close();
+    }
   });
 
   test("connect + evalSelection round-trips through a running nREPL", async () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      const session = await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -169,11 +196,27 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.evalSelection");
 
-      const entries = api.replManager.transcript.entries();
+      const entries = session.transcript.entries();
       const inEntry = entries.find((e) => e.kind === "in");
       const valueEntry = entries.find((e) => e.kind === "value");
       assert.strictEqual(inEntry?.text, "(+ 20 22)");
       assert.strictEqual(valueEntry?.text, "42");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("an ad-hoc session disappears when it disconnects", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      assert.strictEqual(api.repls.active?.name, session.name);
+
+      await vscode.commands.executeCommand("clojurePulse.disconnectRepl");
+
+      assert.strictEqual(api.repls.active, undefined);
+      assert.deepStrictEqual(api.repls.sessions, []);
     } finally {
       await server?.close();
     }

@@ -44,6 +44,8 @@ export interface ReplSessionLike {
   readonly config: ReplConfig;
   readonly state: ReplSessionState;
   readonly connectionInfo: ReplConnectionInfo | undefined;
+  /** Everything this REPL has printed, as data behind its output channel. */
+  readonly transcript: Transcript;
   start(): Promise<void>;
   stop(): Promise<void>;
   eval(code: string, opts?: EvalOptions): Promise<EvalOutcome>;
