@@ -164,10 +164,18 @@ export function defaultCreateCommand(
   return `clojure -Sdeps ${quoted} -M:clojure-pulse/nrepl`;
 }
 
-/** Reads a port from a file holding just the number, as nREPL writes it. */
+/**
+ * Reads a port from a file holding just the number, as nREPL writes it. The
+ * contents must be digits only — `parseInt` would happily read `7888abc` as
+ * 7888 and connect somewhere the file never named.
+ */
 export function readPortFile(filePath: string): number | undefined {
   try {
-    const port = Number.parseInt(fs.readFileSync(filePath, "utf8").trim(), 10);
+    const text = fs.readFileSync(filePath, "utf8").trim();
+    if (!/^\d+$/.test(text)) {
+      return undefined;
+    }
+    const port = Number.parseInt(text, 10);
     return isPort(port) ? port : undefined;
   } catch {
     return undefined;

@@ -207,6 +207,15 @@ suite("port resolution", () => {
     assert.strictEqual(readPortFile(file), undefined);
   });
 
+  test("readPortFile rejects contents with trailing junk", () => {
+    const junk = path.join(dir, "junk");
+    fs.writeFileSync(junk, "7888abc");
+    assert.strictEqual(readPortFile(junk), undefined);
+    const fractional = path.join(dir, "fractional");
+    fs.writeFileSync(fractional, "7888.5");
+    assert.strictEqual(readPortFile(fractional), undefined);
+  });
+
   test("readNreplPort still reads <dir>/.nrepl-port", () => {
     fs.writeFileSync(path.join(dir, ".nrepl-port"), "7888\n");
     assert.strictEqual(readNreplPort(dir), 7888);
