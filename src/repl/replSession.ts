@@ -75,7 +75,9 @@ export class ReplSession {
     // session — and takes an owned process with it.
     this.manager.onDidChangeState((state) => {
       if (state === "disconnected" && this.currentState !== "stopped") {
-        void this.enterStopped();
+        // A kill that fails reports itself through the channel; there is no
+        // caller here to hand the rejection to.
+        void this.enterStopped().catch(() => {});
       }
     });
   }
@@ -130,7 +132,8 @@ export class ReplSession {
       }
       const reason = err instanceof Error ? err.message : String(err);
       this.transcript.append({ kind: "info", text: reason });
-      await this.enterStopped();
+      // Report why the start failed, not a secondary failure to clean up.
+      await this.enterStopped().catch(() => {});
       throw err;
     }
   }
@@ -160,7 +163,9 @@ export class ReplSession {
   async dispose(): Promise<void> {
     this.startAttempt++;
     this.manager.dispose();
-    await this.enterStopped();
+    // Shutdown is best-effort: a kill that fails is already in the channel,
+    // and rejecting here would abort disposal of the sessions after this one.
+    await this.enterStopped().catch(() => {});
   }
 
   /** Spawns the server and waits for it to report its port. */
@@ -229,9 +234,19 @@ export class ReplSession {
     }
     this.stopping = proc
       .stop()
-      .catch(() => {})
       .then(() => {
         this.setState("stopped");
+      })
+      .catch((err: unknown) => {
+        // The server may well still be running, so the session must not claim
+        // to be stopped: keep the process so a retry can kill it, report the
+        // reason, and let the caller surface it.
+        this.process = proc;
+        this.transcript.append({
+          kind: "info",
+          text: `Failed to stop the nREPL process: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        throw err;
       })
       .finally(() => {
         this.stopping = undefined;

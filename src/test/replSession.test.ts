@@ -55,6 +55,12 @@ class FakeProcess implements ReplProcessLike {
   /** Resolved by `releaseStop()` when a test holds the kill open. */
   private stopGate: Promise<void> | undefined;
   private openGate: (() => void) | undefined;
+  private stopError: Error | undefined;
+
+  /** Makes stop() reject, modelling a process that could not be killed. */
+  failStop(message: string): void {
+    this.stopError = new Error(message);
+  }
 
   /** Makes stop() hang until releaseStop(), modelling a slow SIGTERM. */
   holdStop(): void {
@@ -69,6 +75,9 @@ class FakeProcess implements ReplProcessLike {
   async stop(): Promise<void> {
     this.stopCount += 1;
     await this.stopGate;
+    if (this.stopError) {
+      throw this.stopError;
+    }
   }
 
   emit(text: string): void {
@@ -346,6 +355,25 @@ suite("ReplSession", () => {
     proc.releaseStop();
     await stopping;
     assert.strictEqual(session.state, "stopped");
+  });
+
+  test("a kill that fails leaves the session running and reports why", async () => {
+    const proc = new FakeProcess();
+    const session = make(createConfig(), { process: proc });
+    const started = session.start();
+    await waitUntil(() => session.state === "starting", 1000);
+    proc.reportPort(server.port);
+    await started;
+    proc.failStop("kill refused");
+
+    await assert.rejects(session.stop(), /kill refused/);
+
+    assert.notStrictEqual(
+      session.state,
+      "stopped",
+      "a session whose server may still be alive must not report stopped",
+    );
+    assert.ok(channel.text().includes("kill refused"), channel.text());
   });
 
   test("showOutput reveals the channel, creating it when never started", () => {
