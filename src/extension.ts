@@ -222,10 +222,21 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   const inlineResults = new InlineResultsManager();
 
   const replStatus = createReplStatusBar();
-  replStatus.update(manager.state);
-  manager.onDidChangeState((state) =>
-    replStatus.update(state, manager.connectionInfo),
-  );
+  // Single-connection view of the multi-session status item; replaced when the
+  // REPL manager registry takes over the wiring.
+  const paintReplStatus = (): void => {
+    const info = manager.connectionInfo;
+    replStatus.update({
+      active:
+        manager.state === "connected"
+          ? { name: info ? `${info.host}:${info.port}` : "nREPL", info }
+          : undefined,
+      busy: manager.state === "connecting",
+      total: 1,
+    });
+  };
+  paintReplStatus();
+  manager.onDidChangeState(() => paintReplStatus());
   // Inline results are not cleared on disconnect: a mid-eval socket drop then
   // resolves its pending decoration to the failure (via runEval's catch)
   // instead of silently vanishing, and past results stay readable until the
