@@ -273,24 +273,28 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 - Modify: `package.json`, `src/extension.ts`, `src/test/replCommands.integration.test.ts`
 - Delete: `src/repl/replPanel.ts`
 
-- [ ] **Step 1: package.json contributions**
+- [x] **Step 1: package.json contributions**
   Add: `clojurePulse.replConfigurations` setting (full JSON schema with per-type required fields and markdown descriptions, including the default create command in the docs); `clojurePulse.replManager` view (name "REPL") **above** External Libraries in `clojurePulseSidebar`; retitle the container "Clojure Pulse"; commands `startRepl`, `stopRepl`, `addReplConfig`, `setActiveRepl`, `showReplOutput`, `editReplConfig`, `deleteReplConfig` (keep `connectRepl`/`disconnectRepl`); `view/title` `+` menu and `view/item/context` inline menus keyed on the Task 6 contextValues; `viewsWelcome` for the empty REPL view ("No REPL configurations yet — Add one"). Remove: `clojurePulseRepl` panel container and the `clojurePulse.replView` webview view. Update the `clojurePulse.inlineEvalResults` setting description — it still says results "appear only in the REPL pane"; it should point at the `REPL: <name>` output channels.
 
-- [ ] **Step 2: Rework `setupRepl` in extension.ts**
+- [x] **Step 2: Rework `setupRepl` in extension.ts**
   Instantiate registry (real session factory: `vscode.window.createOutputChannel("REPL: " + name, "clojure")`), feed it parsed configs, re-parse on `onDidChangeConfiguration`, log validation warnings to the existing output channel. Register commands per the design, all through the shared `resolveSessionName(arg)` helper (string from keybindings, tree node from menus, quick-pick when absent): `startRepl(name?)` (works for both types), `stopRepl(name?)`, reworked `connectRepl(name?)` with the ad-hoc entry, `addReplConfig` flow writing via `config.update("replConfigurations", ..., ConfigurationTarget.Workspace)`, `setActiveRepl`, `showReplOutput`, `deleteReplConfig` (confirms first), `editReplConfig` (runs `workbench.action.openWorkspaceSettingsFile`). Route eval commands and `replMenu` through `registry.active` (menu gains "Switch active REPL"); `ensureConnected` warns with Start/Connect when no active session. Delete `replPanel.ts` and all `panel.reveal()` uses (evals reveal nothing; inline results or the channel carry the output; `evalFile`/`evalSelection` call `showReplOutput` for the active session where the panel was revealed before). Shutdown must be awaitable so the SIGTERM grace period and Windows `taskkill` actually run: `registry.dispose()` returns a promise, and `deactivate()` awaits it (keep a module-level registry reference, like the existing `client` pattern) — `context.subscriptions` alone fires and forgets.
 
-- [ ] **Step 3: Update integration tests**
+- [x] **Step 3: Update integration tests**
   `replCommands.integration.test.ts`: replace panel expectations with registry/active-session assertions; keep eval command coverage green via `ExtensionApi` (expose the registry alongside `replManager` — keep `replManager` pointing at the active session's ConnectionManager or update tests accordingly, whichever keeps the API honest).
 
-- [ ] **Step 4: Compile, lint, full test run**
+- [x] **Step 4: Compile, lint, full test run**
   Run: `npm test`
   Expected: PASS; no references to `replPanel` remain (`grep -r replPanel src` is empty).
 
-- [ ] **Step 5: Manual smoke test**
+- [x] **Step 5: Manual smoke test**
   In the extension host (F5): add a `create` config in a deps.edn project, Start from the tree button, watch the channel stream startup output, confirm auto-connect and `evalCurrentForm`; add a `connect` config with `"port": ".nrepl-port"`; run two REPLs, switch active via status bar, confirm eval routing; Stop kills the java process (`ps` check); reload window — no orphaned processes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Add REPL manager view with create/connect configs and per-REPL output channels"`
+
+> Deviation: `ExtensionApi` is now `{ repls: ReplRegistry, inlineResults }` — sessions own their `ConnectionManager` privately, so exposing a single `replManager` would have been a lie. Integration tests connect through `repls.addAdHoc(...)`. `ReplSessionLike` also exposes its `transcript`, which is what those tests assert on.
+> Deviation (Step 5, manual smoke test): the interactive parts (tree buttons, status-bar menu, window reload) could not be driven in this headless environment. Instead the `create` path was verified end-to-end against a **real** nREPL: the default command spawned nREPL 1.7.0 / Clojure 1.12.4 in a scratch deps.edn project, the port was read from the real startup line, `starting → connecting → connected` fired in order, `(+ 20 22)` returned 42, `println` output streamed into the channel, and Stop took the process group from 2 processes to 0. The channel rendering was confirmed verbatim (`;; ` prose, `=> ` values, raw stdout).
+> Deviation (codex review, 2 rounds): the no-REPL eval warning offers Connect when nothing is startable; the add-config port prompt uses the parser's own range rule (`validatePortInput`); and delete/duplicate checks go through `configEntryName` / `parseReplConfigurations` so the commands and the tree can never disagree about which entry is which.
 
 ### Task 8: Multi-session integration test
 
