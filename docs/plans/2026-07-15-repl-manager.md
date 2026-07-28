@@ -179,20 +179,23 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Create: `src/repl/replProcess.ts`, `src/test/replProcess.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `parseNreplPort(text)` — matches `nREPL server started on port 55123`, ignores other lines, first match wins across chunk boundaries (feed accumulated text). `ReplProcess` against real shell commands: `start()` with `echo "nREPL server started on port 12345" && sleep 30` resolves `waitForPort()` with 12345; a command exiting without a port line rejects `waitForPort()` with the exit code in the message; `stop()` terminates a `sleep 30` promptly and fires `onExit`; output events carry stdout and stderr text. Guard the shell-command tests with a POSIX platform check (skip on win32), and stop any started process in `afterEach` so a failing assertion never leaks a `sleep`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test` — FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Spawn per the design (shell, cwd, detached on POSIX). Buffer stdout for port parsing; `waitForPort()` also polls `readPortFile(cwd + "/.nrepl-port")` on each output event as fallback (only accept the file if its mtime is newer than `start()` time, so a stale file from a previous run is not picked up). Group kill: POSIX `process.kill(-pid, "SIGTERM")` then SIGKILL after a short grace; win32 `taskkill /PID <pid> /T /F`. No `vscode` import.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add nREPL process runner with port discovery and group kill"`
+
+> Deviation: `ReplProcess` also handles the child's `close` event (a failed spawn emits `error`+`close`, never `exit`), so the port poller is always released, and the poll timer is `unref()`ed.
+> Deviation (codex review, fixups `7fd9365`/`6ee9085`/`c6ae07c`): `stop()` kills the process *group* rather than trusting the shell's exit code — a command that daemonizes nREPL leaves the server alive in the group — while never signalling a group id that could have been recycled. Ownership after the shell exits comes from a sample taken in the exit handler; the `kill` seam in `ReplProcessOptions` exists so tests can assert which signals are sent.
 
 ### Task 4: Session (`replSession.ts`)
 
