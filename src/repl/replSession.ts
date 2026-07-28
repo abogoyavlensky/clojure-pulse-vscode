@@ -38,6 +38,21 @@ export interface ReplChannel extends OutputSink {
   dispose(): void;
 }
 
+/** What the registry and commands need from a session; faked in tests. */
+export interface ReplSessionLike {
+  readonly name: string;
+  readonly config: ReplConfig;
+  readonly state: ReplSessionState;
+  readonly connectionInfo: ReplConnectionInfo | undefined;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  eval(code: string, opts?: EvalOptions): Promise<EvalOutcome>;
+  loadFile(content: string, opts?: LoadFileOptions): Promise<EvalOutcome>;
+  showOutput(): void;
+  onDidChangeState(listener: (state: ReplSessionState) => void): void;
+  dispose(): Promise<void>;
+}
+
 export interface ReplSessionDeps {
   /** Absolute path used to resolve relative `cwd` and port-file settings. */
   workspaceRoot?: string;
@@ -48,7 +63,7 @@ export interface ReplSessionDeps {
   connectTimeoutMs?: number;
 }
 
-export class ReplSession {
+export class ReplSession implements ReplSessionLike {
   readonly transcript = new Transcript();
   private readonly manager: ConnectionManager;
   private currentState: ReplSessionState = "stopped";
