@@ -16,8 +16,8 @@ import {
   ConnectCancelledError,
   ConnectionManager,
   EvalOptions,
-  readNreplPort,
 } from "./repl/connectionManager";
+import { readNreplPort } from "./repl/replConfig";
 import { ReplPanelProvider } from "./repl/replPanel";
 import { createReplStatusBar } from "./repl/replStatusBar";
 import { InlineResultsManager } from "./repl/inlineResults";
