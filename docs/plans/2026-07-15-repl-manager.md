@@ -159,19 +159,19 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Create: `src/repl/outputRenderer.ts`, `src/test/outputRenderer.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   `formatEntry(entry): string` per the design's formatting rules (banner/info `;; ` per line + newline; in raw + newline; value `=> ` + newline; out/err raw). Renderer test with a fake sink `{ append(text) }`: replays existing transcript entries on attach, mirrors subsequent appends, `clear()` on transcript clear.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test` — FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `attachTranscriptRenderer(transcript, sink)` where `sink` is a minimal structural interface (`append`, `clear`) satisfied by `vscode.OutputChannel`. Pure module, no `vscode` import.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add transcript-to-output-channel renderer"`
 
 ### Task 3: Process runner (`replProcess.ts`)
