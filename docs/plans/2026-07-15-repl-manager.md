@@ -202,20 +202,23 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Create: `src/repl/replSession.ts`, `src/test/replSession.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Use `fakeNreplServer` and an injected fake process factory + fake channel sink. Cover: connect-type session `start()` → `connecting` → `connected`, banner lands in its transcript; create-type session runs process, on port resolution connects, states pass `starting` → `connecting` → `connected`; process exit before port → `stopped` with error surfaced as transcript `info`/`err`; `stop()` from `connected` disconnects (and kills process for create-type) → `stopped`; **create-type: connect failure after port discovery kills the process, and connection loss while `connected` kills the process** (the `stopped`-kills-owned-process invariant); port-file connect config resolves via `resolvePortSync`; state-change events fire in order.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test` — FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `ReplSession` owns: config, own `Transcript` + renderer attached to a lazily-created channel (factory injected: `(name) => sink`), own `ConnectionManager`, optional `ReplProcess` (factory injected). Public: `name`, `state`, `connectionInfo`, `start()`, `stop()`, `eval()`/`loadFile()` delegating to its ConnectionManager, `onDidChangeState`, `dispose()`. Session state derives from process phase + ConnectionManager state.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add REPL session composing process, connection, and output channel"`
+
+> Deviation: the injected channel factory is `createChannel(name)` on a `ReplSessionDeps` object (alongside `createProcess` and `workspaceRoot`), and the session exposes `showOutput()` so the reveal command works before a session has ever run.
+> Deviation (codex review, fixups `2 rounds`): startups are cancelled by an explicit `stop()`/`dispose()` via an attempt counter, so a port arriving mid-shutdown cannot reconnect; `stopped` is published only after the kill resolves; and a kill that *fails* keeps the session out of `stopped` and rejects, so a restart cannot double-spawn a server.
 
 ### Task 5: Registry (`replRegistry.ts`)
 
