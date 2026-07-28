@@ -225,20 +225,23 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Create: `src/repl/replRegistry.ts`, `src/test/replRegistry.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover: `setConfigs()` creates sessions per valid config; removing a config stops and disposes its session (and its channel); updating a *stopped* session's config applies immediately **and keeps the same channel (memoized factory — history survives)**; updating a *running* one stores the config as pending, keeps the launched config while running, and applies the pending config when the session reaches `stopped`; connecting/starting a session sets it active; `active` cleared when the active session stops; `addAdHoc(host, port)` yields a transient session named `host:port` that disappears on disconnect; aggregate `onDidChange` fires on any session state change; `dispose()` stops everything.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm test` — FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Constructor takes a session factory so tests inject fakes. Public: `sessions`, `get(name)`, `active`, `setActive(name)`, `setConfigs(configs)`, `addAdHoc(info)`, `onDidChange`, `dispose()`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm test` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add REPL registry with active-session routing"`
+
+> Deviation: the registry owns the channel factory (`createChannel`) and hands sessions a memoized `channelFor(name)`; the session factory is `createSession(config, channelFor)`. `setConfigs` returns a promise so callers can await removals actually shutting down. A running session's edit is applied by *replacing* the session object (same channel), not by mutating it.
+> Deviation (codex review, 3 rounds): `setActive` only accepts a *connected* session; saving a configuration over an ad-hoc name promotes that session; a retired session whose server would not die is kept in an `undead` set (keyed by object, so a re-added name cannot shadow it) and killed again by `dispose()`; and a session that could not kill its process refuses to `start()` again, which is what keeps a failed stop from double-spawning a server.
 
 ### Task 6: Tree view and status bar presentation
 
