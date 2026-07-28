@@ -361,6 +361,26 @@ suite("ReplRegistry", () => {
     assert.strictEqual(current?.channel, channel);
   });
 
+  test("a replaced session whose server survived is still killed at shutdown", async () => {
+    registry.setConfigs([createConfig("a", "clj -M:nrepl")]);
+    const first = sessionNamed("a") as FakeSession;
+    await first.start();
+    registry.setConfigs([createConfig("a", "clj -M:dev:nrepl")]);
+    first.disposeError = new Error("could not stop the nREPL process");
+
+    first.moveTo("stopped"); // the pending edit applies here
+    await tick();
+
+    const second = sessionNamed("a") as FakeSession;
+    assert.notStrictEqual(second, first);
+    assert.strictEqual(first.disposed, false);
+
+    first.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(first.disposed, true, "the surviving server must not be forgotten");
+  });
+
   test("setActive only accepts a connected session", async () => {
     registry.setConfigs([connectConfig("a"), connectConfig("b")]);
     await sessionNamed("a")?.start();

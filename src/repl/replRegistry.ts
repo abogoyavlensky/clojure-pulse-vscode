@@ -187,7 +187,9 @@ export class ReplRegistry {
   private replace(existing: ReplSessionLike, config: ReplConfig): void {
     this.pendingConfigs.delete(config.name);
     this.items.set(config.name, this.createSession(config));
-    void existing.dispose().catch(() => {});
+    // Through retire(), so a server the outgoing session could not kill is
+    // remembered for shutdown instead of being lost behind its replacement.
+    void this.retire(existing);
   }
 
   private onSessionState(session: ReplSessionLike, state: ReplSessionState): void {
