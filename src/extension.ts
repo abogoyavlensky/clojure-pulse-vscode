@@ -612,6 +612,11 @@ async function addReplConfig(): Promise<void> {
   }
 
   const existing = currentReplConfigurations();
+  // Only names that actually reach the tree count as taken: an entry the
+  // parser skips (say, a `create` with no command) must not block the name.
+  const taken = new Set(
+    parseReplConfigurations(existing).configs.map((config) => config.name),
+  );
   const name = await vscode.window.showInputBox({
     prompt: "REPL name",
     value: type.value === "create" ? "dev" : "local",
@@ -621,9 +626,7 @@ async function addReplConfig(): Promise<void> {
       if (trimmed.length === 0) {
         return "Enter a name";
       }
-      return existing.some((entry) => configEntryName(entry) === trimmed)
-        ? `"${trimmed}" is already configured`
-        : undefined;
+      return taken.has(trimmed) ? `"${trimmed}" is already configured` : undefined;
     },
   });
   if (!name) {
