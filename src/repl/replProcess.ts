@@ -37,6 +37,8 @@ export interface ReplProcessOptions {
   portFilePollMs?: number;
   /** Seam for observing the signals sent to the process group, in tests. */
   kill?: (pid: number, signal: NodeJS.Signals) => void;
+  /** How long to wait after each kill signal before escalating or giving up. */
+  killGraceMs?: number;
 }
 
 /** The slice of `ReplProcess` a session depends on, so tests can fake it. */
@@ -175,6 +177,9 @@ export class ReplProcess implements ReplProcessLike {
    * not the shell, is the unit that matters: a command that backgrounds or
    * daemonizes its server leaves nREPL alive in the group after the shell
    * itself has exited.
+   *
+   * Rejects when the group survives SIGKILL: the caller must not be told the
+   * server is gone while it may still be holding its port.
    */
   async stop(): Promise<void> {
     this.stopped = true;
@@ -189,6 +194,11 @@ export class ReplProcess implements ReplProcessLike {
     if (this.groupIsOurs(child, pid)) {
       this.killGroup("SIGKILL");
       await this.waitForGroupExit(child, pid);
+    }
+    if (this.groupIsOurs(child, pid)) {
+      throw new Error(
+        `Could not stop the nREPL process (pid ${pid}) — it is still running`,
+      );
     }
   }
 
@@ -216,7 +226,7 @@ export class ReplProcess implements ReplProcessLike {
 
   /** Waits (up to the grace period) for the leader and its group to go away. */
   private async waitForGroupExit(child: ChildProcess, pid: number): Promise<void> {
-    const deadline = Date.now() + KILL_GRACE_MS;
+    const deadline = Date.now() + (this.options.killGraceMs ?? KILL_GRACE_MS);
     while (Date.now() < deadline && this.groupIsOurs(child, pid)) {
       await delay(50);
     }

@@ -65,8 +65,9 @@ suite("ReplProcess", () => {
 
   teardown(async () => {
     // Stop everything a test started, so a failed assertion cannot leak a
-    // long-running `sleep` into the rest of the run.
-    await Promise.all(running.map((proc) => proc.stop()));
+    // long-running `sleep` into the rest of the run. A stop that reports
+    // failure here is the test's business, not the teardown's.
+    await Promise.all(running.map((proc) => proc.stop().catch(() => {})));
     running = [];
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -231,6 +232,27 @@ suite("ReplProcess", () => {
 
     assert.deepStrictEqual(signalled[0], [-pid, "SIGTERM"]);
     assert.strictEqual(groupAlive(pid), false);
+  });
+
+  test("stop() rejects when the process group survives the kill", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const proc = new ReplProcess({
+      command: "sleep 30",
+      cwd: dir,
+      // Signals that go nowhere: the group stays up through SIGTERM and SIGKILL.
+      kill: () => {},
+      killGraceMs: 100,
+    });
+    running.push(proc);
+    proc.start();
+    const pid = proc.pid;
+    assert.ok(pid);
+
+    await assert.rejects(proc.stop(), /still running/);
+
+    process.kill(-pid, "SIGKILL");
   });
 
   test("stop() before start() is a no-op", async function () {
