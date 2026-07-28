@@ -120,6 +120,39 @@ export function parseReplConfigurations(raw: unknown): ParsedReplConfigurations 
   return { configs, warnings };
 }
 
+/**
+ * The name a raw settings entry contributes, normalized exactly as
+ * `parseReplConfigurations` does — so a command editing the raw array matches
+ * the same entries the tree is showing.
+ */
+export function configEntryName(entry: unknown): string | undefined {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    return undefined;
+  }
+  const name = (entry as Record<string, unknown>).name;
+  if (typeof name !== "string") {
+    return undefined;
+  }
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Validates what the user typed for a `connect` port: a number must be a
+ * usable port, anything else is taken as a port-file path. Returns the
+ * complaint to show, or undefined when the input is fine.
+ */
+export function validatePortInput(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "Enter a port number or a path to a port file";
+  }
+  if (/^\d+$/.test(trimmed) && !isPort(Number.parseInt(trimmed, 10))) {
+    return `Enter a port number between ${MIN_PORT} and ${MAX_PORT}`;
+  }
+  return undefined;
+}
+
 /** A numeric port in range, or a non-empty port-file path; else undefined. */
 function validatePort(value: unknown): number | string | undefined {
   if (typeof value === "number") {

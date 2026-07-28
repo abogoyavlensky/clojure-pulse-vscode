@@ -3,12 +3,14 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+  configEntryName,
   defaultCreateCommand,
   parseReplConfigurations,
   readNreplPort,
   readPortFile,
   resolvePortFilePath,
   resolvePortSync,
+  validatePortInput,
 } from "../repl/replConfig";
 
 suite("parseReplConfigurations", () => {
@@ -146,6 +148,50 @@ suite("parseReplConfigurations", () => {
       ["dev"],
     );
     assert.strictEqual(warnings.length, 1);
+  });
+});
+
+suite("configEntryName", () => {
+  test("reads the name the parser would use", () => {
+    assert.strictEqual(configEntryName({ name: "dev" }), "dev");
+    assert.strictEqual(configEntryName({ name: "  dev  " }), "dev");
+  });
+
+  test("has no name for entries the parser would skip", () => {
+    assert.strictEqual(configEntryName({ name: "   " }), undefined);
+    assert.strictEqual(configEntryName({ name: 7 }), undefined);
+    assert.strictEqual(configEntryName({}), undefined);
+    assert.strictEqual(configEntryName("dev"), undefined);
+    assert.strictEqual(configEntryName(null), undefined);
+  });
+
+  test("matches what a hand-edited entry contributes to the tree", () => {
+    const { configs } = parseReplConfigurations([
+      { name: "  dev  ", type: "connect", port: 7888 },
+    ]);
+    assert.strictEqual(configs[0].name, configEntryName({ name: "  dev  " }));
+  });
+});
+
+suite("validatePortInput", () => {
+  test("accepts a usable port number", () => {
+    assert.strictEqual(validatePortInput("7888"), undefined);
+    assert.strictEqual(validatePortInput(" 1 "), undefined);
+    assert.strictEqual(validatePortInput("65535"), undefined);
+  });
+
+  test("rejects a number the configuration would then throw away", () => {
+    assert.ok(validatePortInput("0"));
+    assert.ok(validatePortInput("70000"));
+  });
+
+  test("accepts a port file path", () => {
+    assert.strictEqual(validatePortInput(".nrepl-port"), undefined);
+    assert.strictEqual(validatePortInput("target/nrepl.port"), undefined);
+  });
+
+  test("rejects an empty value", () => {
+    assert.ok(validatePortInput("   "));
   });
 });
 

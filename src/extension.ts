@@ -17,10 +17,11 @@ import {
   ReplConnectionInfo,
 } from "./repl/connectionManager";
 import {
+  configEntryName,
   defaultCreateCommand,
   parseReplConfigurations,
   readNreplPort,
-  ReplConfig,
+  validatePortInput,
 } from "./repl/replConfig";
 import { ReplRegistry } from "./repl/replRegistry";
 import { ReplSession, ReplSessionLike } from "./repl/replSession";
@@ -620,7 +621,7 @@ async function addReplConfig(): Promise<void> {
       if (trimmed.length === 0) {
         return "Enter a name";
       }
-      return existing.some((entry) => entry.name === trimmed)
+      return existing.some((entry) => configEntryName(entry) === trimmed)
         ? `"${trimmed}" is already configured`
         : undefined;
     },
@@ -668,8 +669,7 @@ async function promptConnectEntry(
     prompt: "nREPL port, or a file holding one",
     value: ".nrepl-port",
     ignoreFocusOut: true,
-    validateInput: (value) =>
-      value.trim().length === 0 ? "Enter a port or a port file path" : undefined,
+    validateInput: validatePortInput,
   });
   if (!port) {
     return undefined;
@@ -706,8 +706,10 @@ async function deleteReplConfig(
   if (confirmed !== "Delete") {
     return;
   }
+  // Compared through the parser's own normalization: a hand-edited
+  // `{"name": " dev "}` shows up as "dev" and must delete that entry.
   const remaining = currentReplConfigurations().filter(
-    (entry) => entry.name !== session.name,
+    (entry) => configEntryName(entry) !== session.name,
   );
   await vscode.workspace
     .getConfiguration("clojurePulse")
@@ -716,14 +718,12 @@ async function deleteReplConfig(
 
 /** The configured entries as raw objects, so an edit preserves fields this
  *  version does not know about. */
-function currentReplConfigurations(): Array<Record<string, unknown> & { name?: string }> {
+function currentReplConfigurations(): unknown[] {
   const raw = vscode.workspace
     .getConfiguration("clojurePulse")
     .get<unknown>("replConfigurations");
   return Array.isArray(raw)
-    ? (raw.filter(
-        (entry) => typeof entry === "object" && entry !== null,
-      ) as Array<Record<string, unknown> & { name?: string }>)
+    ? raw.filter((entry) => typeof entry === "object" && entry !== null)
     : [];
 }
 
@@ -741,11 +741,18 @@ function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
   if (active) {
     return active;
   }
+  // With nothing configured to start, the useful offer is the connect flow,
+  // which can reach a running server without any settings at all.
+  const startable = registry.sessions.some((session) => session.state === "stopped");
+  const action = startable ? "Start REPL" : "Connect";
   void vscode.window
-    .showWarningMessage("No REPL is connected.", "Start REPL")
-    .then((choice) =>
-      choice === "Start REPL" ? startRepl(registry) : undefined,
-    );
+    .showWarningMessage("No REPL is connected.", action)
+    .then((choice) => {
+      if (choice === "Start REPL") {
+        return startRepl(registry);
+      }
+      return choice === "Connect" ? connectRepl(registry) : undefined;
+    });
   return undefined;
 }
 
