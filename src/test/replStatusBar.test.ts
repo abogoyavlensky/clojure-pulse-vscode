@@ -2,11 +2,11 @@ import * as assert from "assert";
 import { replStatusPresentation } from "../repl/replStatusBar";
 
 suite("replStatusPresentation", () => {
-  test("no configurations at all: offers to add one", () => {
+  test("no configurations at all: offers to connect", () => {
     const view = replStatusPresentation({ busy: false, total: 0 });
     assert.strictEqual(view.text, "$(debug-disconnect) nREPL");
-    assert.strictEqual(view.command, "clojurePulse.addReplConfig");
-    assert.ok(/add/i.test(view.tooltip), view.tooltip);
+    assert.strictEqual(view.command, "clojurePulse.connectRepl");
+    assert.ok(/connect/i.test(view.tooltip), view.tooltip);
   });
 
   test("configurations but none running: offers to start one", () => {
@@ -31,6 +31,24 @@ suite("replStatusPresentation", () => {
     assert.strictEqual(view.command, "clojurePulse.replMenu");
     assert.ok(view.tooltip.includes("dev"), view.tooltip);
     assert.ok(view.tooltip.includes("localhost:7888"), view.tooltip);
+  });
+
+  test("an unnamed (ad-hoc) session shows just its address", () => {
+    const view = replStatusPresentation({
+      active: { info: { host: "127.0.0.1", port: 7890 } },
+      busy: false,
+      total: 1,
+    });
+    assert.strictEqual(view.text, "$(plug) nREPL 127.0.0.1:7890");
+  });
+
+  test("a session named after its address does not repeat it", () => {
+    const view = replStatusPresentation({
+      active: { name: "127.0.0.1:7890", info: { host: "127.0.0.1", port: 7890 } },
+      busy: false,
+      total: 1,
+    });
+    assert.strictEqual(view.text, "$(plug) nREPL 127.0.0.1:7890");
   });
 
   test("an active session without connection details still renders", () => {

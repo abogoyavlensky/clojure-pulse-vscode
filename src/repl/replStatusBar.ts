@@ -9,8 +9,9 @@ export interface ReplStatusView {
 
 /** What the status bar summarises: the eval target, and what else exists. */
 export interface ReplStatusState {
-  /** The session evaluations go to, when there is one. */
-  active?: { name: string; info?: ReplConnectionInfo };
+  /** The session evaluations go to, when there is one. An unnamed session
+   *  (the ad-hoc flow) is identified by its address alone. */
+  active?: { name?: string; info?: ReplConnectionInfo };
   /** A REPL is coming up, though none is active yet. */
   busy: boolean;
   /** How many REPLs the manager knows about at all. */
@@ -27,11 +28,13 @@ export function replStatusPresentation(state: ReplStatusState): ReplStatusView {
     const where = state.active.info
       ? `${state.active.info.host}:${state.active.info.port}`
       : "";
+    // A session named after its own address (ad-hoc) must not print it twice.
+    const parts = [state.active.name, where === state.active.name ? "" : where];
     return {
-      text: `$(plug) nREPL ${state.active.name}${where ? ` ${where}` : ""}`,
-      tooltip: `Clojure Pulse: evaluating in "${state.active.name}"${
-        where ? ` at ${where}` : ""
-      } — click for REPL actions`,
+      text: `$(plug) nREPL ${parts.filter(Boolean).join(" ")}`.trimEnd(),
+      tooltip: `Clojure Pulse: evaluating in ${
+        state.active.name ? `"${state.active.name}"` : "the REPL"
+      }${where ? ` at ${where}` : ""} — click for REPL actions`,
       command: "clojurePulse.replMenu",
     };
   }
@@ -49,10 +52,12 @@ export function replStatusPresentation(state: ReplStatusState): ReplStatusView {
       command: "clojurePulse.startRepl",
     };
   }
+  // Nothing configured yet: the connect flow is the way in, since it also
+  // offers an ad-hoc host:port connection to a REPL that is already running.
   return {
     text: "$(debug-disconnect) nREPL",
-    tooltip: "Clojure Pulse: no REPL configured — click to add one",
-    command: "clojurePulse.addReplConfig",
+    tooltip: "Clojure Pulse: not connected — click to connect to a running nREPL",
+    command: "clojurePulse.connectRepl",
   };
 }
 

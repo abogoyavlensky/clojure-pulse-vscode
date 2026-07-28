@@ -225,14 +225,11 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   // Single-connection view of the multi-session status item; replaced when the
   // REPL manager registry takes over the wiring.
   const paintReplStatus = (): void => {
-    const info = manager.connectionInfo;
+    const connected = manager.state === "connected";
     replStatus.update({
-      active:
-        manager.state === "connected"
-          ? { name: info ? `${info.host}:${info.port}` : "nREPL", info }
-          : undefined,
+      active: connected ? { info: manager.connectionInfo } : undefined,
       busy: manager.state === "connecting",
-      total: 1,
+      total: connected ? 1 : 0,
     });
   };
   paintReplStatus();
