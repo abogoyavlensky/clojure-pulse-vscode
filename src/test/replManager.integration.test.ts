@@ -137,17 +137,23 @@ suite("REPL manager with several sessions", () => {
   test("stopping the active REPL clears the eval target and eval only warns", async () => {
     await setConfigurations(api, [
       { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "connect", host: "127.0.0.1", port: b.port },
     ]);
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "b");
     await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
     assert.strictEqual(api.repls.active?.name, "a");
 
     await vscode.commands.executeCommand("clojurePulse.stopRepl", "a");
 
+    // `b` is still connected, but evaluations must not silently move there:
+    // the target is chosen deliberately, never inherited.
+    assert.strictEqual(api.repls.get("b")?.state, "connected");
     assert.strictEqual(api.repls.active, undefined);
     assert.strictEqual(api.repls.get("a")?.state, "stopped");
-    // No connection: this must warn, not throw.
+    // No target: this must warn, not throw, and reach neither server.
     await selectAndEval("(+ 1 2)");
     assert.strictEqual(evals(a).length, 0);
+    assert.strictEqual(evals(b).length, 0);
   });
 
   test("a configuration edit while stopped applies to the next start", async () => {
