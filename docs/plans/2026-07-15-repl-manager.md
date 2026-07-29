@@ -301,15 +301,19 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Modify: `src/test/replCommands.integration.test.ts` (or a new `replManager.integration.test.ts`)
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
   Two `fakeNreplServer` instances; configure two `connect` configs via the settings API; `startRepl("a")`, `startRepl("b")` → both connected, `b` active; `evalSelection` reaches only server `b`; `setActiveRepl("a")` reroutes to `a`; disconnecting `a` clears active and eval warns instead of throwing; `startRepl` with a bogus name shows an error, not a crash (covers the keybinding-args path).
 
-- [ ] **Step 2: Run and fix until green**
+- [x] **Step 2: Run and fix until green**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Add multi-session REPL integration coverage"`
+
+> Deviation: the new suite lives in `src/test/replManager.integration.test.ts`, and configurations are written with `ConfigurationTarget.Global` — the test host opens no workspace folder, so the workspace target the add-config command uses is unavailable there.
+> Deviation: added a **create**-path integration test — a real spawned process announces a fake server's port, the session discovers it, connects, evaluates, and reports its process terminated on stop.
+> Deviation (codex review, 1 round): the "stopping the active REPL" test now keeps a second REPL connected, so a regression that silently hands the eval target to another session would fail it.
 
 ### Task 9: Documentation
 
