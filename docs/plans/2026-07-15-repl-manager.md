@@ -320,8 +320,11 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Write the docs** (use /writing-clearly)
+- [x] **Step 1: Write the docs** (use /writing-clearly)
   README gains a "REPL manager" section: the two config types with the full settings example from the design; the default create command shown verbatim with a short explanation of the `-Sdeps` alias injection and how to add your own aliases (`-M:dev:test:clojure-pulse/nrepl`); the `.nrepl-port` string-port mode; running a config from the tree, the palette, and a keybinding with `"args": "dev"` (include the keybindings.json snippet); multiple REPLs and the active session; note that REPL output lives in the Output panel under `REPL: <name>`. CHANGELOG entry summarizing the feature and the webview panel removal.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Document REPL manager configuration and usage"`
+
+> Deviation (codex review, 1 round): trimmed two overstatements — channel history survives disconnects only for *configured* REPLs (an ad-hoc one is transient), and only the session-targeting commands take a REPL name (Add and Edit do not).
+
