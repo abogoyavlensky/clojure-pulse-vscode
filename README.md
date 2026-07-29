@@ -189,7 +189,9 @@ a key, pass its name as the command argument in `keybindings.json`:
 
 Each REPL streams into its own **Output** channel, named `REPL: <name>` — a
 real editor buffer with Clojure highlighting, search, and scrollback. Click a
-row to open it. Its history survives disconnects.
+row to open it. A configured REPL keeps its channel across disconnects and
+restarts, so the history stays readable; an unsaved host/port connection is
+transient, and its channel goes away when it disconnects.
 
 When several REPLs are connected, one is **active** and receives every
 evaluation. Connecting a REPL makes it active; **Set Active REPL** (the row

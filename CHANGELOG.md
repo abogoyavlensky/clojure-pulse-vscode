@@ -15,7 +15,8 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   it needs. Stopping a REPL kills the whole process group it started, as does
   shutting the extension down. Added **Start REPL**, **Stop REPL**, **Add /
   Edit / Delete REPL Configuration**, **Set Active REPL**, and **Show REPL
-  Output** commands; every one takes a REPL name, so a keybinding can drive a
+  Output** commands. The ones that act on a REPL — start, stop, connect,
+  delete, set active, show output — take its name, so a keybinding can drive a
   single REPL (`"args": "dev"`).
 - **Several REPLs at once**, with one **active** REPL receiving evaluations.
   Connecting a REPL makes it active; stopping it leaves no target rather than
