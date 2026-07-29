@@ -328,3 +328,76 @@ Project pattern: pure presentation/parsing functions with unit tests, `vscode` w
 
 > Deviation (codex review, 1 round): trimmed two overstatements — channel history survives disconnects only for *configured* REPLs (an ad-hoc one is transient), and only the session-targeting commands take a REPL name (Add and Edit do not).
 
+
+---
+
+## Status: completed (2026-07-29)
+
+All nine tasks are implemented, reviewed by codex (each task's must-fix findings
+fixed before the next started), and verified end to end.
+
+### What was built
+
+A REPL manager view in the `clojurePulseSidebar` container (retitled "Clojure
+Pulse", REPL above External Libraries), driven by `clojurePulse.replConfigurations`
+in workspace settings. `create` entries spawn an nREPL server from a plain
+command line — prefilled to inject nREPL through the namespaced
+`:clojure-pulse/nrepl` alias, so no `deps.edn` change is needed — discover the
+port from the startup line (with a mtime-checked `.nrepl-port` fallback and no
+startup timeout), and connect; `connect` entries attach to a running server by
+number or port file. Each REPL renders into its own `REPL: <name>` output
+channel created with the `clojure` language id; the webview panel
+(`replPanel.ts`, the `clojurePulseRepl` container) is gone. Several REPLs run at
+once with one active eval target, reachable from the tree, the palette, or a
+keybinding passing the REPL's name.
+
+New modules: `replConfig`, `outputRenderer`, `replProcess`, `replSession`,
+`replRegistry`, `replTree`, each with unit tests; `replStatusBar` reworked for
+multiple sessions; `extension.ts` rewired. 324 tests pass (up from 205), lint
+and compile clean, and the extension packages.
+
+### Verification
+
+- `make check` — lint, type-check, and the full suite: 324 passing.
+- End-to-end against a **real** nREPL (the interactive parts of Step 5's smoke
+  test could not be driven headlessly): a `create` config started nREPL 1.7.0 /
+  Clojure 1.12.4 in a scratch deps.edn project, the port came from the real
+  startup line, `starting → connecting → connected` fired in order, `(+ 20 22)`
+  returned 42, `println` streamed into the channel, a `connect` entry resolved
+  the same server through `.nrepl-port`, `setActive` moved the eval target, and
+  `registry.dispose()` (what `deactivate()` awaits) closed every channel and
+  killed the spawned process group with nothing left behind.
+
+### Issues encountered
+
+Codex review found real defects in almost every task; the substantial ones were
+all lifecycle bugs around killing processes: `stop()` trusting the shell's exit
+code (a command that daemonizes nREPL left the server alive), signalling a
+process-group id that could have been recycled, a startup that reconnected after
+the user stopped it, `stopped` being published while the server was still dying,
+and a failed kill being swallowed so a restart could double-spawn. The resolved
+policy: ownership of the group is decided from a sample taken when the shell
+exits; `stop()` rejects if the group survives SIGKILL; a session that could not
+kill its process refuses to start again; and a retired session whose server
+would not die is remembered by object and killed again at shutdown.
+
+### Deviation notes
+
+Collected per task above. The shape-level ones: `ExtensionApi` exposes
+`{ repls, inlineResults }` instead of a single `replManager` (sessions own their
+`ConnectionManager`); channels are registry-owned and handed to sessions as a
+memoized `channelFor(name)`; a running session's edited config is applied by
+*replacing* the session object rather than mutating it; `setActive` accepts only
+connected sessions; and the status bar takes `{ active?, busy, total }`.
+
+### What the plan could have specified better
+
+Two things would have saved most of the review rounds. First, a **process-kill
+failure policy** — the plan asserted "entering `stopped` always kills an owned
+process" but never said what to do when the kill *fails*, which is where the
+`stopped`-vs-alive, restart-double-spawn, and forgotten-orphan questions all
+came from. Second, the **test-host constraints**: the plan assumed integration
+tests could write workspace settings and that Step 5 would be run by hand,
+but `.vscode-test.mjs` opens no workspace folder (so `ConfigurationTarget.Workspace`
+is unavailable) and the environment is headless. Smaller: `presentSession`'s
+pinned signature omitted the ad-hoc flag its own `contextValue` list requires.
