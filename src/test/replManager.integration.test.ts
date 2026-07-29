@@ -1,0 +1,215 @@
+import * as assert from "assert";
+import * as vscode from "vscode";
+import { InlineResultsManager } from "../repl/inlineResults";
+import { ReplRegistry } from "../repl/replRegistry";
+import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
+
+const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
+/** The spawn test drives a POSIX shell command; skip it on Windows. */
+const POSIX = process.platform !== "win32";
+
+interface ExtensionApi {
+  repls: ReplRegistry;
+  inlineResults: InlineResultsManager;
+}
+
+async function waitUntil(
+  condition: () => boolean,
+  timeoutMs: number,
+  what: string,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(condition(), `timed out waiting for ${what}`);
+}
+
+/** Writes the REPL configurations and waits for the registry to catch up. */
+async function setConfigurations(
+  api: ExtensionApi,
+  entries: unknown[],
+): Promise<void> {
+  await vscode.workspace
+    .getConfiguration("clojurePulse")
+    .update(
+      "replConfigurations",
+      entries.length > 0 ? entries : undefined,
+      // The test host has no workspace folder, so the workspace target the
+      // add-config command uses is unavailable here.
+      vscode.ConfigurationTarget.Global,
+    );
+  const names = entries
+    .map((entry) => (entry as { name?: string }).name)
+    .filter((name): name is string => typeof name === "string");
+  await waitUntil(
+    () => names.every((name) => api.repls.get(name) !== undefined),
+    5000,
+    `sessions ${names.join(", ")} to appear`,
+  );
+}
+
+async function selectAndEval(code: string): Promise<void> {
+  const doc = await vscode.workspace.openTextDocument({
+    language: "clojure",
+    content: code,
+  });
+  const editor = await vscode.window.showTextDocument(doc);
+  editor.selection = new vscode.Selection(0, 0, 0, doc.lineAt(0).text.length);
+  await vscode.commands.executeCommand("clojurePulse.evalSelection");
+}
+
+const evals = (server: FakeNrepl) => server.received.filter((m) => m.op === "eval");
+
+suite("REPL manager with several sessions", () => {
+  let api: ExtensionApi;
+  let a: FakeNrepl;
+  let b: FakeNrepl;
+
+  suiteSetup(async () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
+    api = (await ext.activate()) as ExtensionApi;
+  });
+
+  setup(async () => {
+    a = await startFakeNrepl();
+    b = await startFakeNrepl();
+  });
+
+  teardown(async () => {
+    for (const session of api.repls.sessions) {
+      await session.stop();
+    }
+    await setConfigurations(api, []);
+    api.inlineResults.clearAll();
+    await a.close();
+    await b.close();
+  });
+
+  test("two configured REPLs run at once and evals follow the active one", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "b");
+
+    assert.strictEqual(api.repls.get("a")?.state, "connected");
+    assert.strictEqual(api.repls.get("b")?.state, "connected");
+    assert.strictEqual(api.repls.active?.name, "b", "the last one connected is active");
+
+    await selectAndEval("(+ 1 2)");
+    assert.strictEqual(evals(b).length, 1, "the active REPL should have evaluated");
+    assert.strictEqual(evals(a).length, 0, "the inactive REPL should be untouched");
+
+    await vscode.commands.executeCommand("clojurePulse.setActiveRepl", "a");
+    assert.strictEqual(api.repls.active?.name, "a");
+
+    await selectAndEval("(+ 3 4)");
+    assert.strictEqual(evals(a).length, 1, "the newly active REPL should evaluate");
+    assert.strictEqual(evals(b).length, 1, "the previous one should not evaluate again");
+  });
+
+  test("each REPL keeps its own transcript", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "b");
+
+    await selectAndEval("(+ 1 2)"); // goes to b, the active one
+
+    const inEntries = (name: string) =>
+      api.repls
+        .get(name)!
+        .transcript.entries()
+        .filter((entry) => entry.kind === "in");
+    assert.deepStrictEqual(
+      inEntries("b").map((entry) => entry.text),
+      ["(+ 1 2)"],
+    );
+    assert.deepStrictEqual(inEntries("a"), []);
+  });
+
+  test("stopping the active REPL clears the eval target and eval only warns", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+    ]);
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    assert.strictEqual(api.repls.active?.name, "a");
+
+    await vscode.commands.executeCommand("clojurePulse.stopRepl", "a");
+
+    assert.strictEqual(api.repls.active, undefined);
+    assert.strictEqual(api.repls.get("a")?.state, "stopped");
+    // No connection: this must warn, not throw.
+    await selectAndEval("(+ 1 2)");
+    assert.strictEqual(evals(a).length, 0);
+  });
+
+  test("a configuration edit while stopped applies to the next start", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+    ]);
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+    await waitUntil(
+      () => {
+        const config = api.repls.get("a")?.config;
+        return config?.type === "connect" && config.port === b.port;
+      },
+      5000,
+      "the edited configuration to apply",
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+
+    assert.strictEqual(api.repls.get("a")?.connectionInfo?.port, b.port);
+  });
+
+  test("starting an unknown REPL reports an error instead of throwing", async () => {
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "no-such-repl");
+    await vscode.commands.executeCommand("clojurePulse.stopRepl", "no-such-repl");
+    await vscode.commands.executeCommand("clojurePulse.showReplOutput", "no-such-repl");
+  });
+
+  test("a create configuration spawns a server, connects, and is killed on stop", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    this.timeout(20000);
+    await setConfigurations(api, [
+      {
+        name: "spawned",
+        type: "create",
+        // Stands in for a real nREPL: announces the port of a server that is
+        // already listening, then stays alive until it is killed.
+        command: `echo "nREPL server started on port ${a.port}" && sleep 30`,
+      },
+    ]);
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "spawned");
+
+    const session = api.repls.get("spawned");
+    assert.strictEqual(session?.state, "connected");
+    assert.strictEqual(session?.connectionInfo?.port, a.port);
+    assert.strictEqual(api.repls.active?.name, "spawned");
+
+    await selectAndEval("(+ 1 2)");
+    assert.strictEqual(evals(a).length, 1);
+
+    await vscode.commands.executeCommand("clojurePulse.stopRepl", "spawned");
+
+    assert.strictEqual(session?.state, "stopped");
+    assert.ok(
+      session?.transcript
+        .entries()
+        .some((entry) => /process terminated|process exited/i.test(entry.text)),
+      "expected the spawned process to be reported as terminated",
+    );
+  });
+});
