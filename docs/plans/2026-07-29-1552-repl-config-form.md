@@ -2,9 +2,9 @@
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the sidebar the one place REPLs are managed: a form for adding and editing configurations, an inline Edit action on every row, Delete from the form, and no unsaved ad-hoc connections.
+**Goal:** Make one form the only way REPLs are configured: an editor-tab form for adding and editing, an inline Edit action on every row, Delete from the form, and no unsaved ad-hoc connections.
 
-**Tech Stack:** TypeScript (VS Code extension: `WebviewViewProvider`, context keys, workspace settings), no new dependencies.
+**Tech Stack:** TypeScript (VS Code extension: `WebviewPanel`, workspace settings), no new dependencies.
 
 ---
 
@@ -19,33 +19,42 @@ and leaves you to find the entry in `settings.json` yourself.
 
 ### Approach
 
-One UI for both. A new **webview view** in the existing `clojurePulseSidebar`
-container renders a form with every field visible at once — including a
-multi-line box for the command. The commands that used to prompt now open it.
+One UI for both. A **webview panel** — an ordinary editor tab, titled `Add REPL`
+or `Edit REPL: dev` — renders a form with every field visible at once. The
+commands that used to prompt now open it.
 
-The view is declared with `"when": "clojurePulse.replFormOpen"`, so it exists
-only while a form is open; the rest of the time the REPL tree and External
-Libraries have the sidebar to themselves. The form sits **below** the REPL tree:
-VS Code cannot interleave content between tree rows, so a form under the edited
-row is not reachable without giving up the native tree — which would cost the
-built-in row icons, hover actions, keyboard navigation, and empty-state welcome.
-Keeping the tree is the deliberate trade.
+An editor tab rather than a section in the sidebar: the default `create` command
+runs to about 150 characters, which a ~300px sidebar wraps five times with no
+room for the explanatory line that today lives only in the README. A tab also
+inherits VS Code's auxiliary-window support, so dragging it out turns the form
+into the floating overlay a dialog would be — for free, without reaching for
+`workbench.action.moveEditorToNewWindow`, which is a UI command rather than an
+API and offers no control over the window it makes. (A setting to move it there
+automatically is a possible follow-up, deliberately not in this plan.)
+
+The tree keeps its rows. VS Code cannot interleave content between tree rows, so
+a form under the edited row was never reachable without hand-rolling the whole
+pane — which would cost the built-in row icons, hover actions, keyboard
+navigation, and empty-state welcome.
 
 ```
-∨ REPL                          +
-   ▶  ✎   dev        stopped
-   ⏹  ✎   local      connected :7888
-
-∨ EDIT "local"
-   Type  ( ) Start a REPL
-         (•) Connect to a running REPL
-   Name  [ local                    ]
-   Host  [ localhost                ]
-   Port  [ .nrepl-port              ]
-
-   [ Delete ]        [ Cancel ] [ Save ]
-
-∨ EXTERNAL LIBRARIES
+ server.clj   user.clj   ✎ Edit REPL: dev  ×
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│  Type       (•) Start a REPL    ( ) Connect to a running REPL   │
+│                                                                 │
+│  Name       [ dev                                             ] │
+│                                                                 │
+│  Command    [ clojure -Sdeps '{:aliases {:clojure-pulse/nrepl  ]│
+│             [   {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"]│
+│             Runs through your shell. Add your own aliases with  │
+│             -M:dev:test:clojure-pulse/nrepl                     │
+│                                                                 │
+│  Directory  [ .                                               ] │
+│             Relative to the workspace root.                     │
+│                                                                 │
+│  [ Delete ]                              [ Cancel ]   [ Save ]  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 The webview is a dumb renderer, the same shape the deleted `replPanel.ts` used
@@ -62,8 +71,7 @@ pure; the wiring in `extension.ts` is thin).
 `addReplConfig` and `editReplConfig` both open the form. The prompt helpers
 (`promptCreateEntry`, `promptConnectEntry`, and the type/name quick-picks inside
 `addReplConfig`) are deleted rather than kept as a second path — two ways to
-enter the same data means two things to keep in sync, and the sidebar is always
-available.
+enter the same data means two things to keep in sync.
 
 The ad-hoc *"Connect to host:port…"* flow in `connectRepl` goes too, in Tasks 4
 and 5 — see *Retiring ad-hoc sessions* below. Tasks 1–3 leave it alone, so the
@@ -203,8 +211,8 @@ price of having a single concept.
   every validation rule, unknown-field preservation, wrong-type field removal,
   default omission, numeric-vs-path ports, upsert by original name, append when
   the entry is gone.
-- `src/test/replFormView.test.ts` — the provider driven through a fake
-  `WebviewView`: `ready` gets the pending values, `save` with valid values writes
+- `src/test/replFormPanel.test.ts` — the controller driven through a fake
+  `WebviewPanel`: `ready` gets the pending values, `save` with valid values writes
   the expected array and closes, `save` with invalid values writes nothing and
   posts errors back, `delete` removes the entry after confirmation, `cancel`
   writes nothing and closes.
@@ -222,16 +230,16 @@ price of having a single concept.
 **Create:**
 - `src/repl/replConfigEdit.ts` — pure form model: defaults, validation, entry
   building, upsert. No `vscode` import.
-- `src/repl/replFormView.ts` — `ReplFormViewProvider implements vscode.WebviewViewProvider`:
-  holds the pending form state, renders the HTML, translates messages into calls
-  on injected callbacks.
-- `src/test/replConfigEdit.test.ts`, `src/test/replFormView.test.ts`.
+- `src/repl/replFormPanel.ts` — `ReplFormPanel`: owns the single webview panel,
+  holds the pending form state, renders the HTML, and translates messages into
+  calls on injected callbacks.
+- `src/test/replConfigEdit.test.ts`, `src/test/replFormPanel.test.ts`.
 
 **Modify:**
-- `package.json` — the `clojurePulse.replForm` view with its `when` clause; the
-  inline pencil menu entry for `editReplConfig`; later, the `replAdHoc` context
-  value drops out of four menu `when` clauses.
-- `src/extension.ts` — register the provider; rework `addReplConfig` and
+- `package.json` — the inline pencil menu entry for `editReplConfig`; later, the
+  `replAdHoc` context value drops out of four menu `when` clauses. The form needs
+  no contribution at all: panels are created imperatively.
+- `src/extension.ts` — construct the panel controller; rework `addReplConfig` and
   `editReplConfig` to open the form; delete `promptCreateEntry`,
   `promptConnectEntry`, and the prompt body of `addReplConfig`; expose the form
   controller on `ExtensionApi`; later, drop `promptForAddress` and the ad-hoc
@@ -304,39 +312,42 @@ price of having a single concept.
 - [ ] **Step 5: Commit**
   `git commit -m "Add the REPL configuration form model"`
 
-### Task 2: Form view (`replFormView.ts`)
+### Task 2: Form panel (`replFormPanel.ts`)
 
 **Files:**
-- Create: `src/repl/replFormView.ts`, `src/test/replFormView.test.ts`
+- Create: `src/repl/replFormPanel.ts`, `src/test/replFormPanel.test.ts`
 
 - [ ] **Step 1: Write failing tests**
-  Drive the provider through a fake `WebviewView` — an object literal with a
-  `webview` that records `postMessage` calls, captures the
-  `onDidReceiveMessage` listener so the test can fire messages, and a stub
-  `onDidDispose`. Inject `readEntries` (returning the raw array, scalars and
-  all), `writeEntries`, `defaultCommand`, `confirmDelete`, and `onClose` so
-  nothing touches settings. Cover: `open()` followed by resolve then
-  a `ready` message posts the pending values and mode; a `save` with valid values
-  calls `writeEntries` with the upserted array and then `onClose`; a `save` with
-  an invalid name writes nothing and posts the field errors back with the values
-  the user typed; a `save` whose `writeEntries` rejects
-  keeps the form open and posts that message in the `form` error slot; a
+  Drive the controller through a fake `WebviewPanel` — an object literal with a
+  `webview` that records `postMessage` calls and captures the
+  `onDidReceiveMessage` listener so the test can fire messages, plus `reveal`,
+  `dispose`, a settable `title`, and an `onDidDispose` the test can trigger.
+  Inject the panel factory alongside `readEntries` (returning the raw array,
+  scalars and all), `writeEntries`, `defaultCommand`, and `confirmDelete`, so
+  nothing touches settings or the real window. Cover: `open()` creates a panel
+  and a `ready` message posts the pending values and mode; a `save` with valid
+  values calls `writeEntries` with the upserted array and disposes the panel; a
+  `save` with an invalid name writes nothing, keeps the panel open, and posts the
+  field errors back with the values the user typed; a `save` whose `writeEntries`
+  rejects keeps the panel open and posts that message in the `form` error slot; a
   `delete` in edit mode calls the injected `confirmDelete`, writes the array
   without that entry when it resolves true, and writes nothing when it resolves
-  false; `cancel` writes nothing and calls `onClose`; opening a second form
-  while one is showing replaces the posted values. Pin the close lifecycle
-  explicitly: after a successful save, a confirmed delete, and a cancel, `state`
-  is cleared and `onClose` has run exactly once.
+  false; `cancel` writes nothing and disposes the panel; opening a second form
+  while one is open reuses it — `reveal` is called, no second panel is created,
+  and the new values are posted. Pin the lifecycle explicitly: after a successful
+  save, a confirmed delete, and a cancel, the panel is disposed exactly once and
+  `state` is cleared; and a panel disposing on its own — the user closing the tab
+  — clears `state` too.
 
 - [ ] **Step 2: Run tests to verify they fail**
   Run: `make test`
-  Expected: FAIL — cannot resolve `../repl/replFormView`.
+  Expected: FAIL — cannot resolve `../repl/replFormPanel`.
 
 - [ ] **Step 3: Implement**
-  `ReplFormViewProvider` with `static readonly viewId = "clojurePulse.replForm"`.
-  Public surface: `open(mode)` where mode is `{ kind: "add" } | { kind: "edit"; name: string }`,
-  `close()`, and `state` (the pending `{ mode, values }`, for tests and the
-  extension API). Message protocol, shared with the HTML:
+  `ReplFormPanel`, holding at most one `vscode.WebviewPanel` at a time. Public
+  surface: `open(mode)` where mode is `{ kind: "add" } | { kind: "edit"; name: string }`,
+  `close()`, `dispose()`, and `state` (the pending `{ mode, values }`, for tests
+  and the extension API). Message protocol, shared with the HTML:
 
   ```ts
   // host → webview
@@ -352,51 +363,61 @@ price of having a single concept.
   two radios that show and hide the two field groups client-side without asking
   the host; both groups keep their values while hidden. The command is a
   `textarea` of about five rows — the whole reason for a form rather than an
-  input box is that the default command runs to ~150 characters and wraps
-  several times in a ~300px sidebar. Save posts the whole `ReplFormValues`.
+  input box is that the default command runs to ~150 characters. Each field
+  carries a line of help beneath it — the alias explanation that currently lives
+  only in the README — which is what the extra width buys. Save posts the whole
+  `ReplFormValues`.
   Delete renders only in edit mode, separated from Cancel and Save (`margin-right:
   auto`) so it cannot be hit by accident, and uses
   `--vscode-inputValidation-errorBorder` rather than a filled destructive
-  colour. Set `view.title` from the pending mode (`Add REPL` or `Edit "<name>"`).
-  Keep `retainContextWhenHidden` off — the host re-posts on `ready`.
+  colour.
+
+  Create the panel with view type `clojurePulse.replForm`, `ViewColumn.Active`,
+  `enableScripts: true`, and — unlike the old transcript panel —
+  `retainContextWhenHidden: true`: a form is worth a little memory to survive
+  the user tabbing away mid-edit. Set `panel.title` from the mode (`Add REPL` or
+  `Edit REPL: dev`) and `panel.iconPath` to `images/repl-icon.svg`, which has
+  been orphaned since the transcript panel was removed. Handle
+  `panel.onDidDispose` — the user can close the tab at any time — by clearing
+  `state`.
 
 - [ ] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
 - [ ] **Step 5: Commit**
-  `git commit -m "Add the sidebar REPL configuration form view"`
+  `git commit -m "Add the REPL configuration form panel"`
 
-### Task 3: Wiring — contributions, commands, row action
+### Task 3: Wiring — commands, row action, contributions
 
 **Files:**
 - Modify: `package.json`, `src/extension.ts`, `src/test/replManager.integration.test.ts`
 
 - [ ] **Step 1: package.json contributions**
-  Add `clojurePulse.replForm` to `contributes.views.clojurePulseSidebar`, with
-  `"type": "webview"`, `"name": "REPL Configuration"`, and
-  `"when": "clojurePulse.replFormOpen"`, positioned **after** the REPL tree and
-  **before** External Libraries. Add an inline `view/item/context` entry for
-  `clojurePulse.editReplConfig` — `"when": "view == clojurePulse.replManager && viewItem != replAdHoc"`,
+  Add an inline `view/item/context` entry for `clojurePulse.editReplConfig` —
+  `"when": "view == clojurePulse.replManager && viewItem != replAdHoc"`,
   `"group": "inline@3"` — so the pencil follows the existing start/stop and
-  set-active icons; leave the existing context-menu entry in place.
+  set-active icons; leave the existing context-menu entry in place. The form
+  itself contributes nothing: a `WebviewPanel` is created imperatively, with no
+  view id, no `when` clause, and no context key to keep in sync.
 
-- [ ] **Step 2: Wire the provider and rework the commands**
-  In `setupRepl`, construct `ReplFormViewProvider` with the real callbacks:
+- [ ] **Step 2: Wire the panel and rework the commands**
+  In `setupRepl`, construct `ReplFormPanel` with the real callbacks:
   `readEntries` → the **raw** `clojurePulse.replConfigurations` value (an array
   as-is, or `[]`), `writeEntries` → `config.update("replConfigurations", …)`
   against `ConfigurationTarget.Workspace` when `vscode.workspace.workspaceFolders`
   is non-empty and `Global` otherwise, `defaultCommand` → `defaultCreateCommand()`,
-  `confirmDelete` → the modal warning `deleteReplConfig` already shows,
-  `onClose` → clear the context key.
+  `confirmDelete` → the modal warning `deleteReplConfig` already shows, and a
+  panel factory calling `vscode.window.createWebviewPanel` — the seam Task 2's
+  tests replace. It needs `context.extensionUri` for the tab icon, which
+  `setupRepl` already receives.
   Note that `currentReplConfigurations()` is *not* the reader here: it filters
   out non-object entries, which the form must preserve. While in this file,
   switch `deleteReplConfig` to the raw array too, so deleting one REPL no longer
   drops malformed entries the parser only warns about.
-  Register it with `vscode.window.registerWebviewViewProvider`. Opening sets the
-  context key (`vscode.commands.executeCommand("setContext", "clojurePulse.replFormOpen", true)`,
-  the same mechanism `src/repl/inlineResults.ts:311` uses) and then focuses
-  `clojurePulse.replForm.focus`, so the view resolves and asks for its values.
+  Push it onto `context.subscriptions` so a lingering form closes with the
+  extension.
+
   Rework `addReplConfig` to open the form in add mode and nothing else — its
   workspace-folder guard goes away entirely, since a folderless window now saves
   to user settings. Rework `editReplConfig` to resolve a session name through the
@@ -406,14 +427,15 @@ price of having a single concept.
   non-ad-hoc sessions, and a name resolving to an ad-hoc session is refused with
   a message, exactly as `deleteReplConfig` does. Delete `promptCreateEntry`,
   `promptConnectEntry`, and the quick-pick body of `addReplConfig`. Add the
-  provider to `ExtensionApi` as `replForm`.
+  controller to `ExtensionApi` as `replForm`.
 
 - [ ] **Step 3: Update the integration tests**
   In `replManager.integration.test.ts`: `clojurePulse.addReplConfig` leaves the
   form in add mode with the default command prefilled;
   `clojurePulse.editReplConfig` with a configured name loads that entry's values
   in edit mode; a second edit replaces the pending values; `editReplConfig` on an
-  ad-hoc session's name opens no form. Assert through `api.replForm.state`.
+  ad-hoc session's name opens no form. Assert through `api.replForm.state`, and
+  close the form in `teardown` so one test's tab cannot leak into the next.
   The user-settings fallback also makes a full round trip testable for the first
   time: with no folder open the form writes to `Global`, which the suite already
   uses, so add a test that saving a new configuration makes its row appear in
@@ -425,19 +447,23 @@ price of having a single concept.
 
 - [ ] **Step 5: Check the form in a real window**
   Launch the extension host (F5) in a project with a `deps.edn`. Add a REPL from
-  the **+** button, watch the form appear under the REPL list, save it, and
-  confirm the row appears and starts. Press the pencil on that row, change the
-  command, save, and confirm `settings.json` shows the edit with no
-  `"cwd": "."` noise. Switch the type selector to `connect` and back to `create`,
+  the **+** button, watch the form open as an editor tab with its own icon, save
+  it, and confirm the tab closes and the row appears and starts. Press the
+  pencil on that row, change the command, save, and confirm `settings.json`
+  shows the edit with no `"cwd": "."` noise. Switch the type selector to `connect` and back to `create`,
   confirming the command you typed is still there — the webview's own field
   switching has no automated coverage, so this is where it gets checked. Save
   after switching to `connect` and confirm `command` is gone from the entry.
-  Cancel a form and confirm the section disappears. Finally, put a stray
-  `"junk"` string in the `replConfigurations` array by hand, edit a REPL through
-  the form, and confirm the stray entry is still there afterwards.
+  Cancel a form and confirm the tab closes. Open a form, switch to another tab
+  and back, and confirm your in-progress edits survived
+  (`retainContextWhenHidden`). Drag the form's tab out into a floating window and
+  confirm it still saves from there — that is the overlay experience this shape
+  was chosen for. Finally, put a stray `"junk"` string in the
+  `replConfigurations` array by hand, edit a REPL through the form, and confirm
+  the stray entry is still there afterwards.
 
 - [ ] **Step 6: Commit**
-  `git commit -m "Add and edit REPL configurations through the sidebar form"`
+  `git commit -m "Add and edit REPL configurations through a form"`
 
 ### Task 4: Drop the ad-hoc connect flow
 
@@ -542,8 +568,10 @@ green and this task commits on its own.
 
 - [ ] **Step 1: Write the docs** (use /writing-clearly)
   In the README's REPL section, replace the description of the prompt-based add
-  flow: the **+** button and the row's pencil both open a form in the sidebar,
-  with the type selector, the fields per type, and Save / Delete / Cancel. Say
+  flow: the **+** button and the row's pencil both open a form in an editor tab,
+  with the type selector, the fields per type, and Save / Delete / Cancel.
+  Mention that the tab can be dragged into a floating window if you prefer the
+  form beside your code. Say
   where it saves — workspace settings, or user settings when no folder is open —
   and keep the note that `settings.json` remains the source of truth and can
   still be edited by hand. Remove the "In a hurry?" paragraph pointing at the
