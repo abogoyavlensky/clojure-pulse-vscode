@@ -395,7 +395,7 @@ price of having a single concept.
 **Files:**
 - Create: `src/repl/replFormPanel.ts`, `src/test/replFormPanel.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Drive the controller through a fake `WebviewPanel` — an object literal with a
   `webview` that records `postMessage` calls and captures the
   `onDidReceiveMessage` listener so the test can fire messages, plus `reveal`,
@@ -419,11 +419,11 @@ price of having a single concept.
   `state` is cleared; and a panel disposing on its own — the user closing the tab
   — clears `state` too.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — cannot resolve `../repl/replFormPanel`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `ReplFormPanel`, holding at most one `vscode.WebviewPanel` at a time. Public
   surface:
 
@@ -478,11 +478,11 @@ price of having a single concept.
   `panel.onDidDispose` — the user can close the tab at any time — by clearing
   `state`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add the REPL configuration form panel"`
 
 ### Task 3: Wiring — commands, row action, contributions

@@ -169,6 +169,12 @@ function indexOfShown(entries: unknown[], name: string): number {
   return fallback;
 }
 
+/** The raw entry behind the REPL of this name — what an edit form starts from. */
+export function findEntry(entries: unknown[], name: string): unknown {
+  const index = indexOfShown(entries, name);
+  return index === -1 ? undefined : entries[index];
+}
+
 /**
  * Drops the entry with this name; everything else, matched or not, survives.
  * *Every* entry with the name goes: a deleted REPL must disappear rather than

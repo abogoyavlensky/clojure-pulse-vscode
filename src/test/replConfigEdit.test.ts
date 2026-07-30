@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import {
+  findEntry,
   formValuesFor,
   removeEntry,
   ReplFormValues,
@@ -275,6 +276,20 @@ suite("upsertEntry", () => {
     const before = [...entries];
     upsertEntry(entries, dev, "dev");
     assert.deepStrictEqual(entries, before);
+  });
+});
+
+suite("findEntry", () => {
+  test("returns the entry the tree is showing", () => {
+    const broken = { name: "dev", type: "create" };
+    const shown = { name: "dev", type: "connect", port: 7888 };
+    assert.strictEqual(findEntry([broken, shown], "dev"), shown);
+    assert.strictEqual(findEntry(["junk", shown], "dev"), shown);
+  });
+
+  test("has nothing for a name that is not configured", () => {
+    assert.strictEqual(findEntry([{ name: "a", type: "connect", port: 7888 }], "dev"), undefined);
+    assert.strictEqual(findEntry([], "dev"), undefined);
   });
 });
 
