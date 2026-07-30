@@ -325,6 +325,11 @@
           "group": "inline@2"
         },
         {
+          "command": "clojurePulse.editReplConfig",
+          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "group": "inline@3"
+        },
+        {
           "command": "clojurePulse.showReplOutput",
           "when": "view == clojurePulse.replManager",
           "group": "1_output@1"

@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as vscode from "vscode";
 import { LanguageClient, State } from "vscode-languageclient/node";
 import { createClient } from "./client";
@@ -17,12 +18,14 @@ import {
   ReplConnectionInfo,
 } from "./repl/connectionManager";
 import {
-  configEntryName,
+  createCommandHint,
   defaultCreateCommand,
+  detectProjectKind,
   parseReplConfigurations,
   readNreplPort,
-  validatePortInput,
 } from "./repl/replConfig";
+import { removeEntry } from "./repl/replConfigEdit";
+import { ReplFormPanel } from "./repl/replFormPanel";
 import { ReplRegistry } from "./repl/replRegistry";
 import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
@@ -48,6 +51,7 @@ let replRegistry: ReplRegistry | undefined;
 export interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+  replForm: ReplFormPanel;
 }
 
 export async function activate(
@@ -244,6 +248,34 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   });
   replRegistry = registry;
 
+  // The one way REPLs are configured: an editor tab, for both adding and
+  // editing. Everything it touches is injected, so the panel itself stays a
+  // dumb renderer over the pure rules in replConfigEdit.ts.
+  const replForm = new ReplFormPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.replForm",
+        "Add REPL",
+        vscode.ViewColumn.Active,
+        // Worth a little memory: an in-progress edit survives tabbing away.
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "repl-icon.svg",
+      );
+      return panel;
+    },
+    readEntries: rawReplConfigurations,
+    writeEntries: writeReplConfigurations,
+    defaultCommand: () => {
+      const kind = detectProjectKind(rootFileNames());
+      return { command: defaultCreateCommand({ kind }), hint: createCommandHint(kind) };
+    },
+    confirmDelete: (name) => confirmDeleteConfig(name),
+  });
+
   const tree = new ReplTreeProvider(registry);
   const replStatus = createReplStatusBar();
   const paint = (): void => replStatus.update(statusState(registry));
@@ -258,6 +290,8 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     replStatus,
     inlineResults,
+    // So a form left open closes with the extension.
+    replForm,
     vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("clojurePulse.replConfigurations")) {
@@ -282,10 +316,11 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       await stopSession(active);
     }),
     vscode.commands.registerCommand("clojurePulse.addReplConfig", () =>
-      addReplConfig(),
+      replForm.open({ kind: "add" }),
     ),
-    vscode.commands.registerCommand("clojurePulse.editReplConfig", () =>
-      vscode.commands.executeCommand("workbench.action.openWorkspaceSettingsFile"),
+    vscode.commands.registerCommand(
+      "clojurePulse.editReplConfig",
+      (arg?: unknown) => editReplConfig(registry, replForm, arg),
     ),
     vscode.commands.registerCommand(
       "clojurePulse.deleteReplConfig",
@@ -316,10 +351,23 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       (id?: string) => copyEvalResult(inlineResults, id),
     ),
     vscode.commands.registerCommand("clojurePulse.replMenu", () =>
-      replMenu(registry),
+      replMenu(registry, replForm),
     ),
   );
-  return { repls: registry, inlineResults };
+  return { repls: registry, inlineResults, replForm };
+}
+
+/** The workspace root's file names, which the prefilled command follows. */
+function rootFileNames(): string[] {
+  const root = workspaceRoot();
+  if (!root) {
+    return [];
+  }
+  try {
+    return fs.readdirSync(root);
+  } catch {
+    return [];
+  }
 }
 
 /** First workspace folder, which relative `cwd` and port files resolve against. */
@@ -584,106 +632,34 @@ async function showReplOutput(registry: ReplRegistry, arg?: unknown): Promise<vo
   session?.showOutput();
 }
 
-/** Adds a configuration to the workspace settings, prefilled per type. */
-async function addReplConfig(): Promise<void> {
-  if (!vscode.workspace.workspaceFolders?.length) {
-    void vscode.window.showErrorMessage(
-      "Clojure Pulse: open a folder before saving a REPL configuration.",
+/** Opens the form on an existing configuration, resolved like every other
+ *  REPL command: a tree row, a keybinding's name, or a quick pick. */
+async function editReplConfig(
+  registry: ReplRegistry,
+  form: ReplFormPanel,
+  arg?: unknown,
+): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      (candidate) => !registry.isAdHoc(candidate.name),
+      "Edit which REPL configuration?",
+      "No REPLs are configured yet.",
+    ),
+  );
+  if (!session) {
+    return;
+  }
+  // The pane hides the pencil on ad-hoc rows, but the palette and keybindings
+  // reach this command directly: there is no entry to edit, and opening the
+  // form would append a stray one.
+  if (registry.isAdHoc(session.name)) {
+    void vscode.window.showInformationMessage(
+      `Clojure Pulse: "${session.name}" is an unsaved connection, so there is no configuration to edit.`,
     );
     return;
   }
-  const type = await vscode.window.showQuickPick(
-    [
-      {
-        label: "Start a server",
-        description: "run a command that starts nREPL, then connect",
-        value: "create" as const,
-      },
-      {
-        label: "Connect to a running server",
-        description: "attach to an nREPL that is already up",
-        value: "connect" as const,
-      },
-    ],
-    { placeHolder: "What kind of REPL?" },
-  );
-  if (!type) {
-    return;
-  }
-
-  const existing = currentReplConfigurations();
-  // Only names that actually reach the tree count as taken: an entry the
-  // parser skips (say, a `create` with no command) must not block the name.
-  const taken = new Set(
-    parseReplConfigurations(existing).configs.map((config) => config.name),
-  );
-  const name = await vscode.window.showInputBox({
-    prompt: "REPL name",
-    value: type.value === "create" ? "dev" : "local",
-    ignoreFocusOut: true,
-    validateInput: (value) => {
-      const trimmed = value.trim();
-      if (trimmed.length === 0) {
-        return "Enter a name";
-      }
-      return taken.has(trimmed) ? `"${trimmed}" is already configured` : undefined;
-    },
-  });
-  if (!name) {
-    return;
-  }
-
-  const entry =
-    type.value === "create"
-      ? await promptCreateEntry(name.trim())
-      : await promptConnectEntry(name.trim());
-  if (!entry) {
-    return;
-  }
-  await vscode.workspace
-    .getConfiguration("clojurePulse")
-    .update("replConfigurations", [...existing, entry], vscode.ConfigurationTarget.Workspace);
-}
-
-async function promptCreateEntry(
-  name: string,
-): Promise<Record<string, unknown> | undefined> {
-  const command = await vscode.window.showInputBox({
-    prompt: "Command that starts the nREPL server",
-    value: defaultCreateCommand(),
-    ignoreFocusOut: true,
-    validateInput: (value) => (value.trim().length === 0 ? "Enter a command" : undefined),
-  });
-  return command ? { name, type: "create", command: command.trim() } : undefined;
-}
-
-async function promptConnectEntry(
-  name: string,
-): Promise<Record<string, unknown> | undefined> {
-  const host = await vscode.window.showInputBox({
-    prompt: "nREPL host",
-    value: "localhost",
-    ignoreFocusOut: true,
-  });
-  if (!host) {
-    return undefined;
-  }
-  const port = await vscode.window.showInputBox({
-    prompt: "nREPL port, or a file holding one",
-    value: ".nrepl-port",
-    ignoreFocusOut: true,
-    validateInput: validatePortInput,
-  });
-  if (!port) {
-    return undefined;
-  }
-  const trimmed = port.trim();
-  return {
-    name,
-    type: "connect",
-    host: host.trim(),
-    port: /^\d+$/.test(trimmed) ? Number.parseInt(trimmed, 10) : trimmed,
-  };
+  form.open({ kind: "edit", name: session.name });
 }
 
 async function deleteReplConfig(
@@ -701,33 +677,49 @@ async function deleteReplConfig(
   if (!session || registry.isAdHoc(session.name)) {
     return;
   }
+  if (!(await confirmDeleteConfig(session.name))) {
+    return;
+  }
+  await writeReplConfigurations(
+    removeEntry(rawReplConfigurations(), session.name),
+  );
+}
+
+/** The one confirmation both delete routes — the row's and the form's — show. */
+async function confirmDeleteConfig(name: string): Promise<boolean> {
   const confirmed = await vscode.window.showWarningMessage(
-    `Delete the REPL configuration "${session.name}"?`,
+    `Delete the REPL configuration "${name}"?`,
     { modal: true },
     "Delete",
   );
-  if (confirmed !== "Delete") {
-    return;
-  }
-  // Compared through the parser's own normalization: a hand-edited
-  // `{"name": " dev "}` shows up as "dev" and must delete that entry.
-  const remaining = currentReplConfigurations().filter(
-    (entry) => configEntryName(entry) !== session.name,
-  );
-  await vscode.workspace
-    .getConfiguration("clojurePulse")
-    .update("replConfigurations", remaining, vscode.ConfigurationTarget.Workspace);
+  return confirmed === "Delete";
 }
 
-/** The configured entries as raw objects, so an edit preserves fields this
- *  version does not know about. */
-function currentReplConfigurations(): unknown[] {
+/**
+ * The configured entries exactly as settings hold them. Not
+ * `parseReplConfigurations`, and not filtered: an entry this version cannot
+ * read — a stray scalar, a `create` with no command — is one the parser only
+ * warns about, and writing back through a filtered copy would delete it.
+ */
+function rawReplConfigurations(): unknown[] {
   const raw = vscode.workspace
     .getConfiguration("clojurePulse")
     .get<unknown>("replConfigurations");
-  return Array.isArray(raw)
-    ? raw.filter((entry) => typeof entry === "object" && entry !== null)
-    : [];
+  return Array.isArray(raw) ? raw : [];
+}
+
+/**
+ * Saves the configurations. Workspace settings when a folder is open, so they
+ * travel with the project; user settings otherwise, which is what keeps the
+ * form usable in a single-file window.
+ */
+async function writeReplConfigurations(entries: unknown[]): Promise<void> {
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("clojurePulse")
+    .update("replConfigurations", entries, target);
 }
 
 /** True when inline eval results are enabled in settings (default on). */
@@ -940,7 +932,7 @@ function basename(fsPath: string): string {
   return parts[parts.length - 1] || fsPath;
 }
 
-async function replMenu(registry: ReplRegistry): Promise<void> {
+async function replMenu(registry: ReplRegistry, form: ReplFormPanel): Promise<void> {
   const active = registry.active;
   const connected = registry.sessions.filter(
     (session) => session.state === "connected",
@@ -966,7 +958,7 @@ async function replMenu(registry: ReplRegistry): Promise<void> {
       await setActiveRepl(registry);
       break;
     case "add":
-      await addReplConfig();
+      form.open({ kind: "add" });
       break;
     case "disconnect":
       if (active) {

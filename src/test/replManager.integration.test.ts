@@ -1,6 +1,8 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { InlineResultsManager } from "../repl/inlineResults";
+import { defaultCreateCommand } from "../repl/replConfig";
+import { ReplFormPanel } from "../repl/replFormPanel";
 import { ReplRegistry } from "../repl/replRegistry";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
@@ -11,6 +13,7 @@ const POSIX = process.platform !== "win32";
 interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+  replForm: ReplFormPanel;
 }
 
 async function waitUntil(
@@ -81,6 +84,8 @@ suite("REPL manager with several sessions", () => {
     for (const session of api.repls.sessions) {
       await session.stop();
     }
+    // So one test's form tab cannot leak into the next.
+    api.replForm.close();
     await setConfigurations(api, []);
     api.inlineResults.clearAll();
     await a.close();
@@ -182,6 +187,81 @@ suite("REPL manager with several sessions", () => {
     await vscode.commands.executeCommand("clojurePulse.stopRepl", "no-such-repl");
     await vscode.commands.executeCommand("clojurePulse.showReplOutput", "no-such-repl");
   });
+
+  test("the add command opens an empty form with the project's command", async () => {
+    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+
+    const state = api.replForm.state;
+    assert.deepStrictEqual(state?.mode, { kind: "add" });
+    assert.strictEqual(state?.values.name, "");
+    // The test host opens no folder, so detection falls back to deps.edn.
+    assert.strictEqual(state?.values.command, defaultCreateCommand({ kind: "deps" }));
+  });
+
+  test("the edit command opens the form on that configuration", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "create", command: "echo hi" },
+    ]);
+
+    await vscode.commands.executeCommand("clojurePulse.editReplConfig", "a");
+    assert.deepStrictEqual(api.replForm.state?.mode, { kind: "edit", name: "a" });
+    assert.strictEqual(api.replForm.state?.values.type, "connect");
+    assert.strictEqual(api.replForm.state?.values.port, String(a.port));
+
+    // The newest request wins: one tab, the other REPL's values.
+    await vscode.commands.executeCommand("clojurePulse.editReplConfig", "b");
+    assert.deepStrictEqual(api.replForm.state?.mode, { kind: "edit", name: "b" });
+    assert.strictEqual(api.replForm.state?.values.command, "echo hi");
+  });
+
+  test("editing an ad-hoc session opens no form", async () => {
+    const session = api.repls.addAdHoc({ host: "127.0.0.1", port: a.port });
+
+    await vscode.commands.executeCommand("clojurePulse.editReplConfig", session.name);
+    assert.strictEqual(api.replForm.state, undefined);
+
+    // Leave nothing behind: an ad-hoc session goes when its connection does.
+    await session.start();
+    await session.stop();
+    assert.strictEqual(api.repls.get(session.name), undefined);
+  });
+
+  test("saving the form adds a REPL and cancelling adds nothing", async () => {
+    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+    const values = api.replForm.state!.values;
+    // The same entry point the webview's Save button reaches — a real webview
+    // cannot be scripted from a test.
+    await api.replForm.submit({
+      ...values,
+      name: "saved",
+      type: "connect",
+      host: "127.0.0.1",
+      port: String(a.port),
+    });
+
+    assert.strictEqual(api.replForm.state, undefined, "saving closes the form");
+    await waitUntil(
+      () => api.repls.get("saved") !== undefined,
+      5000,
+      "the saved REPL to reach the tree",
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+    api.replForm.cancel();
+    assert.strictEqual(api.replForm.state, undefined, "cancelling closes the form");
+    assert.deepStrictEqual(
+      api.repls.sessions.map((session) => session.name),
+      ["saved"],
+      "cancelling wrote nothing",
+    );
+  });
+
+  // Deleting is not covered end to end here: both routes to it confirm with a
+  // modal, and the test host refuses to show one ("DialogService: refused to
+  // show dialog in tests"). What the confirmation guards is covered either
+  // side of it — `removeEntry` in replConfigEdit.test.ts, and the settings
+  // target in the save test above, which shares `writeReplConfigurations`.
 
   test("a create configuration spawns a server, connects, and is killed on stop", async function () {
     if (!POSIX) {

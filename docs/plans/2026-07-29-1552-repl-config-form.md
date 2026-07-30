@@ -497,7 +497,7 @@ price of having a single concept.
 **Files:**
 - Modify: `package.json`, `src/extension.ts`, `src/test/replManager.integration.test.ts`
 
-- [ ] **Step 1: package.json contributions**
+- [x] **Step 1: package.json contributions**
   Add an inline `view/item/context` entry for `clojurePulse.editReplConfig` —
   `"when": "view == clojurePulse.replManager && viewItem != replAdHoc"`,
   `"group": "inline@3"` — so the pencil follows the existing start/stop and
@@ -505,7 +505,7 @@ price of having a single concept.
   itself contributes nothing: a `WebviewPanel` is created imperatively, with no
   view id, no `when` clause, and no context key to keep in sync.
 
-- [ ] **Step 2: Wire the panel and rework the commands**
+- [x] **Step 2: Wire the panel and rework the commands**
   In `setupRepl`, construct `ReplFormPanel` with the real callbacks:
   `readEntries` → the **raw** `clojurePulse.replConfigurations` value (an array
   as-is, or `[]`), `writeEntries` → `config.update("replConfigurations", …)`
@@ -543,7 +543,7 @@ price of having a single concept.
   `promptConnectEntry`, and the quick-pick body of `addReplConfig`. Add the
   controller to `ExtensionApi` as `replForm`.
 
-- [ ] **Step 3: Update the integration tests**
+- [x] **Step 3: Update the integration tests**
   In `replManager.integration.test.ts`: `clojurePulse.addReplConfig` leaves the
   form in add mode with the default command prefilled;
   `clojurePulse.editReplConfig` with a configured name loads that entry's values
@@ -564,7 +564,7 @@ price of having a single concept.
   with the suite's existing `waitUntil` helper rather than reading straight
   after the call.
 
-- [ ] **Step 4: Compile, lint, full test run**
+- [x] **Step 4: Compile, lint, full test run**
   Run: `make check`
   Expected: PASS, and `grep -rn "promptCreateEntry\|promptConnectEntry" src` finds nothing.
 
@@ -588,8 +588,20 @@ price of having a single concept.
   `replConfigurations` array by hand, edit a REPL through the form, and confirm
   the stray entry is still there afterwards.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Add and edit REPL configurations through a form"`
+
+> Deviation: no integration test for deletion. Both routes to it confirm with a
+> modal, and the test host refuses to show one — `DialogService: refused to
+> show dialog in tests`. What the confirmation guards is covered either side of
+> it: `removeEntry` in `replConfigEdit.test.ts`, and the settings target in the
+> save round trip, which shares `writeReplConfigurations`.
+> Deviation: `editReplConfig` refuses an ad-hoc name with an information
+> message, as the plan's prose asks; `deleteReplConfig` (which the plan cites as
+> the precedent) returns silently, and was left as it is — Task 5 removes both.
+
+**Step 5 is not done: it needs a real VS Code window (F5), which this
+environment has no display for.**
 
 ### Task 4: Drop the ad-hoc connect flow
 
