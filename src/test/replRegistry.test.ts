@@ -258,34 +258,6 @@ suite("ReplRegistry", () => {
     assert.strictEqual(registry.active, undefined);
   });
 
-  test("ad-hoc sessions are named host:port and vanish when they stop", async () => {
-    const session = registry.addAdHoc({ host: "127.0.0.1", port: 7890 }) as FakeSession;
-    assert.strictEqual(session.name, "127.0.0.1:7890");
-    assert.strictEqual(registry.sessions.length, 1);
-
-    await session.start();
-    assert.strictEqual(registry.active?.name, "127.0.0.1:7890");
-
-    await session.stop();
-    await tick();
-
-    assert.deepStrictEqual(registry.sessions, []);
-    assert.strictEqual(session.disposed, true);
-    assert.strictEqual(registry.active, undefined);
-  });
-
-  test("configuration changes leave ad-hoc sessions alone", async () => {
-    const adHoc = registry.addAdHoc({ host: "127.0.0.1", port: 7890 }) as FakeSession;
-    await adHoc.start();
-
-    registry.setConfigs([connectConfig("a")]);
-
-    assert.deepStrictEqual(
-      registry.sessions.map((s) => s.name).sort(),
-      ["127.0.0.1:7890", "a"],
-    );
-  });
-
   test("onDidChange fires for session state changes and configuration edits", async () => {
     let changes = 0;
     registry.onDidChange(() => (changes += 1));
@@ -391,20 +363,6 @@ suite("ReplRegistry", () => {
     registry.setActive("b");
 
     assert.strictEqual(registry.active?.name, "a", "a connecting REPL cannot evaluate");
-  });
-
-  test("saving a configuration over an ad-hoc session keeps it after it stops", async () => {
-    const adHoc = registry.addAdHoc({ host: "127.0.0.1", port: 7890 }) as FakeSession;
-    await adHoc.start();
-
-    registry.setConfigs([connectConfig("127.0.0.1:7890", 7890)]);
-    await adHoc.stop();
-
-    assert.deepStrictEqual(
-      registry.sessions.map((s) => s.name),
-      ["127.0.0.1:7890"],
-      "a saved configuration must outlive its connection",
-    );
   });
 
   test("dispose stops every session and channel", async () => {

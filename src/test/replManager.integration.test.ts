@@ -215,18 +215,6 @@ suite("REPL manager with several sessions", () => {
     assert.strictEqual(api.replForm.state?.values.command, "echo hi");
   });
 
-  test("editing an ad-hoc session opens no form", async () => {
-    const session = api.repls.addAdHoc({ host: "127.0.0.1", port: a.port });
-
-    await vscode.commands.executeCommand("clojurePulse.editReplConfig", session.name);
-    assert.strictEqual(api.replForm.state, undefined);
-
-    // Leave nothing behind: an ad-hoc session goes when its connection does.
-    await session.start();
-    await session.stop();
-    assert.strictEqual(api.repls.get(session.name), undefined);
-  });
-
   test("saving the form adds a REPL and cancelling adds nothing", async () => {
     await vscode.commands.executeCommand("clojurePulse.addReplConfig");
     const values = api.replForm.state!.values;

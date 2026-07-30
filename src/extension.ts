@@ -613,24 +613,14 @@ async function editReplConfig(
   const session = await sessionFor(registry, arg, () =>
     pickSession(
       registry,
-      (candidate) => !registry.isAdHoc(candidate.name),
+      () => true,
       "Edit which REPL configuration?",
       "No REPLs are configured yet.",
     ),
   );
-  if (!session) {
-    return;
+  if (session) {
+    form.open({ kind: "edit", name: session.name });
   }
-  // The pane hides the pencil on ad-hoc rows, but the palette and keybindings
-  // reach this command directly: there is no entry to edit, and opening the
-  // form would append a stray one.
-  if (registry.isAdHoc(session.name)) {
-    void vscode.window.showInformationMessage(
-      `Clojure Pulse: "${session.name}" is an unsaved connection, so there is no configuration to edit.`,
-    );
-    return;
-  }
-  form.open({ kind: "edit", name: session.name });
 }
 
 async function deleteReplConfig(
@@ -640,12 +630,12 @@ async function deleteReplConfig(
   const session = await sessionFor(registry, arg, () =>
     pickSession(
       registry,
-      (candidate) => !registry.isAdHoc(candidate.name),
+      () => true,
       "Delete which REPL configuration?",
       "No REPLs are configured yet.",
     ),
   );
-  if (!session || registry.isAdHoc(session.name)) {
+  if (!session) {
     return;
   }
   if (!(await confirmDeleteConfig(session.name))) {

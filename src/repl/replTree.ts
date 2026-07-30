@@ -1,6 +1,6 @@
 /**
- * The REPL view in the sidebar: one row per configured REPL, plus any ad-hoc
- * connection. Presentation is a pure function of a session's config and state
+ * The REPL view in the sidebar: one row per configured REPL. Presentation is a
+ * pure function of a session's config and state
  * so it can be unit-tested; `ReplTreeProvider` only maps that onto VS Code's
  * tree API and repaints when the registry changes.
  */
@@ -22,7 +22,6 @@ export interface SessionView {
 export interface ReplTreeSource {
   readonly sessions: SessionView[];
   readonly active: SessionView | undefined;
-  isAdHoc(name: string): boolean;
   onDidChange(listener: () => void): void;
 }
 
@@ -43,14 +42,14 @@ export interface ReplTreeNode {
 
 export function presentSession(
   session: SessionView,
-  options: { isActive: boolean; isAdHoc: boolean },
+  options: { isActive: boolean },
 ): ReplTreeItemView {
   return {
     label: session.name,
     description: describeState(session),
     icon: iconFor(session, options.isActive),
     tooltip: tooltipFor(session),
-    contextValue: contextValueFor(session, options.isAdHoc),
+    contextValue: contextValueFor(session),
   };
 }
 
@@ -90,10 +89,7 @@ function tooltipFor(session: SessionView): string {
     : `${session.name} — ${host}, port from ${port}`;
 }
 
-function contextValueFor(session: SessionView, isAdHoc: boolean): string {
-  if (isAdHoc) {
-    return "replAdHoc";
-  }
+function contextValueFor(session: SessionView): string {
   if (session.config.type === "create") {
     return session.state === "stopped" ? "replCreateStopped" : "replCreateRunning";
   }
@@ -119,7 +115,6 @@ export class ReplTreeProvider implements vscode.TreeDataProvider<ReplTreeNode> {
     }
     const view = presentSession(session, {
       isActive: this.source.active?.name === session.name,
-      isAdHoc: this.source.isAdHoc(session.name),
     });
     item.label = view.label;
     item.description = view.description;

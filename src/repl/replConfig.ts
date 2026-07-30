@@ -260,11 +260,6 @@ export function readPortFile(filePath: string): number | undefined {
   }
 }
 
-/** Reads the port from `<dir>/.nrepl-port`, as written by nREPL servers. */
-export function readNreplPort(dir: string): number | undefined {
-  return readPortFile(path.join(dir, ".nrepl-port"));
-}
-
 /**
  * The file a string port points at: absolute paths as-is, relative ones
  * against the workspace root. Undefined for numeric ports (nothing to read)

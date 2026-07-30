@@ -2,7 +2,8 @@
  * Owns every REPL session and the single **active** one that evaluations are
  * routed to.
  *
- * Sessions are derived from `clojurePulse.replConfigurations`: adding an entry
+ * Every session is a configuration — the pane is a projection of settings and
+ * nothing else. Sessions are derived from `clojurePulse.replConfigurations`: adding an entry
  * creates one, removing an entry stops and disposes one. A session that is
  * *running* keeps the configuration it launched with — the edited one is held
  * as pending and applied the moment the session next reaches `stopped`, so a
@@ -13,8 +14,7 @@
  * REPL's history: the replacement gets the same channel back.
  */
 
-import { ReplConnectionInfo } from "./connectionManager";
-import { ConnectReplConfig, ReplConfig } from "./replConfig";
+import { ReplConfig } from "./replConfig";
 import { ReplChannel, ReplSessionLike, ReplSessionState } from "./replSession";
 
 export interface ReplRegistryDeps {
@@ -30,8 +30,6 @@ export class ReplRegistry {
   private readonly channels = new Map<string, ReplChannel>();
   /** Edited configurations waiting for their session to stop. */
   private readonly pendingConfigs = new Map<string, ReplConfig>();
-  /** Sessions from the ad-hoc connect flow: unsaved, and transient. */
-  private readonly adHocNames = new Set<string>();
   /** Retired sessions whose server would not die: off the list, but kept so
    *  shutdown can try to kill them once more. */
   private readonly undead = new Set<ReplSessionLike>();
@@ -76,7 +74,7 @@ export class ReplRegistry {
     const configured = new Set(configs.map((config) => config.name));
     const removed: ReplSessionLike[] = [];
     for (const [name, session] of [...this.items]) {
-      if (this.adHocNames.has(name) || configured.has(name)) {
+      if (configured.has(name)) {
         continue;
       }
       this.items.delete(name);
@@ -89,10 +87,6 @@ export class ReplRegistry {
 
     for (const config of configs) {
       const existing = this.items.get(config.name);
-      // Saving a configuration under an ad-hoc session's `host:port` name
-      // promotes that session: it is now backed by settings, so it must
-      // outlive its next disconnect.
-      this.adHocNames.delete(config.name);
       if (!existing) {
         this.items.set(config.name, this.createSession(config));
       } else if (sameConfig(existing.config, config)) {
@@ -130,31 +124,6 @@ export class ReplRegistry {
     }
   }
 
-  /** Registers an unsaved `host:port` connection, named after the address. */
-  addAdHoc(info: ReplConnectionInfo): ReplSessionLike {
-    const name = `${info.host}:${info.port}`;
-    const existing = this.items.get(name);
-    if (existing) {
-      return existing;
-    }
-    const config: ConnectReplConfig = {
-      name,
-      type: "connect",
-      host: info.host,
-      port: info.port,
-    };
-    const session = this.createSession(config);
-    this.adHocNames.add(name);
-    this.items.set(name, session);
-    this.emitChange();
-    return session;
-  }
-
-  /** True for sessions that exist only until they disconnect. */
-  isAdHoc(name: string): boolean {
-    return this.adHocNames.has(name);
-  }
-
   /** Stops every session and disposes every channel. Awaited by deactivate()
    *  so kills (and their grace periods) really complete. */
   async dispose(): Promise<void> {
@@ -162,7 +131,6 @@ export class ReplRegistry {
     // to kill — this is the last chance to take them down with us.
     const sessions = [...this.sessions, ...this.undead];
     this.items = new Map();
-    this.adHocNames.clear();
     this.undead.clear();
     this.pendingConfigs.clear();
     this.activeName = undefined;
@@ -203,25 +171,12 @@ export class ReplRegistry {
       if (this.activeName === session.name) {
         this.activeName = undefined;
       }
-      // Ad-hoc sessions live only as long as their connection.
-      if (this.adHocNames.has(session.name)) {
-        this.forget(session);
-        this.emitChange();
-        return;
-      }
       const pending = this.pendingConfigs.get(session.name);
       if (pending) {
         this.replace(session, pending);
       }
     }
     this.emitChange();
-  }
-
-  /** Drops a transient session once its connection is over. */
-  private forget(session: ReplSessionLike): void {
-    this.items.delete(session.name);
-    this.adHocNames.delete(session.name);
-    void this.retire(session);
   }
 
   private channelFor(name: string): ReplChannel {
@@ -241,7 +196,7 @@ export class ReplRegistry {
     }
   }
 
-  /** Keeps the tree in settings order, with ad-hoc sessions after the rest. */
+  /** Keeps the tree in settings order. */
   private reorder(configs: ReplConfig[]): void {
     const ordered = new Map<string, ReplSessionLike>();
     for (const config of configs) {

@@ -8,7 +8,6 @@ import {
   defaultCreateCommand,
   detectProjectKind,
   parseReplConfigurations,
-  readNreplPort,
   readPortFile,
   resolvePortFilePath,
   resolvePortSync,
@@ -333,12 +332,6 @@ suite("port resolution", () => {
     const fractional = path.join(dir, "fractional");
     fs.writeFileSync(fractional, "7888.5");
     assert.strictEqual(readPortFile(fractional), undefined);
-  });
-
-  test("readNreplPort still reads <dir>/.nrepl-port", () => {
-    fs.writeFileSync(path.join(dir, ".nrepl-port"), "7888\n");
-    assert.strictEqual(readNreplPort(dir), 7888);
-    assert.strictEqual(readNreplPort(path.join(dir, "missing")), undefined);
   });
 
   test("resolvePortSync passes a numeric port through", () => {

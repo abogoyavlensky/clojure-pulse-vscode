@@ -667,7 +667,7 @@ green and this task commits on its own.
 - Modify: `src/test/replRegistry.test.ts`, `src/test/replTree.test.ts`,
   `src/test/replStatusBar.test.ts`, `src/test/replConfig.test.ts`
 
-- [ ] **Step 1: Delete the ad-hoc tests**
+- [x] **Step 1: Delete the ad-hoc tests**
   Remove the cases that only describe ad-hoc behaviour: in
   `replRegistry.test.ts`, the ad-hoc lifecycle, "configuration changes leave
   ad-hoc sessions alone", and the promotion case ("saving a configuration over
@@ -679,11 +679,11 @@ green and this task commits on its own.
   Everything else must keep passing untouched — that is the point of doing the
   subtraction first.
 
-- [ ] **Step 2: Run tests to verify the suite is still green**
+- [x] **Step 2: Run tests to verify the suite is still green**
   Run: `make test`
   Expected: PASS — what remains describes the behaviour that stays.
 
-- [ ] **Step 3: Remove the implementation**
+- [x] **Step 3: Remove the implementation**
   From `replRegistry.ts`: `addAdHoc`, `isAdHoc`, `adHocNames`, `forget()`, the
   `adHocNames.delete(config.name)` promotion line in `setConfigs`, the ad-hoc
   branch in `onSessionState`, and the `adHocNames` clear in `dispose()`. The
@@ -695,7 +695,7 @@ green and this task commits on its own.
   deleted in Task 4. From `extension.ts`: the ad-hoc guards in `editReplConfig`
   and `deleteReplConfig`, which can no longer be true.
 
-- [ ] **Step 4: Compile, lint, full test run**
+- [x] **Step 4: Compile, lint, full test run**
   Run: `make check`
   Expected: PASS, and `grep -rni "adhoc" src package.json` finds nothing.
 
@@ -705,8 +705,19 @@ green and this task commits on its own.
   configuration and confirm the same command now lists it. Confirm every row
   still shows its Edit and Delete actions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Remove the ad-hoc session machinery"`
+
+> Deviation: Steps 1–3 were verified once, together, rather than as
+> subtraction-then-removal. Step 1 asks for the `isAdHoc` argument to leave
+> `presentSession`'s callers, which cannot compile until Step 3 removes the
+> parameter — so "delete the tests, suite still green" is not reachable in
+> TypeScript. The deleted cases are exactly the ones the plan lists.
+> Also deleted: "editing an ad-hoc session opens no form", added in Task 3 for
+> a guard this task removes.
+
+**Step 5 is not done: it needs a real VS Code window (F5), which this
+environment has no display for.**
 
 ### Task 6: Documentation
 

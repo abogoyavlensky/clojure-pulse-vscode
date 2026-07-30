@@ -33,15 +33,6 @@ suite("replStatusPresentation", () => {
     assert.ok(view.tooltip.includes("localhost:7888"), view.tooltip);
   });
 
-  test("an unnamed (ad-hoc) session shows just its address", () => {
-    const view = replStatusPresentation({
-      active: { info: { host: "127.0.0.1", port: 7890 } },
-      busy: false,
-      total: 1,
-    });
-    assert.strictEqual(view.text, "$(plug) nREPL 127.0.0.1:7890");
-  });
-
   test("a session named after its address does not repeat it", () => {
     const view = replStatusPresentation({
       active: { name: "127.0.0.1:7890", info: { host: "127.0.0.1", port: 7890 } },

@@ -33,10 +33,7 @@ function view(
 
 suite("presentSession", () => {
   test("a stopped create config offers to start", () => {
-    const item = presentSession(view(createConfig, "stopped"), {
-      isActive: false,
-      isAdHoc: false,
-    });
+    const item = presentSession(view(createConfig, "stopped"), { isActive: false });
     assert.strictEqual(item.label, "dev");
     assert.strictEqual(item.description, "stopped");
     assert.strictEqual(item.contextValue, "replCreateStopped");
@@ -44,20 +41,14 @@ suite("presentSession", () => {
   });
 
   test("a starting create config spins and offers to stop", () => {
-    const item = presentSession(view(createConfig, "starting"), {
-      isActive: false,
-      isAdHoc: false,
-    });
+    const item = presentSession(view(createConfig, "starting"), { isActive: false });
     assert.strictEqual(item.description, "starting");
     assert.strictEqual(item.icon, "loading~spin");
     assert.strictEqual(item.contextValue, "replCreateRunning");
   });
 
   test("a connecting session spins", () => {
-    const item = presentSession(view(connectConfig, "connecting"), {
-      isActive: false,
-      isAdHoc: false,
-    });
+    const item = presentSession(view(connectConfig, "connecting"), { isActive: false });
     assert.strictEqual(item.description, "connecting");
     assert.strictEqual(item.icon, "loading~spin");
     assert.strictEqual(item.contextValue, "replConnectConnected");
@@ -66,7 +57,7 @@ suite("presentSession", () => {
   test("a connected session shows its port", () => {
     const item = presentSession(
       view(connectConfig, "connected", { host: "example.test", port: 7888 }),
-      { isActive: false, isAdHoc: false },
+      { isActive: false },
     );
     assert.strictEqual(item.description, "connected :7888");
     assert.strictEqual(item.icon, "circle-outline");
@@ -76,35 +67,17 @@ suite("presentSession", () => {
   test("the active session is marked with a filled icon", () => {
     const item = presentSession(
       view(createConfig, "connected", { host: "localhost", port: 7888 }),
-      { isActive: true, isAdHoc: false },
+      { isActive: true },
     );
     assert.strictEqual(item.icon, "circle-filled");
     assert.strictEqual(item.contextValue, "replCreateRunning");
   });
 
   test("a stopped connect config is disconnected, not stopped-with-a-process", () => {
-    const item = presentSession(view(connectConfig, "stopped"), {
-      isActive: false,
-      isAdHoc: false,
-    });
+    const item = presentSession(view(connectConfig, "stopped"), { isActive: false });
     assert.strictEqual(item.contextValue, "replConnectStopped");
     assert.strictEqual(item.icon, "debug-disconnect");
     assert.ok(item.tooltip.includes("example.test:7888"), item.tooltip);
-  });
-
-  test("an ad-hoc session gets its own context value", () => {
-    const adHoc: ConnectReplConfig = {
-      name: "127.0.0.1:7890",
-      type: "connect",
-      host: "127.0.0.1",
-      port: 7890,
-    };
-    const item = presentSession(
-      view(adHoc, "connected", { host: "127.0.0.1", port: 7890 }),
-      { isActive: true, isAdHoc: true },
-    );
-    assert.strictEqual(item.contextValue, "replAdHoc");
-    assert.strictEqual(item.label, "127.0.0.1:7890");
   });
 
   test("a port-file connect config names the file in its tooltip", () => {
@@ -114,10 +87,7 @@ suite("presentSession", () => {
       host: "localhost",
       port: ".nrepl-port",
     };
-    const item = presentSession(view(fromFile, "stopped"), {
-      isActive: false,
-      isAdHoc: false,
-    });
+    const item = presentSession(view(fromFile, "stopped"), { isActive: false });
     assert.ok(item.tooltip.includes(".nrepl-port"), item.tooltip);
   });
 });
@@ -129,7 +99,6 @@ suite("ReplTreeProvider", () => {
       get active() {
         return sessions.find((s) => s.name === activeName);
       },
-      isAdHoc: (name: string) => name.includes(":"),
       onDidChange(listener: () => void) {
         listeners.push(listener);
       },
