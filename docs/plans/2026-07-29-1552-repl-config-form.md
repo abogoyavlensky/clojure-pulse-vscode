@@ -97,11 +97,43 @@ Both field sets are kept in the model while the form is open, so switching the
 type selector back and forth does not lose what was typed. Only the fields
 belonging to the chosen type are written.
 
-- **Adding:** `name` empty, `type` `"create"`, `command` prefilled from
-  `defaultCreateCommand()`, `cwd` `"."`, `host` `"localhost"`, `port`
-  `".nrepl-port"`.
+- **Adding:** `name` empty, `type` `"create"`, `command` prefilled for the
+  project (below), `cwd` `"."`, `host` `"localhost"`, `port` `".nrepl-port"`.
 - **Editing:** filled from the raw settings entry, falling back to the same
   defaults for anything absent.
+
+### Prefilling the command
+
+A Clojure CLI command is useless in a Leiningen project, so the prefill follows
+whatever build file sits at the workspace root:
+
+| Found at the root | Prefilled command |
+| --- | --- |
+| `deps.edn` | `clojure -Sdeps '{:aliases {:clojure-pulse/nrepl …}}' -M:clojure-pulse/nrepl` |
+| `project.clj` | `lein repl :headless` |
+| `lgx.edn` | `lgx nrepl` |
+| none of them | the `deps.edn` command |
+
+Precedence follows the order already used in `activationEvents`: `deps.edn`,
+then `project.clj`, then `lgx.edn` — it only matters in a mixed repository, and
+the field is editable anyway.
+
+All three announce themselves with the line `parseNreplPort` matches — `lgx nrepl`
+was checked against a real server and prints
+`nREPL server started on port 39553 on host 127.0.0.1 …`, the same shape as the
+Clojure CLI. Leiningen's wording matches too, though it was not run during
+planning; all three also write `.nrepl-port`, which is the fallback if any
+wording ever drifts.
+
+Each kind carries its own one-line hint under the field — the
+`-M:dev:test:clojure-pulse/nrepl` alias tip is worth showing exactly when
+someone is editing a `deps.edn` command, and is noise above a `lein` one.
+
+Detection is a pure function over the root's file names; the panel's
+`defaultCommand` callback supplies that listing, so nothing about it needs a
+`vscode` import to test. Babashka (`bb nrepl-server`) is deliberately left out:
+`bb.edn` is not an activation event here, and its startup wording could not be
+verified during planning.
 
 ### Writing back
 
@@ -263,8 +295,20 @@ price of having a single concept.
 
 **Files:**
 - Create: `src/repl/replConfigEdit.ts`, `src/test/replConfigEdit.test.ts`
+- Modify: `src/repl/replConfig.ts`, `src/test/replConfig.test.ts` (project-aware
+  `defaultCreateCommand`)
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Write failing tests for the project-aware command**
+  In `replConfig.test.ts`: `detectProjectKind` picks `deps` for `["deps.edn"]`,
+  `lein` for `["project.clj"]`, `lgx` for `["lgx.edn"]`, `deps` for a directory
+  with none of them, and follows the documented precedence when several are
+  present; `defaultCreateCommand` returns the existing Clojure CLI string for
+  `deps` (both platforms, exactly as the current tests assert), `lein repl
+  :headless` for `lein`, and `lgx nrepl` for `lgx`; `createCommandHint` mentions
+  the `:clojure-pulse/nrepl` alias only for `deps`. The existing
+  `defaultCreateCommand` tests move to the new options-object signature.
+
+- [ ] **Step 2: Write failing tests for the form model**
   Cover every rule in the design's *Form model* and *Writing back* sections:
   `formValuesFor(undefined, defaultCommand)` returns the add defaults;
   `formValuesFor(entry, …)` fills from a `create` entry and from a `connect`
@@ -280,16 +324,33 @@ price of having a single concept.
   so a stray scalar in the array survives an edit; `removeEntry` drops exactly
   the named entry and, likewise, leaves everything else in place.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
   Run: `make test`
-  Expected: FAIL — cannot resolve `../repl/replConfigEdit`.
+  Expected: FAIL — cannot resolve `../repl/replConfigEdit`, and
+  `detectProjectKind` / `createCommandHint` do not exist.
 
-- [ ] **Step 3: Implement**
-  Pure module, no `vscode` import. Reuse `configEntryName`, `validatePortInput`,
-  and `parseReplConfigurations` from `replConfig.ts` rather than restating their
-  rules. Pin these signatures — Tasks 2 and 3 call them:
+- [ ] **Step 4: Implement**
+  Both modules stay pure, with no `vscode` import. `replConfigEdit.ts` reuses
+  `configEntryName`, `validatePortInput`, and `parseReplConfigurations` from
+  `replConfig.ts` rather than restating their rules. In `replConfig.ts`, the
+  options object is deliberate: it makes every existing positional
+  `defaultCreateCommand("darwin")` call a compile error rather than a silent
+  reinterpretation of the argument. Pin these signatures — Tasks 2 and 3 call
+  them:
 
   ```ts
+  // replConfig.ts
+  export type ProjectKind = "deps" | "lein" | "lgx";
+  export function detectProjectKind(rootFileNames: readonly string[]): ProjectKind;
+  export function defaultCreateCommand(options?: {
+    kind?: ProjectKind;          // defaults to "deps"
+    platform?: NodeJS.Platform;  // defaults to process.platform
+  }): string;
+  export function createCommandHint(kind: ProjectKind): string;
+  ```
+
+  ```ts
+  // replConfigEdit.ts
   export interface ReplFormValues {
     name: string; type: "create" | "connect";
     command: string; cwd: string; host: string; port: string;
@@ -305,11 +366,11 @@ price of having a single concept.
   export function removeEntry(entries: unknown[], name: string): unknown[];
   ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
   `git commit -m "Add the REPL configuration form model"`
 
 ### Task 2: Form panel (`replFormPanel.ts`)
@@ -351,7 +412,8 @@ price of having a single concept.
 
   ```ts
   // host → webview
-  { type: "load"; mode: "add" | "edit"; title: string; values: ReplFormValues; errors: ReplFormErrors }
+  { type: "load"; mode: "add" | "edit"; title: string; values: ReplFormValues;
+    errors: ReplFormErrors; commandHint: string }
   // webview → host
   { type: "ready" } | { type: "save"; values: ReplFormValues } | { type: "cancel" } | { type: "delete" }
   ```
@@ -364,8 +426,9 @@ price of having a single concept.
   the host; both groups keep their values while hidden. The command is a
   `textarea` of about five rows — the whole reason for a form rather than an
   input box is that the default command runs to ~150 characters. Each field
-  carries a line of help beneath it — the alias explanation that currently lives
-  only in the README — which is what the extra width buys. Save posts the whole
+  carries a line of help beneath it — which is what the extra width buys; the
+  command's line is the `commandHint` from the load message, so a Leiningen
+  project is not told about `-M:` aliases. Save posts the whole
   `ReplFormValues`.
   Delete renders only in edit mode, separated from Cancel and Save (`margin-right:
   auto`) so it cannot be hit by accident, and uses
@@ -406,7 +469,9 @@ price of having a single concept.
   `readEntries` → the **raw** `clojurePulse.replConfigurations` value (an array
   as-is, or `[]`), `writeEntries` → `config.update("replConfigurations", …)`
   against `ConfigurationTarget.Workspace` when `vscode.workspace.workspaceFolders`
-  is non-empty and `Global` otherwise, `defaultCommand` → `defaultCreateCommand()`,
+  is non-empty and `Global` otherwise, `defaultCommand` → read the workspace root's file names (`fs.readdirSync`, or
+  `[]` when no folder is open), pass them through `detectProjectKind`, and return
+  that kind's `defaultCreateCommand` and `createCommandHint`,
   `confirmDelete` → the modal warning `deleteReplConfig` already shows, and a
   panel factory calling `vscode.window.createWebviewPanel` — the seam Task 2's
   tests replace. It needs `context.extensionUri` for the tab icon, which
@@ -448,7 +513,10 @@ price of having a single concept.
 - [ ] **Step 5: Check the form in a real window**
   Launch the extension host (F5) in a project with a `deps.edn`. Add a REPL from
   the **+** button, watch the form open as an editor tab with its own icon, save
-  it, and confirm the tab closes and the row appears and starts. Press the
+  it, and confirm the tab closes and the row appears and starts. Repeat in a
+  Leiningen project (a bare `project.clj` is enough) and confirm the command is
+  prefilled as `lein repl :headless` with a hint that says nothing about
+  `-M:` aliases. Press the
   pencil on that row, change the command, save, and confirm `settings.json`
   shows the edit with no `"cwd": "."` noise. Switch the type selector to `connect` and back to `create`,
   confirming the command you typed is still there — the webview's own field
@@ -571,15 +639,17 @@ green and this task commits on its own.
   flow: the **+** button and the row's pencil both open a form in an editor tab,
   with the type selector, the fields per type, and Save / Delete / Cancel.
   Mention that the tab can be dragged into a floating window if you prefer the
-  form beside your code. Say
-  where it saves — workspace settings, or user settings when no folder is open —
-  and keep the note that `settings.json` remains the source of truth and can
-  still be edited by hand. Remove the "In a hurry?" paragraph pointing at the
+  form beside your code, and that the command comes prefilled for the project's
+  build file — `deps.edn`, `project.clj`, or `lgx.edn`. Say where it saves —
+  workspace settings, or user settings when no folder is open — and keep the
+  note that `settings.json` remains the source of truth and can still be edited
+  by hand. Remove the "In a hurry?" paragraph pointing at the
   ad-hoc *Connect to host:port…* entry, and rewrite the **Connect to Running
   nREPL** command's description in the Commands list: it now connects a
   configured REPL. Add a CHANGELOG entry covering the form, the inline Edit
-  action, Delete from the form, and the removal of unsaved ad-hoc connections —
-  the one behaviour change an existing user will notice.
+  action, Delete from the form, the project-aware command prefill, and the
+  removal of unsaved ad-hoc connections — the one behaviour change an existing
+  user will notice.
 
 - [ ] **Step 2: Commit**
   `git commit -m "Document the REPL configuration form"`
