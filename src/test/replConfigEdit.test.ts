@@ -236,6 +236,19 @@ suite("upsertEntry", () => {
     assert.deepStrictEqual(upsertEntry(entries, dev, "dev"), [dev, shadowed]);
   });
 
+  test("replaces the entry the tree is showing, not a broken namesake before it", () => {
+    // The parser skips the `create` with no command and shows the `connect`
+    // behind it; renaming must not leave that one configured.
+    const broken = { name: "dev", type: "create" };
+    const entries = [broken, { name: "dev", type: "connect", port: 7888 }];
+    assert.deepStrictEqual(upsertEntry(entries, dev, "dev"), [broken, dev]);
+  });
+
+  test("falls back to the first namesake when none of them parses", () => {
+    const entries = [{ name: "dev", type: "create" }, { name: "a", type: "connect", port: 7888 }];
+    assert.deepStrictEqual(upsertEntry(entries, dev, "dev"), [dev, entries[1]]);
+  });
+
   test("appends when the original entry is gone", () => {
     const entries = [{ name: "a", type: "connect", port: 7888 }];
     assert.deepStrictEqual(upsertEntry(entries, dev, "dev"), [entries[0], dev]);

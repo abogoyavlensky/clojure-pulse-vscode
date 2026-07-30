@@ -122,10 +122,11 @@ export function toConfigEntry(
 }
 
 /**
- * Writes `entry` into the array: over the **first** entry named `originalName`
- * — the one the tree is showing — or appended when there is none, which is
- * both the add case and the case of settings edited from under the form.
- * Every other entry, matched or not, is carried over as it was.
+ * Writes `entry` into the array: over the entry named `originalName` that the
+ * tree is showing, or appended when there is none, which is both the add case
+ * and the case of settings edited from under the form. Every other entry,
+ * matched or not, is carried over as it was — later duplicates the parser was
+ * already shadowing included.
  */
 export function upsertEntry(
   entries: unknown[],
@@ -133,16 +134,39 @@ export function upsertEntry(
   originalName?: string,
 ): unknown[] {
   const next = [...entries];
-  const index =
-    originalName === undefined
-      ? -1
-      : next.findIndex((item) => configEntryName(item) === originalName);
+  const index = originalName === undefined ? -1 : indexOfShown(next, originalName);
   if (index === -1) {
     next.push(entry);
   } else {
     next[index] = entry;
   }
   return next;
+}
+
+/**
+ * Where the REPL named `name` lives in the raw array. The parser keeps the
+ * first entry it *accepts* under a name, which is not always the first entry
+ * carrying it: a malformed `{"name": "dev"}` is skipped, and the valid `dev`
+ * behind it is the one on screen. Editing must land on that one, or a rename
+ * would leave the original REPL still configured. With nothing parseable under
+ * the name, the first entry carrying it is the one the user meant to fix.
+ */
+function indexOfShown(entries: unknown[], name: string): number {
+  let fallback = -1;
+  for (const [index, entry] of entries.entries()) {
+    if (configEntryName(entry) !== name) {
+      continue;
+    }
+    // Alone in the array, so only this entry's own validity is judged —
+    // duplicate-name shadowing is exactly what this loop is resolving.
+    if (parseReplConfigurations([entry]).configs.length === 1) {
+      return index;
+    }
+    if (fallback === -1) {
+      fallback = index;
+    }
+  }
+  return fallback;
 }
 
 /**

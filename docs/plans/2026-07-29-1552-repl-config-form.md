@@ -306,7 +306,7 @@ price of having a single concept.
 - Modify: `src/repl/replConfig.ts`, `src/test/replConfig.test.ts` (project-aware
   `defaultCreateCommand`)
 
-- [ ] **Step 1: Write failing tests for the project-aware command**
+- [x] **Step 1: Write failing tests for the project-aware command**
   In `replConfig.test.ts`: `detectProjectKind` picks `deps` for `["deps.edn"]`,
   `lein` for `["project.clj"]`, `lgx` for `["lgx.edn"]`, `deps` for a directory
   with none of them, and follows the documented precedence when several are
@@ -316,7 +316,7 @@ price of having a single concept.
   the `:clojure-pulse/nrepl` alias only for `deps`. The existing
   `defaultCreateCommand` tests move to the new options-object signature.
 
-- [ ] **Step 2: Write failing tests for the form model**
+- [x] **Step 2: Write failing tests for the form model**
   Cover every rule in the design's *Form model* and *Writing back* sections:
   `formValuesFor(undefined, defaultCommand)` returns the add defaults;
   `formValuesFor(entry, …)` fills from a `create` entry and from a `connect`
@@ -334,12 +334,12 @@ price of having a single concept.
   every entry with that name — duplicates included — and, likewise, leaves
   everything else in place.
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — cannot resolve `../repl/replConfigEdit`, and
   `detectProjectKind` / `createCommandHint` do not exist.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
   Both modules stay pure, with no `vscode` import. `replConfigEdit.ts` reuses
   `configEntryName`, `validatePortInput`, and `parseReplConfigurations` from
   `replConfig.ts` rather than restating their rules. In `replConfig.ts`, the
@@ -376,12 +376,19 @@ price of having a single concept.
   export function removeEntry(entries: unknown[], name: string): unknown[];
   ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Add the REPL configuration form model"`
+
+> Deviation: `upsertEntry` matches the entry the tree is *showing* rather than
+> the literally first entry carrying the name. A malformed namesake before a
+> valid one is skipped by the parser, so replacing the first match would leave
+> the shown REPL configured under its old name after a rename. Same intent the
+> plan states ("the one the tree is showing"), sharper rule. Found by the codex
+> review.
 
 ### Task 2: Form panel (`replFormPanel.ts`)
 
