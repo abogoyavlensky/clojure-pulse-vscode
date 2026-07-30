@@ -12,17 +12,12 @@ import {
 } from "./ignoredForms";
 import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
-import {
-  ConnectCancelledError,
-  EvalOptions,
-  ReplConnectionInfo,
-} from "./repl/connectionManager";
+import { ConnectCancelledError, EvalOptions } from "./repl/connectionManager";
 import {
   createCommandHint,
   defaultCreateCommand,
   detectProjectKind,
   parseReplConfigurations,
-  readNreplPort,
 } from "./repl/replConfig";
 import { removeEntry } from "./repl/replConfigEdit";
 import { ReplFormPanel } from "./repl/replFormPanel";
@@ -522,8 +517,8 @@ async function stopSession(session: ReplSessionLike): Promise<void> {
 
 /**
  * Connects a configured REPL. Without an argument, offers the `connect`
- * configurations plus the ad-hoc host/port flow, which needs no settings at
- * all — the way in when nothing is configured yet.
+ * configurations that are not already up — and, when there are none, the form
+ * that would make one, rather than a dead end.
  */
 async function connectRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
   const name = resolveSessionName(arg);
@@ -539,64 +534,30 @@ async function connectRepl(registry: ReplRegistry, arg?: unknown): Promise<void>
     return;
   }
 
-  const AD_HOC = "$(plug) Connect to host:port…";
+  const ADD = "$(add) Add a REPL configuration…";
   const candidates = registry.sessions.filter(
     (session) => session.config.type === "connect" && session.state === "stopped",
   );
   const choice = await vscode.window.showQuickPick(
-    [
-      ...candidates.map((session) => ({
-        label: session.name,
-        description: describeSession(session),
-      })),
-      { label: AD_HOC, description: "without saving a configuration" },
-    ],
+    candidates.length > 0
+      ? candidates.map((session) => ({
+          label: session.name,
+          description: describeSession(session),
+        }))
+      : [{ label: ADD, description: "nothing is configured to connect to yet" }],
     { placeHolder: "Connect to an nREPL server" },
   );
   if (!choice) {
     return;
   }
-  if (choice.label !== AD_HOC) {
-    const session = registry.get(choice.label);
-    if (session) {
-      await runSessionStart(session);
-    }
+  if (choice.label === ADD) {
+    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
     return;
   }
-
-  const info = await promptForAddress();
-  if (info) {
-    await runSessionStart(registry.addAdHoc(info));
+  const session = registry.get(choice.label);
+  if (session) {
+    await runSessionStart(session);
   }
-}
-
-/** The unsaved host/port prompt, pre-filled from the project's `.nrepl-port`. */
-async function promptForAddress(): Promise<ReplConnectionInfo | undefined> {
-  const host = await vscode.window.showInputBox({
-    prompt: "nREPL host",
-    value: "localhost",
-    ignoreFocusOut: true,
-  });
-  if (!host) {
-    return undefined;
-  }
-  const root = workspaceRoot();
-  const detectedPort = root ? readNreplPort(root) : undefined;
-  const portText = await vscode.window.showInputBox({
-    prompt: "nREPL port",
-    value: detectedPort ? String(detectedPort) : undefined,
-    ignoreFocusOut: true,
-    validateInput: (value) =>
-      /^\d+$/.test(value.trim()) &&
-      Number.parseInt(value, 10) > 0 &&
-      Number.parseInt(value, 10) <= 65535
-        ? undefined
-        : "Enter a port number between 1 and 65535",
-  });
-  if (!portText) {
-    return undefined;
-  }
-  return { host: host.trim(), port: Number.parseInt(portText.trim(), 10) };
 }
 
 async function setActiveRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {

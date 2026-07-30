@@ -615,7 +615,7 @@ green and this task commits on its own.
 - Modify: `src/extension.ts`, `package.json`,
   `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Migrate the integration tests**
+- [x] **Step 1: Migrate the integration tests**
   `replCommands.integration.test.ts` connects with `api.repls.addAdHoc(...)`.
   Replace its `connect()` helper with the configuration-driven setup from
   `replManager.integration.test.ts`: write a `connect` entry through
@@ -624,12 +624,12 @@ green and this task commits on its own.
   disappears when it disconnects" case — it describes a concept that is about to
   stop existing.
 
-- [ ] **Step 2: Run tests to verify they pass**
+- [x] **Step 2: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS — the migrated tests exercise the same commands through a
   configuration instead of an unsaved session.
 
-- [ ] **Step 3: Rework `connectRepl`**
+- [x] **Step 3: Rework `connectRepl`**
   Delete `promptForAddress`, the "Connect to host:port…" quick-pick entry, and
   the `registry.addAdHoc(...)` call. Without an argument, `connectRepl` now
   quick-picks the stopped `connect` configurations; when there are none, it
@@ -637,7 +637,7 @@ green and this task commits on its own.
   rather than reporting a dead end. Drop the `readNreplPort` and
   `ReplConnectionInfo` imports if nothing else in the file uses them.
 
-- [ ] **Step 4: package.json contributions**
+- [x] **Step 4: package.json contributions**
   Drop `replAdHoc` from the two inline `=~` clauses (set-active and stop) and
   simplify the three `viewItem != replAdHoc` clauses — the inline pencil added
   in Task 3, and the context-menu Edit and Delete — to plain
@@ -645,12 +645,19 @@ green and this task commits on its own.
   unrestricted and needs no change. Nothing can produce that context value once
   Step 3 lands.
 
-- [ ] **Step 5: Compile, lint, full test run**
+- [x] **Step 5: Compile, lint, full test run**
   Run: `make check`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Connect through saved configurations instead of ad-hoc sessions"`
+
+> Deviation: the empty-list entry runs `addReplConfig` through
+> `vscode.commands.executeCommand` rather than a direct call, so the form does
+> not have to be threaded through `connectRepl` and `activeSession`.
+> The ad-hoc lifecycle test became "disconnecting stops the REPL and clears the
+> eval target" — the same commands, now asserting that a configured row stays
+> put instead of vanishing.
 
 ### Task 5: Remove the ad-hoc machinery
 

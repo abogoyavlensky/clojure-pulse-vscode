@@ -6,10 +6,24 @@ import { ReplSessionLike } from "../repl/replSession";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
+/** The one configuration these tests connect through. */
+const REPL_NAME = "commands";
 
 interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+}
+
+async function waitUntil(
+  condition: () => boolean,
+  timeoutMs: number,
+  what: string,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(condition(), `timed out waiting for ${what}`);
 }
 
 suite("REPL commands", () => {
@@ -28,13 +42,41 @@ suite("REPL commands", () => {
     for (const session of api.repls.sessions) {
       await session.stop();
     }
+    await setConfigurations(undefined);
+    await waitUntil(
+      () => api.repls.sessions.length === 0,
+      5000,
+      "the configured sessions to be dropped",
+    );
     api.inlineResults.clearAll();
   });
 
-  /** Connects an unsaved session to `server`, the way the ad-hoc flow does. */
+  async function setConfigurations(entries: unknown[] | undefined): Promise<void> {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update(
+        "replConfigurations",
+        entries,
+        // The test host opens no folder, so workspace settings are unavailable.
+        vscode.ConfigurationTarget.Global,
+      );
+  }
+
+  /** Brings up the configured REPL that points at `server`. */
   async function connect(server: FakeNrepl): Promise<ReplSessionLike> {
-    const session = api.repls.addAdHoc({ host: "127.0.0.1", port: server.port });
-    await session.start();
+    await setConfigurations([
+      { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
+    ]);
+    // Settings reach the registry through a configuration event.
+    await waitUntil(
+      () => api.repls.get(REPL_NAME) !== undefined,
+      5000,
+      `the "${REPL_NAME}" session to appear`,
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+    const session = api.repls.get(REPL_NAME);
+    assert.ok(session, `expected a session named "${REPL_NAME}"`);
     assert.strictEqual(session.state, "connected");
     return session;
   }
@@ -206,7 +248,7 @@ suite("REPL commands", () => {
     }
   });
 
-  test("an ad-hoc session disappears when it disconnects", async () => {
+  test("disconnecting stops the REPL and clears the eval target", async () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
@@ -216,7 +258,9 @@ suite("REPL commands", () => {
       await vscode.commands.executeCommand("clojurePulse.disconnectRepl");
 
       assert.strictEqual(api.repls.active, undefined);
-      assert.deepStrictEqual(api.repls.sessions, []);
+      // The row stays: it is a configuration, and configurations do not come
+      // and go with their connections.
+      assert.strictEqual(api.repls.get(session.name)?.state, "stopped");
     } finally {
       await server?.close();
     }

@@ -316,17 +316,17 @@
         },
         {
           "command": "clojurePulse.setActiveRepl",
-          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected|replAdHoc)$/",
+          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected)$/",
           "group": "inline@1"
         },
         {
           "command": "clojurePulse.stopRepl",
-          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected|replAdHoc)$/",
+          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected)$/",
           "group": "inline@2"
         },
         {
           "command": "clojurePulse.editReplConfig",
-          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "when": "view == clojurePulse.replManager",
           "group": "inline@3"
         },
         {
@@ -336,12 +336,12 @@
         },
         {
           "command": "clojurePulse.editReplConfig",
-          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "when": "view == clojurePulse.replManager",
           "group": "2_config@1"
         },
         {
           "command": "clojurePulse.deleteReplConfig",
-          "when": "view == clojurePulse.replManager && viewItem != replAdHoc",
+          "when": "view == clojurePulse.replManager",
           "group": "2_config@2"
         }
       ]
