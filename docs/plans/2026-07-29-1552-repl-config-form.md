@@ -485,6 +485,13 @@ price of having a single concept.
 - [x] **Step 5: Commit**
   `git commit -m "Add the REPL configuration form panel"`
 
+> Deviation: `submit` and `requestDelete` now check they still own the form
+> after every `await`. Because one panel is reused, a settings write that lands
+> after the user reopened the form on another REPL would otherwise close *that*
+> form, or post the old failure into it. Also added `findEntry` to
+> `replConfigEdit.ts`, so the edit form loads the same entry `upsertEntry`
+> writes back. Races found by the codex review.
+
 ### Task 3: Wiring — commands, row action, contributions
 
 **Files:**

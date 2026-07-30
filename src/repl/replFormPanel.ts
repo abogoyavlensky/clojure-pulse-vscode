@@ -121,7 +121,8 @@ export class ReplFormPanel {
     if (!pending) {
       return;
     }
-    this.pending = { mode: pending.mode, values };
+    const submitted: ReplFormState = { mode: pending.mode, values };
+    this.pending = submitted;
     const originalName = pending.mode.kind === "edit" ? pending.mode.name : undefined;
     const entries = this.deps.readEntries();
 
@@ -137,10 +138,17 @@ export class ReplFormPanel {
     try {
       await this.deps.writeEntries(upsertEntry(entries, entry, originalName));
     } catch (err: unknown) {
-      this.post({ form: reasonOf(err) });
+      // A form that has moved on is not this save's to report into, so a
+      // failure that lands too late is dropped rather than shown to the
+      // wrong REPL.
+      if (this.owns(submitted)) {
+        this.post({ form: reasonOf(err) });
+      }
       return;
     }
-    this.close();
+    if (this.owns(submitted)) {
+      this.close();
+    }
   }
 
   /** Delete, from the button the edit form carries. */
@@ -154,16 +162,27 @@ export class ReplFormPanel {
       return;
     }
     // The form may have moved to another REPL (or closed) behind the modal.
-    if (this.pending !== pending) {
+    if (!this.owns(pending)) {
       return;
     }
     try {
       await this.deps.writeEntries(removeEntry(this.deps.readEntries(), name));
     } catch (err: unknown) {
-      this.post({ form: reasonOf(err) });
+      if (this.owns(pending)) {
+        this.post({ form: reasonOf(err) });
+      }
       return;
     }
-    this.close();
+    if (this.owns(pending)) {
+      this.close();
+    }
+  }
+
+  /** Whether the form on screen is still the one this operation started on —
+   *  the panel is reused, so a slow write must not close or shout at its
+   *  successor. */
+  private owns(state: ReplFormState): boolean {
+    return this.pending === state;
   }
 
   cancel(): void {
