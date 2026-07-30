@@ -1,5 +1,8 @@
 # REPL Configuration Form Implementation Plan
 
+**Status: complete** (see the summary at the end; two manual checks are
+outstanding and need a real VS Code window).
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make one form the only way REPLs are configured: an editor-tab form for adding and editing, an inline Edit action on every row, Delete from the form, and no unsaved ad-hoc connections.
@@ -743,3 +746,84 @@ environment has no display for.**
 
 - [x] **Step 2: Commit**
   `git commit -m "Document the REPL configuration form"`
+
+---
+
+## Completed
+
+**Status: complete**, except the two manual checks — Task 3 Step 5 and Task 5
+Step 5 — which need a real VS Code window (F5). The environment this ran in has
+no display, so they are left for a human. Everything else landed, in eight
+commits on `nrepl-manager`, with `make check` green at 384 tests.
+
+### What was implemented
+
+- `src/repl/replConfigEdit.ts` — the pure rules: add/edit defaults, validation,
+  entry building, upsert, remove, and `findEntry`. No `vscode` import.
+- `src/repl/replFormPanel.ts` — `ReplFormPanel`, one webview panel for both
+  modes, with every dependency injected (panel factory, raw settings read and
+  write, project command, delete confirmation).
+- `replConfig.ts` — `detectProjectKind`, an options-object `defaultCreateCommand`,
+  and `createCommandHint`, so the prefill follows `deps.edn` / `project.clj` /
+  `lgx.edn`.
+- `extension.ts` — the panel is built in `setupRepl`; `addReplConfig` and
+  `editReplConfig` open it; `deleteReplConfig` and the form share
+  `writeReplConfigurations`, which picks Workspace or Global by whether a folder
+  is open; the prompt helpers are gone.
+- An inline pencil on every row (`inline@3`), keeping the context-menu entry.
+- The ad-hoc session is gone entirely: `connectRepl` quick-picks stopped
+  `connect` configurations and offers to add one when there are none;
+  `addAdHoc`, `isAdHoc`, `adHocNames`, `forget()`, `readNreplPort`, and the
+  `replAdHoc` context value are all removed.
+- README and CHANGELOG rewritten around the form.
+
+### Issues encountered
+
+- **The delete confirmation cannot be tested in the extension host.** The test
+  host refuses modal dialogs outright (`DialogService: refused to show dialog in
+  tests`), so the delete round trip the plan asked for in Task 3 Step 3 does not
+  exist. Its parts are covered separately: `removeEntry` by unit tests, and the
+  settings target by the save round trip, which shares
+  `writeReplConfigurations`.
+- **The codex review found three real defects** the plan's own test list did not
+  ask for; each is noted below and covered by a test.
+- The webview's client script has no automated coverage, by design — it was
+  syntax-checked and its element ids matched against the markup, but the
+  behaviour it drives (switching kinds, keeping the other kind's values) is what
+  the manual step exists to check.
+
+### Deviations
+
+- **Task 1** — `upsertEntry` matches the entry the tree is *showing*, not the
+  first entry carrying the name. A malformed namesake ahead of a valid one is
+  skipped by the parser, so replacing the first match would leave the shown REPL
+  configured under its old name after a rename.
+- **Task 2** — `submit` and `requestDelete` re-check they still own the form
+  after every `await`. One panel is reused, so a settings write landing after
+  the user reopened the form on another REPL would otherwise close *that* form,
+  or post the old failure into it. `findEntry` was added to `replConfigEdit.ts`
+  so the form loads the same entry `upsertEntry` writes back.
+- **Task 3** — no integration test for deletion (see above). `editReplConfig`
+  refuses an ad-hoc name with an information message, as the plan's prose asked,
+  where `deleteReplConfig` (its cited precedent) returned silently; Task 5
+  removed both.
+- **Task 4** — the "Add a REPL configuration…" entry runs `addReplConfig`
+  through `executeCommand`, so the form does not have to be threaded through
+  `connectRepl` and `activeSession`. The quick pick carries the session on the
+  item rather than matching on the label, since a REPL may legitimately be named
+  anything the sentinel is. The ad-hoc lifecycle test became "disconnecting
+  stops the REPL and clears the eval target".
+- **Task 5** — Steps 1–3 were verified once, together. Step 1 asks for the
+  `isAdHoc` argument to leave `presentSession`'s callers, which does not compile
+  until Step 3 removes the parameter, so "delete the tests, suite still green"
+  is unreachable in TypeScript. Also deleted "editing an ad-hoc session opens no
+  form", added in Task 3 for a guard this task removed.
+
+### What the plan could have specified better
+
+- **Check that a test host can reach the UI a test needs.** Task 3 Step 3 asked
+  for a delete round trip, and deleting is guarded by a modal the VS Code test
+  host refuses to render. A plan that pins an integration test should say how
+  the confirmation gets answered, or inject it.
+- Task 5's subtract-then-remove split cannot hold in a typed language when the
+  subtraction includes a function argument; those two steps belong together.

@@ -6,7 +6,7 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
-  every field is visible and editable at once — including the long `create`
+  the entry's fields are all on one page — including the long `create`
   command, which now has room. Edit is an inline pencil on every row, not just
   a context-menu entry, and the form carries its own **Delete**. The command
   comes prefilled for the project's build file: the Clojure CLI one for

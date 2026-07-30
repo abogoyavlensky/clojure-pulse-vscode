@@ -137,10 +137,11 @@ travel with the project:
 ```
 
 The **+** on the view title opens a form in an editor tab, and so does the
-pencil on any row. Every field is visible at once: the selector at the top
-switches between the two kinds, the command comes prefilled for the project's
-build file, and **Delete** removes the REPL from the same place. Drag the tab
-into a floating window if you would rather keep the form beside your code.
+pencil on any row. The selector at the top chooses the kind and the fields
+below it follow, all on one page: the command comes prefilled for the project's
+build file, and **Delete** removes the REPL from the same place. Switching the
+kind keeps what you typed for the other one. Drag the tab into a floating
+window if you would rather keep the form beside your code.
 
 Saving writes to workspace settings, or to your user settings when no folder is
 open. `settings.json` stays the source of truth, so you can always edit it by
