@@ -56,7 +56,7 @@ do not need any other Clojure extension.
   and multi-cursor edits.
 - **Status bar indicator** — the server's state (starting, running, stopped,
   error) shows at the bottom left; click it to open the server log.
-- **REPL manager** — name your project's REPLs in settings, start them (or
+- **REPL manager** — name your project's REPLs in a form, start them (or
   connect to running ones) from the sidebar, and evaluate code from the editor.
   Several REPLs can run at once. See [REPL](#repl) below.
 
@@ -117,9 +117,6 @@ The **REPL** view in the Clojure Pulse sidebar lists your project's REPLs. Each
 one either starts a server for you or attaches to a server you already have
 running. Run as many as you like at once; evaluations go to the **active** one.
 
-In a hurry? Run **Clojure Pulse: Connect to Running nREPL** and pick
-*Connect to host:port…* — that connects without saving anything.
-
 ### Naming your REPLs
 
 REPLs live in `clojurePulse.replConfigurations`, in workspace settings, so they
@@ -139,10 +136,17 @@ travel with the project:
 }
 ```
 
-The **+** button on the view title walks you through an entry and writes it
-there; **Edit REPL Configuration** opens the file to change one by hand. An
-entry that does not validate is skipped, with the reason in the *Clojure Pulse*
-output channel — the rest of the list keeps working.
+The **+** on the view title opens a form in an editor tab, and so does the
+pencil on any row. Every field is visible at once: the selector at the top
+switches between the two kinds, the command comes prefilled for the project's
+build file, and **Delete** removes the REPL from the same place. Drag the tab
+into a floating window if you would rather keep the form beside your code.
+
+Saving writes to workspace settings, or to your user settings when no folder is
+open. `settings.json` stays the source of truth, so you can always edit it by
+hand and watch the view follow. An entry that does not validate is skipped,
+with the reason in the *Clojure Pulse* output channel — the rest of the list
+keeps working.
 
 #### `create` — start a server
 
@@ -152,7 +156,11 @@ Clojure Pulse reads the port from the server's startup line (or the
 first run may take as long as it needs to download dependencies — the output
 channel shows the progress, and **Stop** is available throughout.
 
-The prefilled command needs nothing in your `deps.edn`:
+The command the form prefills follows the build file at the workspace root:
+`deps.edn` gets the Clojure CLI one below, `project.clj` gets
+`lein repl :headless`, and `lgx.edn` gets `lgx nrepl`.
+
+The Clojure CLI command needs nothing in your `deps.edn`:
 
 ```sh
 clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}' -M:clojure-pulse/nrepl
@@ -161,8 +169,9 @@ clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/
 It injects nREPL as an *alias*, so your own aliases compose with it: change the
 last argument to `-M:dev:test:clojure-pulse/nrepl` and every alias contributes
 its `:extra-deps`, while `:main-opts` (last alias wins) still starts nREPL. The
-namespaced name cannot collide with an alias of your own. Edit the command
-freely — swap in `lein repl :headless`, a `bb` task, or a Makefile target.
+namespaced name cannot collide with an alias of your own. The field is yours
+either way: any command that starts an nREPL server will do, a `bb` task or a
+Makefile target included.
 
 Add `"cwd"` (relative to the workspace root) to run the command somewhere else,
 such as a module in a monorepo.
@@ -253,13 +262,15 @@ Run these from the Command Palette:
   its argument, so a keybinding can start one directly.
 - **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
   started.
-- **Clojure Pulse: Connect to Running nREPL** — connect a configured REPL, or
-  enter a host and port without saving anything.
+- **Clojure Pulse: Connect to Running nREPL** — connect one of the configured
+  `connect` REPLs, offering to add one when none is configured yet.
 - **Clojure Pulse: Disconnect from nREPL** — disconnect the active REPL.
-- **Clojure Pulse: Add REPL Configuration** — add an entry to workspace
-  settings (also the **+** on the REPL view).
-- **Clojure Pulse: Edit REPL Configuration** — open the settings file.
-- **Clojure Pulse: Delete REPL Configuration** — remove an entry.
+- **Clojure Pulse: Add REPL Configuration** — open the form for a new REPL
+  (also the **+** on the REPL view).
+- **Clojure Pulse: Edit REPL Configuration** — open the form on an existing
+  REPL (also the pencil on its row).
+- **Clojure Pulse: Delete REPL Configuration** — remove an entry, as the form's
+  **Delete** button does.
 - **Clojure Pulse: Set Active REPL** — choose which REPL evaluations go to.
 - **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor

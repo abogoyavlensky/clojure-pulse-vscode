@@ -4,6 +4,20 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
+  Configuration** both open a form in an editor tab instead of prompting, so
+  every field is visible and editable at once — including the long `create`
+  command, which now has room. Edit is an inline pencil on every row, not just
+  a context-menu entry, and the form carries its own **Delete**. The command
+  comes prefilled for the project's build file: the Clojure CLI one for
+  `deps.edn`, `lein repl :headless` for `project.clj`, `lgx nrepl` for
+  `lgx.edn`. Saving writes to workspace settings, or to user settings when no
+  folder is open, and preserves entries it did not touch. Drag the tab into a
+  floating window to keep the form beside your code.
+- **Removed unsaved ad-hoc connections.** **Connect to Running nREPL** used to
+  offer a *Connect to host:port…* entry that connected without saving anything;
+  it now lists the configured `connect` REPLs, and offers to add one when there
+  are none. Every row in the REPL view is a configuration.
 - **REPL manager**: a **REPL** view in the Clojure Pulse sidebar listing the
   REPLs named in the new `clojurePulse.replConfigurations` workspace setting.
   An entry either starts a server (`"type": "create"` — a plain command line,
@@ -33,10 +47,10 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   read from disk. Refreshes on classpath re-indexing (via the
   `clojurePulse/librariesChanged` server notification) and via a
   **Refresh External Libraries** command / view-title button.
-- nREPL support: **Connect to Running nREPL** (port pre-filled from
-  `.nrepl-port`), **Evaluate Selection**, and **Disconnect** commands; a
-  transcript of connection banners, evaluated forms, values, and stdout/stderr;
-  and an nREPL status bar item with a connect / show / disconnect menu.
+- nREPL support: **Connect to Running nREPL**, **Evaluate Selection**, and
+  **Disconnect** commands; a transcript of connection banners, evaluated forms,
+  values, and stdout/stderr; and an nREPL status bar item with a connect / show
+  / disconnect menu.
 - **Evaluate Current Form** (form at the cursor, evaluated in the file's
   namespace) and **Evaluate File** (whole buffer via nREPL `load-file`)
   commands.

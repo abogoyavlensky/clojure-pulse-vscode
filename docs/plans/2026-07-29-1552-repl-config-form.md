@@ -724,7 +724,7 @@ environment has no display for.**
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Write the docs** (use /writing-clearly)
+- [x] **Step 1: Write the docs** (use /writing-clearly)
   In the README's REPL section, replace the description of the prompt-based add
   flow: the **+** button and the row's pencil both open a form in an editor tab,
   with the type selector, the fields per type, and Save / Delete / Cancel.
@@ -741,5 +741,5 @@ environment has no display for.**
   removal of unsaved ad-hoc connections — the one behaviour change an existing
   user will notice.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Document the REPL configuration form"`
