@@ -4,7 +4,9 @@ import * as os from "os";
 import * as path from "path";
 import {
   configEntryName,
+  createCommandHint,
   defaultCreateCommand,
+  detectProjectKind,
   parseReplConfigurations,
   readNreplPort,
   readPortFile,
@@ -195,9 +197,30 @@ suite("validatePortInput", () => {
   });
 });
 
+suite("detectProjectKind", () => {
+  test("follows the build file at the workspace root", () => {
+    assert.strictEqual(detectProjectKind(["deps.edn"]), "deps");
+    assert.strictEqual(detectProjectKind(["project.clj"]), "lein");
+    assert.strictEqual(detectProjectKind(["lgx.edn"]), "lgx");
+  });
+
+  test("falls back to deps.edn when no build file is there", () => {
+    assert.strictEqual(detectProjectKind([]), "deps");
+    assert.strictEqual(detectProjectKind(["src", "README.md", "bb.edn"]), "deps");
+  });
+
+  test("prefers deps.edn, then project.clj, then lgx.edn", () => {
+    assert.strictEqual(
+      detectProjectKind(["lgx.edn", "project.clj", "deps.edn"]),
+      "deps",
+    );
+    assert.strictEqual(detectProjectKind(["lgx.edn", "project.clj"]), "lein");
+  });
+});
+
 suite("defaultCreateCommand", () => {
   test("POSIX quotes the -Sdeps map with single quotes", () => {
-    const command = defaultCreateCommand("darwin");
+    const command = defaultCreateCommand({ platform: "darwin" });
     assert.strictEqual(
       command,
       'clojure -Sdeps \'{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}\' -M:clojure-pulse/nrepl',
@@ -205,7 +228,7 @@ suite("defaultCreateCommand", () => {
   });
 
   test("win32 quotes the -Sdeps map with escaped double quotes", () => {
-    const command = defaultCreateCommand("win32");
+    const command = defaultCreateCommand({ platform: "win32" });
     assert.ok(command.includes('-Sdeps "{:aliases'), command);
     assert.ok(command.includes('{:mvn/version \\"1.7.0\\"}'), command);
     assert.ok(command.includes('[\\"-m\\" \\"nrepl.cmdline\\"]'), command);
@@ -214,11 +237,61 @@ suite("defaultCreateCommand", () => {
 
   test("both platforms inject the namespaced alias and start nrepl.cmdline", () => {
     for (const platform of ["darwin", "linux", "win32"] as const) {
-      const command = defaultCreateCommand(platform);
+      const command = defaultCreateCommand({ platform });
       assert.ok(command.includes(":clojure-pulse/nrepl"), platform);
       assert.ok(command.includes("-M:clojure-pulse/nrepl"), platform);
       assert.ok(command.includes("nrepl.cmdline"), platform);
       assert.ok(!command.includes("--interactive"), platform);
+    }
+  });
+
+  test("defaults to the Clojure CLI command", () => {
+    assert.strictEqual(
+      defaultCreateCommand({ platform: "linux" }),
+      defaultCreateCommand({ kind: "deps", platform: "linux" }),
+    );
+  });
+
+  test("starts a headless server in a Leiningen project", () => {
+    assert.strictEqual(
+      defaultCreateCommand({ kind: "lein", platform: "darwin" }),
+      "lein repl :headless",
+    );
+    assert.strictEqual(
+      defaultCreateCommand({ kind: "lein", platform: "win32" }),
+      "lein repl :headless",
+    );
+  });
+
+  test("starts nREPL through lgx in an lgx project", () => {
+    assert.strictEqual(
+      defaultCreateCommand({ kind: "lgx", platform: "darwin" }),
+      "lgx nrepl",
+    );
+    assert.strictEqual(
+      defaultCreateCommand({ kind: "lgx", platform: "win32" }),
+      "lgx nrepl",
+    );
+  });
+});
+
+suite("createCommandHint", () => {
+  test("offers the alias tip only where aliases exist", () => {
+    assert.ok(
+      createCommandHint("deps").includes("-M:dev:test:clojure-pulse/nrepl"),
+      createCommandHint("deps"),
+    );
+    for (const kind of ["lein", "lgx"] as const) {
+      assert.ok(
+        !createCommandHint(kind).includes("clojure-pulse/nrepl"),
+        createCommandHint(kind),
+      );
+    }
+  });
+
+  test("every kind says the command runs through the shell", () => {
+    for (const kind of ["deps", "lein", "lgx"] as const) {
+      assert.ok(/shell/i.test(createCommandHint(kind)), kind);
     }
   });
 });

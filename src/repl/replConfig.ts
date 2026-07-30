@@ -180,21 +180,66 @@ function describe(item: unknown, index: number): string {
   return `#${index + 1}`;
 }
 
+/** The build tool a project uses, which the prefilled command follows. */
+export type ProjectKind = "deps" | "lein" | "lgx";
+
 /**
- * The command the add-config flow prefills. It injects nREPL under our own
- * namespaced alias rather than as a bare `:deps` override, so adding project
- * aliases composes: `-M:dev:test:clojure-pulse/nrepl` merges every alias's
- * `:extra-deps`, and `:main-opts` is last-alias-wins, so nREPL still starts.
+ * The build tool a workspace root's file names point at. Precedence follows
+ * the order in `activationEvents` and only matters in a mixed repository; a
+ * root with none of them gets the Clojure CLI, whose command is the one worth
+ * editing from.
  */
-export function defaultCreateCommand(
-  platform: NodeJS.Platform = process.platform,
-): string {
+export function detectProjectKind(rootFileNames: readonly string[]): ProjectKind {
+  const files = new Set(rootFileNames);
+  if (files.has("deps.edn")) {
+    return "deps";
+  }
+  if (files.has("project.clj")) {
+    return "lein";
+  }
+  return files.has("lgx.edn") ? "lgx" : "deps";
+}
+
+/**
+ * The command the form prefills. The Clojure CLI one injects nREPL under our
+ * own namespaced alias rather than as a bare `:deps` override, so adding
+ * project aliases composes: `-M:dev:test:clojure-pulse/nrepl` merges every
+ * alias's `:extra-deps`, and `:main-opts` is last-alias-wins, so nREPL still
+ * starts. All three commands announce the port in the line `parseNreplPort`
+ * matches, and all three write `.nrepl-port` as a fallback.
+ */
+export function defaultCreateCommand(options?: {
+  kind?: ProjectKind;
+  platform?: NodeJS.Platform;
+}): string {
+  const { kind = "deps", platform = process.platform } = options ?? {};
+  if (kind === "lein") {
+    return "lein repl :headless";
+  }
+  if (kind === "lgx") {
+    return "lgx nrepl";
+  }
   const deps = `{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "${NREPL_VERSION}"}} :main-opts ["-m" "nrepl.cmdline"]}}}`;
   // No `--interactive`: the extension owns the process, and the bare server
   // prints its port line and blocks.
   const quoted =
     platform === "win32" ? `"${deps.replace(/"/g, '\\"')}"` : `'${deps}'`;
   return `clojure -Sdeps ${quoted} -M:clojure-pulse/nrepl`;
+}
+
+/**
+ * The line shown under the command field. It describes the *project*, not the
+ * entry, so an alias tip appears exactly where aliases exist.
+ */
+export function createCommandHint(kind: ProjectKind): string {
+  switch (kind) {
+    case "lein":
+      return "Runs through your shell. Add profiles with lein with-profile +dev repl :headless.";
+    case "lgx":
+      return "Runs through your shell. lgx starts nREPL with the project's dependencies.";
+    case "deps":
+      return "Runs through your shell. Add your own aliases with -M:dev:test:clojure-pulse/nrepl.";
+  }
 }
 
 /**
