@@ -16,3 +16,5 @@ node_modules/
 
 # Scratch / tooling artifacts (codex reviews, etc.)
 .tmp/
+.DS_Store
+screenshots/
