@@ -127,7 +127,10 @@ wording ever drifts.
 
 Each kind carries its own one-line hint under the field — the
 `-M:dev:test:clojure-pulse/nrepl` alias tip is worth showing exactly when
-someone is editing a `deps.edn` command, and is noise above a `lein` one.
+someone is editing a `deps.edn` command, and is noise above a `lein` one. The
+hint describes the *project*, not the entry: an edit form shows the detected
+kind's hint whatever command the entry happens to hold, because that is what is
+true about where the command will run.
 
 Detection is a pure function over the root's file names; the panel's
 `defaultCommand` callback supplies that listing, so nothing about it needs a
@@ -149,6 +152,11 @@ simply survive.
   `configEntryName()` so a hand-edited `{"name": " dev "}` matches the `dev` row
   the tree shows. If it has vanished (settings edited meanwhile), the entry is
   appended instead.
+- Duplicate names are possible in hand-edited settings, and the parser keeps the
+  first while warning about the rest. Editing therefore replaces the **first**
+  match — the one the tree is showing — and leaves later shadowed duplicates
+  alone. Deleting removes **every** entry with that name, so a deleted REPL
+  actually disappears instead of being replaced by the duplicate behind it.
 - Unknown keys on the original entry are preserved; keys belonging to the *other*
   type are dropped, so switching `create` → `connect` removes `command`/`cwd`.
 - Values equal to their default are omitted — no `"cwd": "."`, no
@@ -319,10 +327,12 @@ price of having a single concept.
   numeric port as a number and a path as a string, preserves unknown keys from
   the original entry, and drops the other type's keys when the type changed;
   `upsertEntry` replaces by original name (including a name that needed
-  trimming), appends when the original is missing, appends for a new entry, and
+  trimming), replaces only the *first* of two entries sharing a name, appends
+  when the original is missing, appends for a new entry, and
   **leaves every entry it did not match untouched — including non-object ones**,
   so a stray scalar in the array survives an edit; `removeEntry` drops exactly
-  the named entry and, likewise, leaves everything else in place.
+  every entry with that name — duplicates included — and, likewise, leaves
+  everything else in place.
 
 - [ ] **Step 3: Run tests to verify they fail**
   Run: `make test`
@@ -384,7 +394,9 @@ price of having a single concept.
   `onDidReceiveMessage` listener so the test can fire messages, plus `reveal`,
   `dispose`, a settable `title`, and an `onDidDispose` the test can trigger.
   Inject the panel factory alongside `readEntries` (returning the raw array,
-  scalars and all), `writeEntries`, `defaultCommand`, and `confirmDelete`, so
+  scalars and all), `writeEntries`, `defaultCommand` — which returns
+  `{ command: string; hint: string }`, both derived from the detected project
+  kind — and `confirmDelete`, so
   nothing touches settings or the real window. Cover: `open()` creates a panel
   and a `ready` message posts the pending values and mode; a `save` with valid
   values calls `writeEntries` with the upserted array and disposes the panel; a
@@ -406,9 +418,24 @@ price of having a single concept.
 
 - [ ] **Step 3: Implement**
   `ReplFormPanel`, holding at most one `vscode.WebviewPanel` at a time. Public
-  surface: `open(mode)` where mode is `{ kind: "add" } | { kind: "edit"; name: string }`,
-  `close()`, `dispose()`, and `state` (the pending `{ mode, values }`, for tests
-  and the extension API). Message protocol, shared with the HTML:
+  surface:
+
+  ```ts
+  open(mode: { kind: "add" } | { kind: "edit"; name: string }): void;
+  submit(values: ReplFormValues): Promise<void>;  // validate, write, close
+  requestDelete(): Promise<void>;                 // confirm, remove, close
+  cancel(): void;
+  close(): void;
+  dispose(): void;
+  get state(): { mode; values } | undefined;
+  ```
+
+  The incoming-message handler does nothing but dispatch to `submit`,
+  `requestDelete`, and `cancel`. That is what makes the form testable at all:
+  VS Code offers no way to post a message *into* a real webview, so an
+  integration test drives these methods — the very same entry points the
+  webview's buttons reach — rather than a simulated click. Message protocol,
+  shared with the HTML:
 
   ```ts
   // host → webview
@@ -469,17 +496,25 @@ price of having a single concept.
   `readEntries` → the **raw** `clojurePulse.replConfigurations` value (an array
   as-is, or `[]`), `writeEntries` → `config.update("replConfigurations", …)`
   against `ConfigurationTarget.Workspace` when `vscode.workspace.workspaceFolders`
-  is non-empty and `Global` otherwise, `defaultCommand` → read the workspace root's file names (`fs.readdirSync`, or
-  `[]` when no folder is open), pass them through `detectProjectKind`, and return
-  that kind's `defaultCreateCommand` and `createCommandHint`,
+  is non-empty and `Global` otherwise, `defaultCommand` → read the workspace
+  root's file names (`fs.readdirSync`, or `[]` when no folder is open), pass
+  them through `detectProjectKind`, and return
+  `{ command: defaultCreateCommand({ kind }), hint: createCommandHint(kind) }`,
   `confirmDelete` → the modal warning `deleteReplConfig` already shows, and a
   panel factory calling `vscode.window.createWebviewPanel` — the seam Task 2's
   tests replace. It needs `context.extensionUri` for the tab icon, which
   `setupRepl` already receives.
   Note that `currentReplConfigurations()` is *not* the reader here: it filters
-  out non-object entries, which the form must preserve. While in this file,
-  switch `deleteReplConfig` to the raw array too, so deleting one REPL no longer
-  drops malformed entries the parser only warns about.
+  out non-object entries, which the form must preserve.
+
+  Give the file one `writeReplConfigurations(entries: unknown[])` helper that
+  picks the target and performs the update, and use it for *both* the panel's
+  `writeEntries` callback and `deleteReplConfig`. Right-click Delete must also
+  move to the raw array and `removeEntry`: today it writes
+  `ConfigurationTarget.Workspace` unconditionally and filters through
+  `currentReplConfigurations()`, so without that change it would fail in the
+  folderless window the form now supports, and would keep dropping malformed
+  entries the parser only warns about.
   Push it onto `context.subscriptions` so a lingering form closes with the
   extension.
 
@@ -503,8 +538,17 @@ price of having a single concept.
   close the form in `teardown` so one test's tab cannot leak into the next.
   The user-settings fallback also makes a full round trip testable for the first
   time: with no folder open the form writes to `Global`, which the suite already
-  uses, so add a test that saving a new configuration makes its row appear in
-  the registry — and reset the setting in `teardown`, as the existing tests do.
+  uses. Add a test that opens the add form, calls `api.replForm.submit(values)` —
+  the same entry point the webview's Save button reaches, since a real webview
+  cannot be scripted from a test — and asserts the new row appears in the
+  registry and the form closed. Reset the setting in `teardown`, as the existing
+  tests do. A `cancel()` test covers the other side: no write, form closed.
+  Cover deletion the same way — `clojurePulse.deleteReplConfig` on a configured
+  name removes its row — which, with no folder open, is precisely the case that
+  would break if either delete path still wrote to the workspace target.
+  Settings changes reach the registry through a configuration event, so assert
+  with the suite's existing `waitUntil` helper rather than reading straight
+  after the call.
 
 - [ ] **Step 4: Compile, lint, full test run**
   Run: `make check`
@@ -569,9 +613,11 @@ green and this task commits on its own.
 
 - [ ] **Step 4: package.json contributions**
   Drop `replAdHoc` from the two inline `=~` clauses (set-active and stop) and
-  simplify the `viewItem != replAdHoc` clauses (show-output, edit, delete) to
-  plain `view == clojurePulse.replManager`. Nothing can produce that context
-  value once Step 3 lands.
+  simplify the three `viewItem != replAdHoc` clauses — the inline pencil added
+  in Task 3, and the context-menu Edit and Delete — to plain
+  `view == clojurePulse.replManager`. Show-output's clause is already
+  unrestricted and needs no change. Nothing can produce that context value once
+  Step 3 lands.
 
 - [ ] **Step 5: Compile, lint, full test run**
   Run: `make check`
