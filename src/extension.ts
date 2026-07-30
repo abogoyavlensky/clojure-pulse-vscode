@@ -515,6 +515,11 @@ async function stopSession(session: ReplSessionLike): Promise<void> {
   }
 }
 
+/** A connect quick-pick row: a REPL, or the offer to configure one. */
+interface ConnectPick extends vscode.QuickPickItem {
+  session?: ReplSessionLike;
+}
+
 /**
  * Connects a configured REPL. Without an argument, offers the `connect`
  * configurations that are not already up — and, when there are none, the form
@@ -534,30 +539,35 @@ async function connectRepl(registry: ReplRegistry, arg?: unknown): Promise<void>
     return;
   }
 
-  const ADD = "$(add) Add a REPL configuration…";
   const candidates = registry.sessions.filter(
     (session) => session.config.type === "connect" && session.state === "stopped",
   );
-  const choice = await vscode.window.showQuickPick(
+  // The session travels on the item rather than being looked up by label: a
+  // REPL may legitimately be named anything, the offer to add one included.
+  const items: ConnectPick[] =
     candidates.length > 0
       ? candidates.map((session) => ({
           label: session.name,
           description: describeSession(session),
+          session,
         }))
-      : [{ label: ADD, description: "nothing is configured to connect to yet" }],
-    { placeHolder: "Connect to an nREPL server" },
-  );
+      : [
+          {
+            label: "$(add) Add a REPL configuration…",
+            description: "nothing is configured to connect to yet",
+          },
+        ];
+  const choice = await vscode.window.showQuickPick(items, {
+    placeHolder: "Connect to an nREPL server",
+  });
   if (!choice) {
     return;
   }
-  if (choice.label === ADD) {
+  if (!choice.session) {
     await vscode.commands.executeCommand("clojurePulse.addReplConfig");
     return;
   }
-  const session = registry.get(choice.label);
-  if (session) {
-    await runSessionStart(session);
-  }
+  await runSessionStart(choice.session);
 }
 
 async function setActiveRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
