@@ -458,14 +458,21 @@ async function sessionFor(
 }
 
 async function startRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
-  const session = await sessionFor(registry, arg, () =>
-    pickSession(
+  const session = await sessionFor(registry, arg, async () => {
+    // Nothing configured at all: this command has exactly one useful
+    // continuation, so it takes it. Only reachable when no name was given —
+    // a keybinding with `"args": "dev"` still gets the not-found error.
+    if (registry.sessions.length === 0) {
+      await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+      return undefined;
+    }
+    return pickSession(
       registry,
       (candidate) => candidate.state === "stopped",
       "Start a REPL",
       "Every configured REPL is already running.",
-    ),
-  );
+    );
+  });
   if (!session) {
     return;
   }

@@ -13,7 +13,9 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   `deps.edn`, `lein repl :headless` for `project.clj`, `lgx nrepl` for
   `lgx.edn`. Saving writes to workspace settings, or to user settings when no
   folder is open, and preserves entries it did not touch. Drag the tab into a
-  floating window to keep the form beside your code.
+  floating window to keep the form beside your code. **Start REPL** opens the
+  form too when no REPL is configured yet, rather than reporting that every
+  configured REPL is already running.
 - **Removed unsaved ad-hoc connections.** **Connect to Running nREPL** used to
   offer a *Connect to host:port…* entry that connected without saving anything;
   it now lists the configured `connect` REPLs, and offers to add one when there

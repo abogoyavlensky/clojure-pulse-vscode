@@ -188,6 +188,31 @@ suite("REPL manager with several sessions", () => {
     await vscode.commands.executeCommand("clojurePulse.showReplOutput", "no-such-repl");
   });
 
+  test("starting with nothing configured opens the add form", async () => {
+    // The previous test's teardown reaches the registry through a
+    // configuration event, so wait for it rather than assume it landed.
+    await waitUntil(
+      () => api.repls.sessions.length === 0,
+      5000,
+      "the registry to be empty",
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl");
+
+    assert.deepStrictEqual(api.replForm.state?.mode, { kind: "add" });
+  });
+
+  test("starting with a configured REPL connects it and opens no form", async () => {
+    await setConfigurations(api, [
+      { name: "only", type: "connect", host: "127.0.0.1", port: a.port },
+    ]);
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl");
+
+    assert.strictEqual(api.repls.get("only")?.state, "connected");
+    assert.strictEqual(api.replForm.state, undefined, "no form for a REPL that exists");
+  });
+
   test("the add command opens an empty form with the project's command", async () => {
     await vscode.commands.executeCommand("clojurePulse.addReplConfig");
 

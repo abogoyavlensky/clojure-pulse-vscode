@@ -260,7 +260,8 @@ Run these from the Command Palette:
 - **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
   tree (also available as a button on the view title).
 - **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as
-  its argument, so a keybinding can start one directly.
+  its argument, so a keybinding can start one directly. With nothing configured
+  yet, it opens the form instead.
 - **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
   started.
 - **Clojure Pulse: Connect to Running nREPL** — connect one of the configured

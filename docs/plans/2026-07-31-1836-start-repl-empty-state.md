@@ -112,7 +112,7 @@ all exist already.
 - Modify: `src/extension.ts`, `src/test/replManager.integration.test.ts`,
   `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   In `replManager.integration.test.ts`, alongside the existing form tests:
 
   *"starting with nothing configured opens the add form"* - wait for
@@ -127,12 +127,12 @@ all exist already.
 
   Teardown already closes the form and resets the configurations.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `make test`
   Expected: FAIL - the first test finds `api.replForm.state` undefined, because
   the command reports "Every configured REPL is already running." instead.
 
-- [ ] **Step 3: Implement the guard**
+- [x] **Step 3: Implement the guard**
   In `startRepl` (`src/extension.ts`), make the `sessionFor` pick callback
   async: when `registry.sessions.length === 0`, await
   `vscode.commands.executeCommand("clojurePulse.addReplConfig")` and return
@@ -140,19 +140,19 @@ all exist already.
   messages, unchanged. Nothing else in the function moves - `sessionFor`
   already treats `undefined` as "nothing to act on".
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Update the docs** (use /writing-clearly)
+- [x] **Step 5: Update the docs** (use /writing-clearly)
   In `README.md`, extend the **Clojure Pulse: Start REPL** entry in the
   Commands list: with no REPLs configured yet, it opens the form instead.
   In `CHANGELOG.md`, add a clause to the existing REPL configuration form
   bullet saying **Start REPL** opens the form when nothing is configured.
 
-- [ ] **Step 6: Compile, lint, full test run**
+- [x] **Step 6: Compile, lint, full test run**
   Run: `make check`
   Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
   `git commit -m "Open the REPL form when there is nothing to start"`
