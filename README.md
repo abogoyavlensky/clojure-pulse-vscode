@@ -56,8 +56,9 @@ do not need any other Clojure extension.
   and multi-cursor edits.
 - **Status bar indicator** — the server's state (starting, running, stopped,
   error) shows at the bottom left; click it to open the server log.
-- **REPL** — connect to an already-running nREPL server and evaluate code from
-  the editor. See [REPL](#repl) below.
+- **REPL manager** — name your project's REPLs in a form, start them (or
+  connect to running ones) from the sidebar, and evaluate code from the editor.
+  Several REPLs can run at once. See [REPL](#repl) below.
 
 The available language features track whatever your installed `clj-pulse`
 version supports — see the [clj-pulse README](https://github.com/abogoyavlensky/clj-pulse#features).
@@ -101,6 +102,7 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.server.args` | `[]` | Extra arguments passed to the server on startup. |
 | `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
 | `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
+| `clojurePulse.replConfigurations` | `[]` | The REPLs listed in the sidebar — see [REPL](#repl). |
 
 **Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
 both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
@@ -111,15 +113,104 @@ Parinfer (or anything else) to drive the Enter key, remove or rebind the
 
 ## REPL
 
-Start an nREPL server in your project as usual (`clj -M -m nrepl.cmdline`,
-`lein repl`, or an editor-agnostic alias), then run **Clojure Pulse: Connect to
-Running nREPL** from the Command Palette. The port is pre-filled from the
-project's `.nrepl-port` file when present.
+The **REPL** view in the Clojure Pulse sidebar lists your project's REPLs. Each
+one either starts a server for you or attaches to a server you already have
+running. Run as many as you like at once; evaluations go to the **active** one.
 
-- **REPL pane** — output lives in a **REPL** tab in the bottom panel, next to
-  Terminal and Output: a connection banner with nREPL/Clojure versions,
-  evaluated forms, results, and anything printed to stdout/stderr, styled to
-  match your theme.
+### Naming your REPLs
+
+REPLs live in `clojurePulse.replConfigurations`, in workspace settings, so they
+travel with the project:
+
+```json
+{
+  "clojurePulse.replConfigurations": [
+    {
+      "name": "dev",
+      "type": "create",
+      "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
+    },
+    { "name": "local", "type": "connect", "port": ".nrepl-port" },
+    { "name": "staging", "type": "connect", "host": "10.0.0.5", "port": 7888 }
+  ]
+}
+```
+
+The **+** on the view title opens a form in an editor tab, and so does the
+pencil on any row. The selector at the top chooses the kind and the fields
+below it follow, all on one page: the command comes prefilled for the project's
+build file, and **Delete** removes the REPL from the same place. Switching the
+kind keeps what you typed for the other one. Drag the tab into a floating
+window if you would rather keep the form beside your code.
+
+Saving writes to workspace settings, or to your user settings when no folder is
+open. `settings.json` stays the source of truth, so you can always edit it by
+hand and watch the view follow. An entry that does not validate is skipped,
+with the reason in the *Clojure Pulse* output channel — the rest of the list
+keeps working.
+
+#### `create` — start a server
+
+`command` runs through your shell, verbatim: what the view shows is what runs.
+Clojure Pulse reads the port from the server's startup line (or the
+`.nrepl-port` file it writes) and connects. There is no startup timeout, so a
+first run may take as long as it needs to download dependencies — the output
+channel shows the progress, and **Stop** is available throughout.
+
+The command the form prefills follows the build file at the workspace root:
+`deps.edn` gets the Clojure CLI one below, `project.clj` gets
+`lein repl :headless`, and `lgx.edn` gets `lgx nrepl`.
+
+The Clojure CLI command needs nothing in your `deps.edn`:
+
+```sh
+clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}' -M:clojure-pulse/nrepl
+```
+
+It injects nREPL as an *alias*, so your own aliases compose with it: change the
+last argument to `-M:dev:test:clojure-pulse/nrepl` and every alias contributes
+its `:extra-deps`, while `:main-opts` (last alias wins) still starts nREPL. The
+namespaced name cannot collide with an alias of your own. The field is yours
+either way: any command that starts an nREPL server will do, a `bb` task or a
+Makefile target included.
+
+Add `"cwd"` (relative to the workspace root) to run the command somewhere else,
+such as a module in a monorepo.
+
+#### `connect` — attach to a running server
+
+`host` defaults to `localhost`. `port` is either a number or the path to a file
+holding one, relative to the workspace root — `".nrepl-port"` is the file nREPL
+writes, so that entry finds whatever port today's server picked.
+
+### Running them
+
+Start and stop from the buttons on each row, or from the Command Palette:
+**Start REPL**, **Stop REPL**, **Connect to Running nREPL**. To bind one REPL to
+a key, pass its name as the command argument in `keybindings.json`:
+
+```json
+{
+  "key": "ctrl+alt+r",
+  "command": "clojurePulse.startRepl",
+  "args": "dev"
+}
+```
+
+Each REPL streams into its own **Output** channel, named `REPL: <name>` — a
+real editor buffer with Clojure highlighting, search, and scrollback. Click a
+row to open it. A configured REPL keeps its channel across disconnects and
+restarts, so the history stays readable; an unsaved host/port connection is
+transient, and its channel goes away when it disconnects.
+
+When several REPLs are connected, one is **active** and receives every
+evaluation. Connecting a REPL makes it active; **Set Active REPL** (the row
+button, or *Switch active REPL* in the status-bar menu) moves the target. Stop
+the active REPL and there is no target until you choose one — evaluations warn
+rather than land somewhere you did not intend.
+
+### Evaluating
+
 - **Evaluate Current Form** — with no selection, evaluates the form at the
   cursor. It picks the token under (or just before) the cursor, the form that
   ends just before the cursor, or the innermost enclosing form — so putting the
@@ -139,11 +230,12 @@ project's `.nrepl-port` file when present.
   clear when you edit the evaluated form. **Clear Inline Results** removes them
   all, and **Copy Evaluation Result** copies the value at the cursor. Turn the
   hints off with the `clojurePulse.inlineEvalResults` setting — results still
-  stream to the REPL pane.
-- **Status bar** — `nREPL host:port` at the bottom left shows the connection.
-  Click it to connect when disconnected, or for a Show REPL / Disconnect menu
-  when connected. If the server goes away, the status flips back and the pane
-  notes the lost connection.
+  stream to the REPL's output channel.
+- **Status bar** — `nREPL <name> host:port` at the bottom left names the active
+  REPL. Click it to show its output, switch the active REPL, add a
+  configuration, or disconnect. If a server goes away, its REPL returns to
+  *stopped*, the channel notes the lost connection, and a `create` REPL's
+  process is cleaned up with it.
 
 The REPL connection is independent of the `clj-pulse` language server — either
 works without the other.
@@ -167,17 +259,30 @@ Run these from the Command Palette:
 - **Clojure Pulse: Show Output** — open the server output channel.
 - **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
   tree (also available as a button on the view title).
-- **Clojure Pulse: Connect to Running nREPL** — connect to an nREPL server by
-  host and port.
+- **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as
+  its argument, so a keybinding can start one directly. With nothing configured
+  yet, it opens the form instead.
+- **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
+  started.
+- **Clojure Pulse: Connect to Running nREPL** — connect one of the configured
+  `connect` REPLs, offering to add one when none is configured yet.
+- **Clojure Pulse: Disconnect from nREPL** — disconnect the active REPL.
+- **Clojure Pulse: Add REPL Configuration** — open the form for a new REPL
+  (also the **+** on the REPL view).
+- **Clojure Pulse: Edit REPL Configuration** — open the form on an existing
+  REPL (also the pencil on its row).
+- **Clojure Pulse: Delete REPL Configuration** — remove an entry, as the form's
+  **Delete** button does.
+- **Clojure Pulse: Set Active REPL** — choose which REPL evaluations go to.
+- **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor
-  (or the selection) in the connected REPL.
+  (or the selection) in the active REPL.
 - **Clojure Pulse: Evaluate File** — load the whole current file into the REPL.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
-  connected REPL.
+  active REPL.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.
-- **Clojure Pulse: Disconnect from nREPL** — close the REPL connection.
 
 ## Using it on its own
 

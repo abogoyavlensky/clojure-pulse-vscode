@@ -2,30 +2,53 @@ import * as assert from "assert";
 import { replStatusPresentation } from "../repl/replStatusBar";
 
 suite("replStatusPresentation", () => {
-  test("disconnected: offers to connect", () => {
-    const view = replStatusPresentation("disconnected");
+  test("no configurations at all: offers to connect", () => {
+    const view = replStatusPresentation({ busy: false, total: 0 });
     assert.strictEqual(view.text, "$(debug-disconnect) nREPL");
     assert.strictEqual(view.command, "clojurePulse.connectRepl");
-    assert.ok(/connect/i.test(view.tooltip));
+    assert.ok(/connect/i.test(view.tooltip), view.tooltip);
   });
 
-  test("connecting: shows a spinner", () => {
-    const view = replStatusPresentation("connecting");
+  test("configurations but none running: offers to start one", () => {
+    const view = replStatusPresentation({ busy: false, total: 2 });
+    assert.strictEqual(view.text, "$(debug-disconnect) nREPL");
+    assert.strictEqual(view.command, "clojurePulse.startRepl");
+    assert.ok(/start/i.test(view.tooltip), view.tooltip);
+  });
+
+  test("a REPL coming up shows a spinner", () => {
+    const view = replStatusPresentation({ busy: true, total: 1 });
     assert.strictEqual(view.text, "$(loading~spin) nREPL");
   });
 
-  test("connected: shows host:port and opens the REPL menu", () => {
-    const view = replStatusPresentation("connected", {
-      host: "localhost",
-      port: 7888,
+  test("the active session shows its name and address", () => {
+    const view = replStatusPresentation({
+      active: { name: "dev", info: { host: "localhost", port: 7888 } },
+      busy: false,
+      total: 2,
     });
-    assert.strictEqual(view.text, "$(plug) nREPL localhost:7888");
+    assert.strictEqual(view.text, "$(plug) nREPL dev localhost:7888");
     assert.strictEqual(view.command, "clojurePulse.replMenu");
-    assert.ok(view.tooltip.includes("localhost:7888"));
+    assert.ok(view.tooltip.includes("dev"), view.tooltip);
+    assert.ok(view.tooltip.includes("localhost:7888"), view.tooltip);
   });
 
-  test("connected without info still renders", () => {
-    const view = replStatusPresentation("connected");
-    assert.strictEqual(view.text, "$(plug) nREPL");
+  test("a session named after its address does not repeat it", () => {
+    const view = replStatusPresentation({
+      active: { name: "127.0.0.1:7890", info: { host: "127.0.0.1", port: 7890 } },
+      busy: false,
+      total: 1,
+    });
+    assert.strictEqual(view.text, "$(plug) nREPL 127.0.0.1:7890");
+  });
+
+  test("an active session without connection details still renders", () => {
+    const view = replStatusPresentation({
+      active: { name: "dev" },
+      busy: false,
+      total: 1,
+    });
+    assert.strictEqual(view.text, "$(plug) nREPL dev");
+    assert.strictEqual(view.command, "clojurePulse.replMenu");
   });
 });

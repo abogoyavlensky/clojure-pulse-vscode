@@ -1,5 +1,3 @@
-import * as fs from "fs";
-import * as path from "path";
 import {
   EvalExtras,
   LoadFileExtras,
@@ -41,19 +39,6 @@ const CONNECT_TIMEOUT_MS = 5000;
 export class ConnectCancelledError extends Error {
   constructor() {
     super("nREPL connection attempt cancelled");
-  }
-}
-
-/** Reads the port from `<dir>/.nrepl-port`, as written by nREPL servers. */
-export function readNreplPort(dir: string): number | undefined {
-  try {
-    const text = fs.readFileSync(path.join(dir, ".nrepl-port"), "utf8").trim();
-    const port = Number.parseInt(text, 10);
-    return Number.isInteger(port) && port > 0 && port <= 65535
-      ? port
-      : undefined;
-  } catch {
-    return undefined;
   }
 }
 

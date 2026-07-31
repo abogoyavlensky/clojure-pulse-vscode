@@ -1,12 +1,8 @@
 import * as assert from "assert";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
 import {
   ConnectCancelledError,
   ConnectionManager,
   ReplState,
-  readNreplPort,
 } from "../repl/connectionManager";
 import { Transcript } from "../repl/transcript";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
@@ -279,28 +275,5 @@ suite("ConnectionManager", () => {
 
   test("eval without a connection rejects", async () => {
     await assert.rejects(manager.eval("(+ 1 2)"), /not connected/i);
-  });
-});
-
-suite("readNreplPort", () => {
-  test("returns the port from a .nrepl-port file", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrepl-port-test-"));
-    try {
-      fs.writeFileSync(path.join(dir, ".nrepl-port"), "7888\n");
-      assert.strictEqual(readNreplPort(dir), 7888);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("returns undefined when the file is absent or invalid", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrepl-port-test-"));
-    try {
-      assert.strictEqual(readNreplPort(dir), undefined);
-      fs.writeFileSync(path.join(dir, ".nrepl-port"), "not-a-port");
-      assert.strictEqual(readNreplPort(dir), undefined);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
   });
 });

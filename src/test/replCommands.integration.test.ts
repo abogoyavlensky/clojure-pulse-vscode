@@ -1,14 +1,29 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { ConnectionManager } from "../repl/connectionManager";
 import { InlineResultsManager } from "../repl/inlineResults";
+import { ReplRegistry } from "../repl/replRegistry";
+import { ReplSessionLike } from "../repl/replSession";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
+/** The one configuration these tests connect through. */
+const REPL_NAME = "commands";
 
 interface ExtensionApi {
-  replManager: ConnectionManager;
+  repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+}
+
+async function waitUntil(
+  condition: () => boolean,
+  timeoutMs: number,
+  what: string,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(condition(), `timed out waiting for ${what}`);
 }
 
 suite("REPL commands", () => {
@@ -18,22 +33,66 @@ suite("REPL commands", () => {
     const ext = vscode.extensions.getExtension(EXTENSION_ID);
     assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
     api = (await ext.activate()) as ExtensionApi;
-    assert.ok(api?.replManager, "activate() should expose replManager");
+    assert.ok(api?.repls, "activate() should expose the REPL registry");
   });
 
   teardown(async () => {
-    await api.replManager.disconnect();
-    // The extension is a singleton across tests; reset shared state so the
-    // transcript and inline results of one test don't leak into the next.
-    api.replManager.transcript.clear();
+    // The extension is a singleton across tests; drop every session so one
+    // test's connection and results do not leak into the next.
+    for (const session of api.repls.sessions) {
+      await session.stop();
+    }
+    await setConfigurations(undefined);
+    await waitUntil(
+      () => api.repls.sessions.length === 0,
+      5000,
+      "the configured sessions to be dropped",
+    );
     api.inlineResults.clearAll();
   });
+
+  async function setConfigurations(entries: unknown[] | undefined): Promise<void> {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update(
+        "replConfigurations",
+        entries,
+        // The test host opens no folder, so workspace settings are unavailable.
+        vscode.ConfigurationTarget.Global,
+      );
+  }
+
+  /** Brings up the configured REPL that points at `server`. */
+  async function connect(server: FakeNrepl): Promise<ReplSessionLike> {
+    await setConfigurations([
+      { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
+    ]);
+    // Settings reach the registry through a configuration event.
+    await waitUntil(
+      () => api.repls.get(REPL_NAME) !== undefined,
+      5000,
+      `the "${REPL_NAME}" session to appear`,
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+    const session = api.repls.get(REPL_NAME);
+    assert.ok(session, `expected a session named "${REPL_NAME}"`);
+    assert.strictEqual(session.state, "connected");
+    return session;
+  }
 
   test("registers the REPL commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
       "clojurePulse.connectRepl",
       "clojurePulse.disconnectRepl",
+      "clojurePulse.startRepl",
+      "clojurePulse.stopRepl",
+      "clojurePulse.addReplConfig",
+      "clojurePulse.editReplConfig",
+      "clojurePulse.deleteReplConfig",
+      "clojurePulse.setActiveRepl",
+      "clojurePulse.showReplOutput",
       "clojurePulse.evalSelection",
       "clojurePulse.replMenu",
       "clojurePulse.evalCurrentForm",
@@ -57,7 +116,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      const session = await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -69,7 +128,7 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
 
-      const entries = api.replManager.transcript.entries();
+      const entries = session.transcript.entries();
       assert.ok(
         entries.some((e) => e.kind === "in" && e.text === "(+ 1 2)"),
         "expected an in entry for the form",
@@ -87,7 +146,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -111,7 +170,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -132,7 +191,7 @@ suite("REPL commands", () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -150,15 +209,25 @@ suite("REPL commands", () => {
     }
   });
 
-  test("the REPL view resolves in the panel", async () => {
-    await vscode.commands.executeCommand("clojurePulse.replView.focus");
+  test("showReplOutput reveals a session's channel without throwing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      await vscode.commands.executeCommand(
+        "clojurePulse.showReplOutput",
+        session.name,
+      );
+    } finally {
+      await server?.close();
+    }
   });
 
   test("connect + evalSelection round-trips through a running nREPL", async () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
-      await api.replManager.connect({ host: "127.0.0.1", port: server.port });
+      const session = await connect(server);
 
       const doc = await vscode.workspace.openTextDocument({
         language: "clojure",
@@ -169,11 +238,29 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.evalSelection");
 
-      const entries = api.replManager.transcript.entries();
+      const entries = session.transcript.entries();
       const inEntry = entries.find((e) => e.kind === "in");
       const valueEntry = entries.find((e) => e.kind === "value");
       assert.strictEqual(inEntry?.text, "(+ 20 22)");
       assert.strictEqual(valueEntry?.text, "42");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("disconnecting stops the REPL and clears the eval target", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      assert.strictEqual(api.repls.active?.name, session.name);
+
+      await vscode.commands.executeCommand("clojurePulse.disconnectRepl");
+
+      assert.strictEqual(api.repls.active, undefined);
+      // The row stays: it is a configuration, and configurations do not come
+      // and go with their connections.
+      assert.strictEqual(api.repls.get(session.name)?.state, "stopped");
     } finally {
       await server?.close();
     }

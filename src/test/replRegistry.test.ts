@@ -1,0 +1,379 @@
+import * as assert from "assert";
+import { EvalOutcome, ReplConnectionInfo } from "../repl/connectionManager";
+import { ConnectReplConfig, CreateReplConfig, ReplConfig } from "../repl/replConfig";
+import { ReplRegistry } from "../repl/replRegistry";
+import { Transcript } from "../repl/transcript";
+import { ReplChannel, ReplSessionLike, ReplSessionState } from "../repl/replSession";
+
+function fakeChannel(name: string): ReplChannel & { name: string; disposed: boolean } {
+  return {
+    name,
+    disposed: false,
+    append: () => {},
+    clear: () => {},
+    show: () => {},
+    dispose() {
+      this.disposed = true;
+    },
+  };
+}
+
+class FakeSession implements ReplSessionLike {
+  readonly transcript = new Transcript();
+  state: ReplSessionState = "stopped";
+  startCount = 0;
+  stopCount = 0;
+  disposed = false;
+  readonly channel: ReplChannel;
+  private listeners: Array<(state: ReplSessionState) => void> = [];
+
+  constructor(
+    readonly config: ReplConfig,
+    channelFor: (name: string) => ReplChannel,
+  ) {
+    this.channel = channelFor(config.name);
+  }
+
+  get name(): string {
+    return this.config.name;
+  }
+  get connectionInfo(): ReplConnectionInfo | undefined {
+    return this.state === "connected" ? { host: "localhost", port: 1234 } : undefined;
+  }
+  async start(): Promise<void> {
+    this.startCount += 1;
+    this.moveTo("connected");
+  }
+  async stop(): Promise<void> {
+    this.stopCount += 1;
+    this.moveTo("stopped");
+  }
+  async eval(): Promise<EvalOutcome> {
+    return { namespaceNotFound: false };
+  }
+  async loadFile(): Promise<EvalOutcome> {
+    return { namespaceNotFound: false };
+  }
+  showOutput(): void {}
+  onDidChangeState(listener: (state: ReplSessionState) => void): void {
+    this.listeners.push(listener);
+  }
+  /** Set to model a session whose owned process refuses to die. */
+  disposeError: Error | undefined;
+  private disposeGate: Promise<void> | undefined;
+  private openGate: (() => void) | undefined;
+
+  holdDispose(): void {
+    this.disposeGate = new Promise<void>((resolve) => {
+      this.openGate = resolve;
+    });
+  }
+  releaseDispose(): void {
+    this.openGate?.();
+  }
+
+  disposeCount = 0;
+
+  async dispose(): Promise<void> {
+    this.disposeCount += 1;
+    await this.disposeGate;
+    if (this.disposeError) {
+      throw this.disposeError;
+    }
+    this.disposed = true;
+    this.moveTo("stopped");
+  }
+
+  /** Drives a state transition the way a real session would. */
+  moveTo(state: ReplSessionState): void {
+    if (this.state === state) {
+      return;
+    }
+    this.state = state;
+    for (const listener of this.listeners) {
+      listener(state);
+    }
+  }
+}
+
+/** Lets background disposals settle before asserting on them. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const connectConfig = (
+  name: string,
+  port: number | string = 7888,
+): ConnectReplConfig => ({ name, type: "connect", host: "localhost", port });
+
+const createConfig = (name: string, command = "clj -M:nrepl"): CreateReplConfig => ({
+  name,
+  type: "create",
+  command,
+  cwd: ".",
+});
+
+suite("ReplRegistry", () => {
+  let channels: Array<ReturnType<typeof fakeChannel>>;
+  let created: FakeSession[];
+  let registry: ReplRegistry;
+
+  setup(() => {
+    channels = [];
+    created = [];
+    registry = new ReplRegistry({
+      createChannel: (name) => {
+        const channel = fakeChannel(name);
+        channels.push(channel);
+        return channel;
+      },
+      createSession: (config, channelFor) => {
+        const session = new FakeSession(config, channelFor);
+        created.push(session);
+        return session;
+      },
+    });
+  });
+
+  teardown(async () => {
+    await registry.dispose();
+  });
+
+  const sessionNamed = (name: string) => registry.get(name) as FakeSession | undefined;
+
+  test("creates one session per configuration, in order", () => {
+    registry.setConfigs([connectConfig("a"), createConfig("b")]);
+
+    assert.deepStrictEqual(
+      registry.sessions.map((s) => s.name),
+      ["a", "b"],
+    );
+  });
+
+  test("re-applying identical configurations keeps the same sessions", () => {
+    registry.setConfigs([connectConfig("a")]);
+    const first = sessionNamed("a");
+
+    registry.setConfigs([connectConfig("a")]);
+
+    assert.strictEqual(sessionNamed("a"), first);
+    assert.strictEqual(created.length, 1);
+  });
+
+  test("removing a configuration stops the session and disposes its channel", async () => {
+    registry.setConfigs([connectConfig("a"), connectConfig("b")]);
+    const removed = sessionNamed("a");
+    const channel = channels.find((c) => c.name === "a");
+
+    await registry.setConfigs([connectConfig("b")]);
+
+    assert.deepStrictEqual(
+      registry.sessions.map((s) => s.name),
+      ["b"],
+    );
+    assert.strictEqual(removed?.disposed, true);
+    assert.strictEqual(channel?.disposed, true);
+  });
+
+  test("editing a stopped session's configuration applies immediately", async () => {
+    registry.setConfigs([createConfig("a", "clj -M:nrepl")]);
+    const before = sessionNamed("a");
+
+    registry.setConfigs([createConfig("a", "clj -M:dev:nrepl")]);
+
+    const after = sessionNamed("a");
+    await tick(); // the outgoing session is disposed in the background
+    assert.notStrictEqual(after, before);
+    assert.strictEqual(
+      after?.config.type === "create" ? after.config.command : undefined,
+      "clj -M:dev:nrepl",
+    );
+    assert.strictEqual(before?.disposed, true);
+  });
+
+  test("a replaced session keeps its channel, so history survives", () => {
+    registry.setConfigs([createConfig("a", "clj -M:nrepl")]);
+    const first = sessionNamed("a");
+
+    registry.setConfigs([createConfig("a", "clj -M:dev:nrepl")]);
+
+    assert.strictEqual(sessionNamed("a")?.channel, first?.channel);
+    assert.strictEqual(channels.filter((c) => c.name === "a").length, 1);
+  });
+
+  test("editing a running session defers until it stops", async () => {
+    registry.setConfigs([createConfig("a", "clj -M:nrepl")]);
+    const running = sessionNamed("a");
+    await running?.start();
+
+    registry.setConfigs([createConfig("a", "clj -M:dev:nrepl")]);
+
+    assert.strictEqual(sessionNamed("a"), running, "must keep the launched config");
+    assert.strictEqual(
+      sessionNamed("a")?.config.type === "create"
+        ? (sessionNamed("a")?.config as CreateReplConfig).command
+        : undefined,
+      "clj -M:nrepl",
+    );
+
+    running?.moveTo("stopped");
+
+    const replaced = sessionNamed("a");
+    assert.notStrictEqual(replaced, running);
+    assert.strictEqual((replaced?.config as CreateReplConfig).command, "clj -M:dev:nrepl");
+    assert.strictEqual(replaced?.channel, running?.channel);
+  });
+
+  test("a session that connects becomes active", async () => {
+    registry.setConfigs([connectConfig("a"), connectConfig("b")]);
+    assert.strictEqual(registry.active?.name, undefined);
+
+    await sessionNamed("a")?.start();
+    assert.strictEqual(registry.active?.name, "a");
+
+    await sessionNamed("b")?.start();
+    assert.strictEqual(registry.active?.name, "b");
+  });
+
+  test("active is cleared when the active session stops", async () => {
+    registry.setConfigs([connectConfig("a")]);
+    await sessionNamed("a")?.start();
+
+    await sessionNamed("a")?.stop();
+
+    assert.strictEqual(registry.active, undefined);
+  });
+
+  test("setActive switches the eval target", async () => {
+    registry.setConfigs([connectConfig("a"), connectConfig("b")]);
+    await sessionNamed("a")?.start();
+    await sessionNamed("b")?.start();
+
+    registry.setActive("a");
+
+    assert.strictEqual(registry.active?.name, "a");
+  });
+
+  test("setActive ignores an unknown name", () => {
+    registry.setConfigs([connectConfig("a")]);
+    registry.setActive("nope");
+    assert.strictEqual(registry.active, undefined);
+  });
+
+  test("onDidChange fires for session state changes and configuration edits", async () => {
+    let changes = 0;
+    registry.onDidChange(() => (changes += 1));
+
+    registry.setConfigs([connectConfig("a")]);
+    const afterConfigs = changes;
+    assert.ok(afterConfigs > 0, "expected a change for the new session");
+
+    await sessionNamed("a")?.start();
+    assert.ok(changes > afterConfigs, "expected a change for the state transition");
+  });
+
+  test("a removed session whose server will not die is killed again at shutdown", async () => {
+    registry.setConfigs([createConfig("a")]);
+    const session = sessionNamed("a") as FakeSession;
+    await session.start();
+    session.disposeError = new Error("could not stop the nREPL process");
+    const channel = channels.find((c) => c.name === "a");
+
+    await registry.setConfigs([]);
+
+    assert.deepStrictEqual(registry.sessions, [], "its configuration is gone");
+    assert.strictEqual(session.disposeCount, 1);
+    assert.strictEqual(
+      channel?.disposed,
+      false,
+      "the channel holds the reason the server is still up",
+    );
+
+    session.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(session.disposeCount, 2, "shutdown must retry the kill");
+    assert.strictEqual(session.disposed, true);
+  });
+
+  test("a re-added name cannot shadow a session that would not die", async () => {
+    registry.setConfigs([createConfig("a")]);
+    const first = sessionNamed("a") as FakeSession;
+    await first.start();
+    first.disposeError = new Error("could not stop the nREPL process");
+    first.holdDispose();
+
+    const removal = registry.setConfigs([]);
+    registry.setConfigs([createConfig("a", "clj -M:other")]);
+    first.releaseDispose();
+    await removal;
+
+    const second = sessionNamed("a") as FakeSession;
+    assert.notStrictEqual(second, first);
+
+    first.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(first.disposed, true, "the old server must still be killed");
+    assert.strictEqual(second.disposed, true);
+  });
+
+  test("a channel is left alone when its name is re-added mid-removal", async () => {
+    registry.setConfigs([connectConfig("a")]);
+    const first = sessionNamed("a");
+    first?.holdDispose();
+    const channel = channels.find((c) => c.name === "a");
+
+    const removal = registry.setConfigs([]);
+    // The user re-adds the same name before the old session finished shutting down.
+    registry.setConfigs([connectConfig("a", 7999)]);
+    first?.releaseDispose();
+    await removal;
+
+    const current = sessionNamed("a");
+    assert.ok(current, "the re-added session should be present");
+    assert.notStrictEqual(current, first);
+    assert.strictEqual(channel?.disposed, false, "the new session still needs it");
+    assert.strictEqual(current?.channel, channel);
+  });
+
+  test("a replaced session whose server survived is still killed at shutdown", async () => {
+    registry.setConfigs([createConfig("a", "clj -M:nrepl")]);
+    const first = sessionNamed("a") as FakeSession;
+    await first.start();
+    registry.setConfigs([createConfig("a", "clj -M:dev:nrepl")]);
+    first.disposeError = new Error("could not stop the nREPL process");
+
+    first.moveTo("stopped"); // the pending edit applies here
+    await tick();
+
+    const second = sessionNamed("a") as FakeSession;
+    assert.notStrictEqual(second, first);
+    assert.strictEqual(first.disposed, false);
+
+    first.disposeError = undefined;
+    await registry.dispose();
+
+    assert.strictEqual(first.disposed, true, "the surviving server must not be forgotten");
+  });
+
+  test("setActive only accepts a connected session", async () => {
+    registry.setConfigs([connectConfig("a"), connectConfig("b")]);
+    await sessionNamed("a")?.start();
+    sessionNamed("b")?.moveTo("connecting");
+
+    registry.setActive("b");
+
+    assert.strictEqual(registry.active?.name, "a", "a connecting REPL cannot evaluate");
+  });
+
+  test("dispose stops every session and channel", async () => {
+    registry.setConfigs([connectConfig("a"), connectConfig("b")]);
+    await sessionNamed("a")?.start();
+    const sessions = registry.sessions as FakeSession[];
+
+    await registry.dispose();
+
+    assert.ok(sessions.every((s) => s.disposed), "every session should be disposed");
+    assert.ok(channels.every((c) => c.disposed), "every channel should be disposed");
+    assert.deepStrictEqual(registry.sessions, []);
+  });
+});

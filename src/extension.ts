@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as vscode from "vscode";
 import { LanguageClient, State } from "vscode-languageclient/node";
 import { createClient } from "./client";
@@ -11,15 +12,19 @@ import {
 } from "./ignoredForms";
 import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
-import { Transcript } from "./repl/transcript";
+import { ConnectCancelledError, EvalOptions } from "./repl/connectionManager";
 import {
-  ConnectCancelledError,
-  ConnectionManager,
-  EvalOptions,
-  readNreplPort,
-} from "./repl/connectionManager";
-import { ReplPanelProvider } from "./repl/replPanel";
-import { createReplStatusBar } from "./repl/replStatusBar";
+  createCommandHint,
+  defaultCreateCommand,
+  detectProjectKind,
+  parseReplConfigurations,
+} from "./repl/replConfig";
+import { removeEntry } from "./repl/replConfigEdit";
+import { ReplFormPanel } from "./repl/replFormPanel";
+import { ReplRegistry } from "./repl/replRegistry";
+import { ReplSession, ReplSessionLike } from "./repl/replSession";
+import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
+import { createReplStatusBar, ReplStatusState } from "./repl/replStatusBar";
 import { InlineResultsManager } from "./repl/inlineResults";
 import { formAtCursor, nsBefore } from "./repl/forms";
 
@@ -33,11 +38,15 @@ let librariesChangedListener: vscode.Disposable | undefined;
 let externalLibraries: ExternalLibrariesProvider | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+/** Kept out of `context.subscriptions` so deactivate() can *await* shutdown:
+ *  disposables are fire-and-forget, and killing REPL processes is not. */
+let replRegistry: ReplRegistry | undefined;
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
-  replManager: ConnectionManager;
+  repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+  replForm: ReplFormPanel;
 }
 
 export async function activate(
@@ -103,6 +112,11 @@ export async function deactivate(): Promise<void> {
   }
   decorator?.dispose();
   decorator = undefined;
+  // Awaited: nREPL servers we spawned get their SIGTERM grace (and, on
+  // Windows, their taskkill) before the host tears the extension down.
+  const repls = replRegistry;
+  replRegistry = undefined;
+  await repls?.dispose();
   await stop();
 }
 
@@ -210,22 +224,59 @@ async function restart(): Promise<void> {
 }
 
 /**
- * Wires the nREPL connection feature: connection manager, REPL webview pane
- * in the bottom panel, status bar item, and the connect/disconnect/eval
- * commands. Fully independent of the clj-pulse language server.
+ * Wires the REPL manager: the registry of configured REPLs, the sidebar view,
+ * the status bar item, and every REPL command. Fully independent of the
+ * clj-pulse language server.
  */
 function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
-  const transcript = new Transcript();
-  const manager = new ConnectionManager(transcript);
-  const panel = new ReplPanelProvider(transcript);
-  panel.register(context);
   const inlineResults = new InlineResultsManager();
+  const registry = new ReplRegistry({
+    // A channel per REPL, with the `clojure` language id: syntax highlighting,
+    // search, and cursor navigation over the transcript come for free.
+    createChannel: (name) =>
+      vscode.window.createOutputChannel(`REPL: ${name}`, "clojure"),
+    createSession: (config, channelFor) =>
+      new ReplSession(config, {
+        workspaceRoot: workspaceRoot(),
+        createChannel: channelFor,
+      }),
+  });
+  replRegistry = registry;
 
+  // The one way REPLs are configured: an editor tab, for both adding and
+  // editing. Everything it touches is injected, so the panel itself stays a
+  // dumb renderer over the pure rules in replConfigEdit.ts.
+  const replForm = new ReplFormPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.replForm",
+        "Add REPL",
+        vscode.ViewColumn.Active,
+        // Worth a little memory: an in-progress edit survives tabbing away.
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "repl-icon.svg",
+      );
+      return panel;
+    },
+    readEntries: rawReplConfigurations,
+    writeEntries: writeReplConfigurations,
+    defaultCommand: () => {
+      const kind = detectProjectKind(rootFileNames());
+      return { command: defaultCreateCommand({ kind }), hint: createCommandHint(kind) };
+    },
+    confirmDelete: (name) => confirmDeleteConfig(name),
+  });
+
+  const tree = new ReplTreeProvider(registry);
   const replStatus = createReplStatusBar();
-  replStatus.update(manager.state);
-  manager.onDidChangeState((state) =>
-    replStatus.update(state, manager.connectionInfo),
-  );
+  const paint = (): void => replStatus.update(statusState(registry));
+  registry.onDidChange(paint);
+  paint();
+  applyReplConfigs(registry);
   // Inline results are not cleared on disconnect: a mid-eval socket drop then
   // resolves its pending decoration to the failure (via runEval's catch)
   // instead of silently vanishing, and past results stay readable until the
@@ -234,25 +285,58 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     replStatus,
     inlineResults,
-    { dispose: () => manager.dispose() },
-    vscode.commands.registerCommand("clojurePulse.connectRepl", () =>
-      connectRepl(manager, panel),
+    // So a form left open closes with the extension.
+    replForm,
+    vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("clojurePulse.replConfigurations")) {
+        applyReplConfigs(registry);
+      }
+    }),
+    vscode.commands.registerCommand("clojurePulse.startRepl", (arg?: unknown) =>
+      startRepl(registry, arg),
+    ),
+    vscode.commands.registerCommand("clojurePulse.stopRepl", (arg?: unknown) =>
+      stopRepl(registry, arg),
+    ),
+    vscode.commands.registerCommand("clojurePulse.connectRepl", (arg?: unknown) =>
+      connectRepl(registry, arg),
     ),
     vscode.commands.registerCommand("clojurePulse.disconnectRepl", async () => {
-      if (manager.state === "disconnected") {
-        vscode.window.showInformationMessage("Not connected to an nREPL server.");
+      const active = registry.active;
+      if (!active) {
+        vscode.window.showInformationMessage("No REPL is connected.");
         return;
       }
-      await manager.disconnect();
+      await stopSession(active);
     }),
+    vscode.commands.registerCommand("clojurePulse.addReplConfig", () =>
+      replForm.open({ kind: "add" }),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.editReplConfig",
+      (arg?: unknown) => editReplConfig(registry, replForm, arg),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.deleteReplConfig",
+      (arg?: unknown) => deleteReplConfig(registry, arg),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.setActiveRepl",
+      (arg?: unknown) => setActiveRepl(registry, arg),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.showReplOutput",
+      (arg?: unknown) => showReplOutput(registry, arg),
+    ),
     vscode.commands.registerCommand("clojurePulse.evalSelection", () =>
-      evalSelection(manager, panel, inlineResults),
+      evalSelection(registry, inlineResults),
     ),
     vscode.commands.registerCommand("clojurePulse.evalCurrentForm", () =>
-      evalCurrentForm(manager, panel, inlineResults),
+      evalCurrentForm(registry, inlineResults),
     ),
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
-      evalFile(manager, panel),
+      evalFile(registry),
     ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
@@ -262,10 +346,348 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       (id?: string) => copyEvalResult(inlineResults, id),
     ),
     vscode.commands.registerCommand("clojurePulse.replMenu", () =>
-      replMenu(manager, panel),
+      replMenu(registry, replForm),
     ),
   );
-  return { replManager: manager, inlineResults };
+  return { repls: registry, inlineResults, replForm };
+}
+
+/** The workspace root's file names, which the prefilled command follows. */
+function rootFileNames(): string[] {
+  const root = workspaceRoot();
+  if (!root) {
+    return [];
+  }
+  try {
+    return fs.readdirSync(root);
+  } catch {
+    return [];
+  }
+}
+
+/** First workspace folder, which relative `cwd` and port files resolve against. */
+function workspaceRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+/** Reads `clojurePulse.replConfigurations` into the registry, logging (rather
+ *  than throwing on) entries that do not validate. */
+function applyReplConfigs(registry: ReplRegistry): void {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("replConfigurations");
+  const { configs, warnings } = parseReplConfigurations(raw);
+  for (const warning of warnings) {
+    outputChannel?.appendLine(`[clojure-pulse] ${warning}`);
+  }
+  void registry.setConfigs(configs);
+}
+
+function statusState(registry: ReplRegistry): ReplStatusState {
+  const active = registry.active;
+  return {
+    active: active ? { name: active.name, info: active.connectionInfo } : undefined,
+    busy: registry.sessions.some(
+      (session) => session.state === "starting" || session.state === "connecting",
+    ),
+    total: registry.sessions.length,
+  };
+}
+
+/**
+ * The one way commands learn which REPL they act on: a name from a keybinding
+ * (`"args": "dev"`), a node from a tree menu, or nothing from the palette —
+ * in which case the caller falls back to a quick pick.
+ */
+function resolveSessionName(arg: unknown): string | undefined {
+  if (typeof arg === "string" && arg.trim().length > 0) {
+    return arg.trim();
+  }
+  const node = arg as ReplTreeNode | undefined;
+  return typeof node?.name === "string" ? node.name : undefined;
+}
+
+/** Quick-picks one of the sessions matching `predicate`. */
+async function pickSession(
+  registry: ReplRegistry,
+  predicate: (session: ReplSessionLike) => boolean,
+  placeHolder: string,
+  emptyMessage: string,
+): Promise<string | undefined> {
+  const matches = registry.sessions.filter(predicate);
+  if (matches.length === 0) {
+    vscode.window.showInformationMessage(emptyMessage);
+    return undefined;
+  }
+  if (matches.length === 1) {
+    return matches[0].name;
+  }
+  const choice = await vscode.window.showQuickPick(
+    matches.map((session) => ({
+      label: session.name,
+      description: describeSession(session),
+    })),
+    { placeHolder },
+  );
+  return choice?.label;
+}
+
+function describeSession(session: ReplSessionLike): string {
+  const info = session.connectionInfo;
+  return info ? `${session.state} · ${info.host}:${info.port}` : session.state;
+}
+
+/** Resolves the session a command should act on, or reports why it cannot. */
+async function sessionFor(
+  registry: ReplRegistry,
+  arg: unknown,
+  pick: () => Promise<string | undefined>,
+): Promise<ReplSessionLike | undefined> {
+  const name = resolveSessionName(arg) ?? (await pick());
+  if (name === undefined) {
+    return undefined;
+  }
+  const session = registry.get(name);
+  if (!session) {
+    void vscode.window.showErrorMessage(
+      `Clojure Pulse: no REPL named "${name}" — check clojurePulse.replConfigurations.`,
+    );
+    return undefined;
+  }
+  return session;
+}
+
+async function startRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const session = await sessionFor(registry, arg, async () => {
+    // Nothing configured at all: this command has exactly one useful
+    // continuation, so it takes it. Only reachable when no name was given —
+    // a keybinding with `"args": "dev"` still gets the not-found error.
+    if (registry.sessions.length === 0) {
+      await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+      return undefined;
+    }
+    return pickSession(
+      registry,
+      (candidate) => candidate.state === "stopped",
+      "Start a REPL",
+      "Every configured REPL is already running.",
+    );
+  });
+  if (!session) {
+    return;
+  }
+  await runSessionStart(session);
+}
+
+/** Starts a session, reporting failures once, in the notification area. */
+async function runSessionStart(session: ReplSessionLike): Promise<void> {
+  try {
+    await session.start();
+  } catch (err: unknown) {
+    if (err instanceof ConnectCancelledError) {
+      return; // the user stopped it mid-attempt; nothing to report
+    }
+    const reason = err instanceof Error ? err.message : String(err);
+    void vscode.window
+      .showErrorMessage(
+        `Clojure Pulse: "${session.name}" could not start — ${reason}`,
+        "Show Output",
+      )
+      .then((choice) => (choice === "Show Output" ? session.showOutput() : undefined));
+  }
+}
+
+async function stopRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      (candidate) => candidate.state !== "stopped",
+      "Stop a REPL",
+      "No REPL is running.",
+    ),
+  );
+  if (session) {
+    await stopSession(session);
+  }
+}
+
+async function stopSession(session: ReplSessionLike): Promise<void> {
+  try {
+    await session.stop();
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    void vscode.window.showErrorMessage(
+      `Clojure Pulse: "${session.name}" could not be stopped — ${reason}`,
+    );
+  }
+}
+
+/** A connect quick-pick row: a REPL, or the offer to configure one. */
+interface ConnectPick extends vscode.QuickPickItem {
+  session?: ReplSessionLike;
+}
+
+/**
+ * Connects a configured REPL. Without an argument, offers the `connect`
+ * configurations that are not already up — and, when there are none, the form
+ * that would make one, rather than a dead end.
+ */
+async function connectRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const name = resolveSessionName(arg);
+  if (name !== undefined) {
+    const session = registry.get(name);
+    if (!session) {
+      void vscode.window.showErrorMessage(
+        `Clojure Pulse: no REPL named "${name}" — check clojurePulse.replConfigurations.`,
+      );
+      return;
+    }
+    await runSessionStart(session);
+    return;
+  }
+
+  const candidates = registry.sessions.filter(
+    (session) => session.config.type === "connect" && session.state === "stopped",
+  );
+  // The session travels on the item rather than being looked up by label: a
+  // REPL may legitimately be named anything, the offer to add one included.
+  const items: ConnectPick[] =
+    candidates.length > 0
+      ? candidates.map((session) => ({
+          label: session.name,
+          description: describeSession(session),
+          session,
+        }))
+      : [
+          {
+            label: "$(add) Add a REPL configuration…",
+            description: "nothing is configured to connect to yet",
+          },
+        ];
+  const choice = await vscode.window.showQuickPick(items, {
+    placeHolder: "Connect to an nREPL server",
+  });
+  if (!choice) {
+    return;
+  }
+  if (!choice.session) {
+    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
+    return;
+  }
+  await runSessionStart(choice.session);
+}
+
+async function setActiveRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      (candidate) => candidate.state === "connected",
+      "Evaluate in which REPL?",
+      "No REPL is connected.",
+    ),
+  );
+  if (!session) {
+    return;
+  }
+  if (session.state !== "connected") {
+    void vscode.window.showWarningMessage(
+      `Clojure Pulse: "${session.name}" is not connected, so it cannot evaluate yet.`,
+    );
+    return;
+  }
+  registry.setActive(session.name);
+}
+
+async function showReplOutput(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      () => true,
+      "Show the output of which REPL?",
+      "No REPLs are configured yet.",
+    ),
+  );
+  session?.showOutput();
+}
+
+/** Opens the form on an existing configuration, resolved like every other
+ *  REPL command: a tree row, a keybinding's name, or a quick pick. */
+async function editReplConfig(
+  registry: ReplRegistry,
+  form: ReplFormPanel,
+  arg?: unknown,
+): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      () => true,
+      "Edit which REPL configuration?",
+      "No REPLs are configured yet.",
+    ),
+  );
+  if (session) {
+    form.open({ kind: "edit", name: session.name });
+  }
+}
+
+async function deleteReplConfig(
+  registry: ReplRegistry,
+  arg?: unknown,
+): Promise<void> {
+  const session = await sessionFor(registry, arg, () =>
+    pickSession(
+      registry,
+      () => true,
+      "Delete which REPL configuration?",
+      "No REPLs are configured yet.",
+    ),
+  );
+  if (!session) {
+    return;
+  }
+  if (!(await confirmDeleteConfig(session.name))) {
+    return;
+  }
+  await writeReplConfigurations(
+    removeEntry(rawReplConfigurations(), session.name),
+  );
+}
+
+/** The one confirmation both delete routes — the row's and the form's — show. */
+async function confirmDeleteConfig(name: string): Promise<boolean> {
+  const confirmed = await vscode.window.showWarningMessage(
+    `Delete the REPL configuration "${name}"?`,
+    { modal: true },
+    "Delete",
+  );
+  return confirmed === "Delete";
+}
+
+/**
+ * The configured entries exactly as settings hold them. Not
+ * `parseReplConfigurations`, and not filtered: an entry this version cannot
+ * read — a stray scalar, a `create` with no command — is one the parser only
+ * warns about, and writing back through a filtered copy would delete it.
+ */
+function rawReplConfigurations(): unknown[] {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("replConfigurations");
+  return Array.isArray(raw) ? raw : [];
+}
+
+/**
+ * Saves the configurations. Workspace settings when a folder is open, so they
+ * travel with the project; user settings otherwise, which is what keeps the
+ * form usable in a single-file window.
+ */
+async function writeReplConfigurations(entries: unknown[]): Promise<void> {
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("clojurePulse")
+    .update("replConfigurations", entries, target);
 }
 
 /** True when inline eval results are enabled in settings (default on). */
@@ -275,83 +697,34 @@ function inlineEnabled(): boolean {
     .get<boolean>("inlineEvalResults", true);
 }
 
-/** Guards eval commands on a live connection; warns with a Connect action and
- *  returns false when disconnected. */
-function ensureConnected(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
-): boolean {
-  if (manager.state === "connected") {
-    return true;
+/** Guards eval commands on a live connection; warns with a Start action and
+ *  returns undefined when nothing is connected. */
+function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
+  const active = registry.active;
+  if (active) {
+    return active;
   }
+  // With nothing configured to start, the useful offer is the connect flow,
+  // which can reach a running server without any settings at all.
+  const startable = registry.sessions.some((session) => session.state === "stopped");
+  const action = startable ? "Start REPL" : "Connect";
   void vscode.window
-    .showWarningMessage("Not connected to an nREPL server.", "Connect")
-    .then((choice) =>
-      choice === "Connect" ? connectRepl(manager, panel) : undefined,
-    );
-  return false;
-}
-
-async function connectRepl(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
-): Promise<void> {
-  if (manager.state !== "disconnected") {
-    vscode.window.showInformationMessage(
-      "Already connected to an nREPL server. Disconnect first.",
-    );
-    return;
-  }
-
-  const host = await vscode.window.showInputBox({
-    prompt: "nREPL host",
-    value: "localhost",
-    ignoreFocusOut: true,
-  });
-  if (!host) {
-    return;
-  }
-
-  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const detectedPort = workspaceRoot ? readNreplPort(workspaceRoot) : undefined;
-  const portText = await vscode.window.showInputBox({
-    prompt: "nREPL port",
-    value: detectedPort ? String(detectedPort) : undefined,
-    ignoreFocusOut: true,
-    validateInput: (value) =>
-      /^\d+$/.test(value.trim()) &&
-      Number.parseInt(value, 10) > 0 &&
-      Number.parseInt(value, 10) <= 65535
-        ? undefined
-        : "Enter a port number between 1 and 65535",
-  });
-  if (!portText) {
-    return;
-  }
-
-  try {
-    await manager.connect({
-      host: host.trim(),
-      port: Number.parseInt(portText.trim(), 10),
+    .showWarningMessage("No REPL is connected.", action)
+    .then((choice) => {
+      if (choice === "Start REPL") {
+        return startRepl(registry);
+      }
+      return choice === "Connect" ? connectRepl(registry) : undefined;
     });
-    panel.reveal();
-  } catch (err: unknown) {
-    if (err instanceof ConnectCancelledError) {
-      return; // the user disconnected mid-attempt; nothing to report
-    }
-    const reason = err instanceof Error ? err.message : String(err);
-    void vscode.window.showErrorMessage(
-      `Clojure Pulse: could not connect to nREPL — ${reason}`,
-    );
-  }
+  return undefined;
 }
 
 async function evalSelection(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
+  registry: ReplRegistry,
   inlineResults: InlineResultsManager,
 ): Promise<void> {
-  if (!ensureConnected(manager, panel)) {
+  const session = activeSession(registry);
+  if (!session) {
     return;
   }
   const editor = vscode.window.activeTextEditor;
@@ -360,8 +733,8 @@ async function evalSelection(
     vscode.window.showWarningMessage("Select an expression to evaluate.");
     return;
   }
-  panel.reveal();
-  await runEval(manager, inlineResults, {
+  session.showOutput();
+  await runEval(session, inlineResults, {
     editor,
     range: editor.selection,
     code,
@@ -370,11 +743,11 @@ async function evalSelection(
 }
 
 async function evalCurrentForm(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
+  registry: ReplRegistry,
   inlineResults: InlineResultsManager,
 ): Promise<void> {
-  if (!ensureConnected(manager, panel)) {
+  const session = activeSession(registry);
+  if (!session) {
     return;
   }
   const editor = vscode.window.activeTextEditor;
@@ -404,12 +777,12 @@ async function evalCurrentForm(
 
   const code = editor.document.getText(range);
   const nsName = nsBefore(editor.document.getText(), editor.document.offsetAt(range.start));
-  // Inline results make the value visible in place; reveal the pane only when
-  // they are off.
+  // Inline results make the value visible in place; reveal the REPL's output
+  // channel only when they are off.
   if (!inlineEnabled()) {
-    panel.reveal();
+    session.showOutput();
   }
-  await runEval(manager, inlineResults, {
+  await runEval(session, inlineResults, {
     editor,
     range,
     code,
@@ -417,22 +790,20 @@ async function evalCurrentForm(
   });
 }
 
-async function evalFile(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
-): Promise<void> {
-  if (!ensureConnected(manager, panel)) {
+async function evalFile(registry: ReplRegistry): Promise<void> {
+  const session = activeSession(registry);
+  if (!session) {
     return;
   }
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return;
   }
-  panel.reveal();
+  session.showOutput();
   const doc = editor.document;
   const onDisk = doc.uri.scheme === "file";
   try {
-    await manager.loadFile(doc.getText(), {
+    await session.loadFile(doc.getText(), {
       filePath: onDisk ? doc.uri.fsPath : undefined,
       fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
     });
@@ -463,9 +834,9 @@ interface EvalRequest {
 }
 
 /** Runs one evaluation: marks the range pending (when inline results are on),
- *  streams to the pane via the manager, and resolves the inline decoration. */
+ *  streams to the session's channel, and resolves the inline decoration. */
 async function runEval(
-  manager: ConnectionManager,
+  session: ReplSessionLike,
   inlineResults: InlineResultsManager,
   req: EvalRequest,
 ): Promise<void> {
@@ -473,7 +844,7 @@ async function runEval(
     ? inlineResults.markPending(req.editor, req.range)
     : undefined;
   try {
-    const outcome = await manager.eval(req.code, req.opts);
+    const outcome = await session.eval(req.code, req.opts);
     if (id) {
       inlineResults.resolve(id, outcome);
     }
@@ -529,21 +900,39 @@ function basename(fsPath: string): string {
   return parts[parts.length - 1] || fsPath;
 }
 
-async function replMenu(
-  manager: ConnectionManager,
-  panel: ReplPanelProvider,
-): Promise<void> {
+async function replMenu(registry: ReplRegistry, form: ReplFormPanel): Promise<void> {
+  const active = registry.active;
+  const connected = registry.sessions.filter(
+    (session) => session.state === "connected",
+  );
   const choice = await vscode.window.showQuickPick(
     [
-      { label: "$(output) Show REPL", action: "show" },
-      { label: "$(debug-disconnect) Disconnect", action: "disconnect" },
+      { label: "$(output) Show REPL output", action: "show" },
+      ...(connected.length > 1
+        ? [{ label: "$(target) Switch active REPL", action: "switch" }]
+        : []),
+      { label: "$(add) Add REPL configuration", action: "add" },
+      ...(active
+        ? [{ label: "$(debug-disconnect) Disconnect", action: "disconnect" }]
+        : []),
     ],
-    { placeHolder: "nREPL actions" },
+    { placeHolder: active ? `nREPL actions — active: ${active.name}` : "nREPL actions" },
   );
-  if (choice?.action === "show") {
-    panel.reveal();
-  } else if (choice?.action === "disconnect") {
-    await manager.disconnect();
+  switch (choice?.action) {
+    case "show":
+      await showReplOutput(registry, active?.name);
+      break;
+    case "switch":
+      await setActiveRepl(registry);
+      break;
+    case "add":
+      form.open({ kind: "add" });
+      break;
+    case "disconnect":
+      if (active) {
+        await stopSession(active);
+      }
+      break;
   }
 }
 
