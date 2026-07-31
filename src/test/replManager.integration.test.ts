@@ -186,6 +186,9 @@ suite("REPL manager with several sessions", () => {
     await vscode.commands.executeCommand("clojurePulse.startRepl", "no-such-repl");
     await vscode.commands.executeCommand("clojurePulse.stopRepl", "no-such-repl");
     await vscode.commands.executeCommand("clojurePulse.showReplOutput", "no-such-repl");
+    // A named REPL that does not exist is an error, not an invitation to add
+    // one: a keybinding carrying `"args": "dev"` asked for that REPL.
+    assert.strictEqual(api.replForm.state, undefined);
   });
 
   test("starting with nothing configured opens the add form", async () => {

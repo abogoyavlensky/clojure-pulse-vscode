@@ -1,5 +1,7 @@
 # Start REPL with Nothing Configured Implementation Plan
 
+**Status: complete** (see the summary at the end).
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Running **Start REPL** with no REPLs configured opens the configuration form instead of reporting that every configured REPL is already running.
@@ -156,3 +158,42 @@ all exist already.
 
 - [x] **Step 7: Commit**
   `git commit -m "Open the REPL form when there is nothing to start"`
+
+> Deviation: added a third assertion, to the existing "starting an unknown REPL
+> reports an error" test, that no form opens for a *named* start. The design's
+> load-bearing claim about `"args": "dev"` had no test pinning it.
+
+---
+
+## Completed
+
+**Status: complete.** One commit, `make check` green at 386 tests, and the
+codex review of the commit came back with no findings.
+
+### What was implemented
+
+`startRepl`'s `sessionFor` pick callback now checks for an empty registry
+first, and opens the form through `executeCommand("clojurePulse.addReplConfig")`
+when there is nothing to start. Because `sessionFor` runs that callback only
+when the argument carried no name, a keybinding passing `"args": "dev"` still
+gets the not-found error. `pickSession` and its five other call sites are
+untouched, and "Every configured REPL is already running." now appears only
+when it is true.
+
+Three integration tests cover it: the empty registry opens the form, a single
+configured REPL is connected with no form, and a named-but-unknown REPL errors
+without one. README and CHANGELOG each gained a line.
+
+### Issues encountered
+
+None. The plan matched the code it was written against.
+
+### Deviations
+
+- Added the named-start assertion described above.
+
+### What the plan could have specified better
+
+The plan argued at length that a named start must keep its error, then asked
+for tests covering only the two empty-vs-configured branches. A plan that makes
+a claim central to its design should list the assertion that pins it.
