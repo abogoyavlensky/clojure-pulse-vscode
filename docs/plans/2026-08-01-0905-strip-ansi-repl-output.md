@@ -1,5 +1,7 @@
 # Strip ANSI Escape Codes from REPL Output Implementation Plan
 
+> **Status: COMPLETED** (2026-08-01)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove ANSI escape sequences from server and nREPL output so the REPL output channel shows clean text instead of raw `ESC[1m` garbage.
@@ -101,7 +103,7 @@ tests asserting that colored chunks land in the transcript clean. Run with
 - Create: `src/repl/ansi.ts`
 - Test: `src/test/ansi.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Cover `stripAnsi`:
   - plain text without escapes is returned unchanged
   - SGR sequences are removed: `"\x1b[1mbold\x1b[0m"` → `"bold"`
@@ -115,11 +117,11 @@ tests asserting that colored chunks land in the transcript clean. Run with
   - a held tail that turns out not to be an escape sequence is emitted, not dropped
   - chunks with no escapes pass through unchanged
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — cannot find module `../repl/ansi`
 
-- [ ] **Step 3: Implement `src/repl/ansi.ts`**
+- [x] **Step 3: Implement `src/repl/ansi.ts`**
   Use the `ANSI_PATTERN` regex from the design verbatim. `AnsiStripper`
   keeps a `pending` string; `strip` concatenates `pending + chunk`, removes
   complete sequences, then detects a trailing incomplete escape (a suffix
@@ -127,12 +129,16 @@ tests asserting that colored chunks land in the transcript clean. Run with
   into `pending`, returning the rest. Module docstring in the style of the
   other `src/repl` modules: what it is for and why it is stateful.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add ANSI escape-sequence stripping module"`
+
+> Deviation: added scoped `eslint-disable no-control-regex` comments on the two
+> regexes (control characters are the point) and dropped an unnecessary `\/`
+> escape — the project's lint rules rejected the patterns as written in the plan.
 
 ### Task 2: Strip spawned-process output in ReplSession
 
@@ -140,7 +146,7 @@ tests asserting that colored chunks land in the transcript clean. Run with
 - Modify: `src/repl/replSession.ts`
 - Test: `src/test/replSession.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   In the existing `replSession` test setup (fake process), emit an output
   chunk containing ANSI codes (e.g. the let-go banner fragment
   `"\x1b[1mlet-go\x1b[0m 1.12.2\n"`) and assert the transcript's `out`
@@ -149,23 +155,32 @@ tests asserting that colored chunks land in the transcript clean. Run with
   with `"a"` then `"b"` — this proves one persistent stripper spans chunks,
   not a fresh one per chunk.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `make test`
   Expected: FAIL — transcript entry still contains `\x1b[1m`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `startProcess` (`src/repl/replSession.ts:196`), create a local
   `AnsiStripper` and pass process output through it before appending:
   the `proc.onOutput` handler appends `stripper.strip(text)`. Skip
   appending when the stripped chunk is empty (a chunk that was entirely
   a held-back escape fragment).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Strip ANSI codes from spawned nREPL server output"`
+
+> Deviation: codex review caught that `ReplProcess` merges stdout and stderr
+> into one `onOutput` callback, so a single session-level stripper could mix a
+> pending stdout escape fragment into an interleaved stderr chunk. Stripping
+> moved inside `ReplProcess.start()` with one `AnsiStripper` per source stream
+> (fixup commit); `ReplSession` appends process output verbatim again. Bonus:
+> the port-line scan now sees stripped text, so a colored
+> `nREPL server started on port N` line resolves the port. Regression tests
+> moved to `replProcess.test.ts` against real processes.
 
 ### Task 3: Strip nREPL out/err in ConnectionManager
 
@@ -173,7 +188,7 @@ tests asserting that colored chunks land in the transcript clean. Run with
 - Modify: `src/repl/connectionManager.ts`
 - Test: `src/test/connectionManager.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Using the existing fake nREPL client/server setup, deliver an eval `out`
   message containing ANSI codes and assert the transcript `out` entry is
   clean. Also deliver an `err` message with ANSI codes and assert both the
@@ -182,11 +197,11 @@ tests asserting that colored chunks land in the transcript clean. Run with
   them and assert the halves do not leak — this proves the `out` stripper
   is a persistent per-connection instance, not created per message.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `make test`
   Expected: FAIL — entries still contain escape sequences
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add two `AnsiStripper` fields to `ConnectionManager` (out and err),
   re-created inside `connect()` so a reconnect starts with clean state.
   Add a private `sanitizeMessage(msg)` returning a copy of the message with
@@ -195,13 +210,44 @@ tests asserting that colored chunks land in the transcript clean. Run with
   message throughout (including the `appendEvalMessage` call and the
   `outcome.err` accumulation), so each message is stripped exactly once.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Run the full check**
+- [x] **Step 5: Run the full check**
   Run: `make check`
   Expected: lint, compile, and tests all pass
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Strip ANSI codes from nREPL out/err output"`
+
+> Deviation: `appendEvalMessage` and the `outcome.err` accumulation now skip
+> empty strings — a message whose `out`/`err` strips to nothing (an entirely
+> held-back escape fragment) should produce no transcript entry and must not
+> turn an absent `outcome.err` into `""`.
+
+## Completion Summary
+
+All three tasks implemented and committed; `make check` passes (lint, compile,
+399 tests). Verified end-to-end by driving a real `ReplSession` whose spawned
+process printed the exact ANSI bytes from the screenshots: the output channel
+renders `λ  let-go 1.12.2 (9c9a3d6)`, `GO  Ctrl-C to quit`, and
+`malli: dev-mode started` clean, and eval still returns `=> 42`.
+
+Deviations, gathered:
+- Task 1: scoped `eslint-disable no-control-regex` comments and one dropped
+  `\/` escape to satisfy the project's lint rules.
+- Task 2 (codex finding, fixup commit): stripping moved from `ReplSession`
+  into `ReplProcess` with one `AnsiStripper` per source stream, because
+  `ReplProcess` merges stdout and stderr into a single `onOutput` callback —
+  a shared stripper could corrupt interleaved streams. Side benefit: the
+  port-line scan now sees stripped text, so a colored startup line resolves
+  the port. Regression tests live in `replProcess.test.ts` against real
+  processes.
+- Task 3: empty-after-strip `out`/`err` chunks produce no transcript entry
+  and do not touch `outcome.err`.
+
+What the plan could have specified better: it placed the process-side stripper
+in `ReplSession` without checking that `ReplProcess` had already merged stdout
+and stderr into one callback — reading `replProcess.ts` during planning would
+have put the stripper (and the tests) in the right layer from the start.
