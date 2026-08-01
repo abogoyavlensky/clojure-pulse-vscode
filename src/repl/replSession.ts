@@ -14,6 +14,7 @@
  */
 
 import * as path from "path";
+import { AnsiStripper } from "./ansi";
 import {
   ConnectionManager,
   EvalOptions,
@@ -197,7 +198,15 @@ export class ReplSession implements ReplSessionLike {
     const options: ReplProcessOptions = { command, cwd: this.resolveCwd(cwd) };
     const proc = (this.deps.createProcess ?? ((o) => new ReplProcess(o)))(options);
     this.process = proc;
-    proc.onOutput((text) => this.transcript.append({ kind: "out", text }));
+    // Fresh per process: the held-back tail of a split escape sequence must
+    // not leak into a restarted server's stream.
+    const ansi = new AnsiStripper();
+    proc.onOutput((text) => {
+      const clean = ansi.strip(text);
+      if (clean.length > 0) {
+        this.transcript.append({ kind: "out", text: clean });
+      }
+    });
     proc.onExit(({ code, signal }) =>
       this.transcript.append({
         kind: "info",
