@@ -130,6 +130,35 @@ suite("ConnectionManager", () => {
     assert.ok(entries.includes("value|nil"), entries.join(", "));
   });
 
+  test("ANSI escape codes in out and err are stripped", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        reply({ "new-session": "sess-1", status: ["done"] });
+        return;
+      }
+      if (msg.op === "describe") {
+        reply({ versions: {}, status: ["done"] });
+        return;
+      }
+      reply({ session: msg.session, out: "\x1b[38;5;45mmalli:\x1b[0m dev-mode\n" });
+      // A sequence split across two messages proves the out stripper is one
+      // per-connection instance, not created per message.
+      reply({ session: msg.session, out: "a\x1b[3" });
+      reply({ session: msg.session, out: "8;5;45mb\n" });
+      reply({ session: msg.session, err: "\x1b[31mboom\x1b[0m\n" });
+      reply({ session: msg.session, status: ["done"] });
+    });
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(start)");
+
+    const entries = texts();
+    assert.ok(entries.includes("out|malli: dev-mode\n"), entries.join(", "));
+    assert.ok(entries.includes("out|a"), entries.join(", "));
+    assert.ok(entries.includes("out|b\n"), entries.join(", "));
+    assert.ok(entries.includes("err|boom\n"), entries.join(", "));
+    assert.strictEqual(outcome.err, "boom\n");
+  });
+
   test("eval resolves with the value outcome", async () => {
     await manager.connect({ host: "127.0.0.1", port: server.port });
     const outcome = await manager.eval("(+ 1 2)");

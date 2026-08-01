@@ -96,6 +96,37 @@ suite("ReplProcess", () => {
     assert.ok(text.includes("err-line"), text);
   });
 
+  test("strips ANSI escape codes from output, even split across chunks", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const chunks: string[] = [];
+    // The sleep forces the split sequence into separate chunks: one stripper
+    // must span the stream, holding `ESC[3` until `8;5;45m` completes it.
+    const proc = spawn(
+      "printf 'out \\033[1mbold\\033[0m line\\n' && printf 'a\\033[3' && sleep 0.2 && printf '8;5;45mb\\n'",
+    );
+    proc.onOutput((text) => chunks.push(text));
+    proc.start();
+
+    await waitUntil(() => chunks.join("").includes("b\n"), 5000);
+    const text = chunks.join("");
+    assert.ok(text.includes("out bold line"), JSON.stringify(text));
+    assert.ok(text.includes("ab"), JSON.stringify(text));
+    assert.ok(!text.includes("\x1b"), JSON.stringify(text));
+  });
+
+  test("resolves the port from a colored startup line", async function () {
+    if (!POSIX) {
+      this.skip();
+    }
+    const proc = spawn(
+      "printf '\\033[32mnREPL server started on port 12345\\033[0m\\n' && sleep 30",
+    );
+    proc.start();
+    assert.strictEqual(await proc.waitForPort(), 12345);
+  });
+
   test("rejects waitForPort when the process exits without a port", async function () {
     if (!POSIX) {
       this.skip();

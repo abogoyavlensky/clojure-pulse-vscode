@@ -4,6 +4,7 @@ import {
   NreplClient,
   NreplMessage,
 } from "../nrepl/client";
+import { AnsiStripper } from "./ansi";
 import { Transcript } from "./transcript";
 
 export type ReplState = "disconnected" | "connecting" | "connected";
@@ -61,6 +62,10 @@ export class ConnectionManager {
   private readonly connectTimeoutMs: number;
   /** Bumped by disconnect() to invalidate an in-flight connect(). */
   private connectAttempt = 0;
+  // `out` and `err` are distinct streams, and an escape sequence can be split
+  // across a stream's messages — each needs its own stripper.
+  private outAnsi = new AnsiStripper();
+  private errAnsi = new AnsiStripper();
 
   constructor(
     readonly transcript: Transcript,
@@ -87,6 +92,9 @@ export class ConnectionManager {
       throw new Error("Already connected to an nREPL server");
     }
     const attempt = ++this.connectAttempt;
+    // A held-back escape fragment must not survive into a new connection.
+    this.outAnsi = new AnsiStripper();
+    this.errAnsi = new AnsiStripper();
     this.setState("connecting");
     let client: NreplClient | undefined;
     try {
@@ -199,11 +207,31 @@ export class ConnectionManager {
     connection?.client.close();
   }
 
-  private appendEvalMessage(msg: NreplMessage): void {
+  /**
+   * `msg` with ANSI escape codes stripped out of `out`/`err`. Called exactly
+   * once per incoming message — the strippers are stateful, and a chunk that
+   * was entirely a held-back fragment comes back as an empty string, which
+   * every consumer treats as nothing to report.
+   */
+  private sanitizeMessage(msg: NreplMessage): NreplMessage {
+    if (typeof msg.out !== "string" && typeof msg.err !== "string") {
+      return msg;
+    }
+    const clean = { ...msg };
     if (typeof msg.out === "string") {
-      this.transcript.append({ kind: "out", text: msg.out });
+      clean.out = this.outAnsi.strip(msg.out);
     }
     if (typeof msg.err === "string") {
+      clean.err = this.errAnsi.strip(msg.err);
+    }
+    return clean;
+  }
+
+  private appendEvalMessage(msg: NreplMessage): void {
+    if (typeof msg.out === "string" && msg.out.length > 0) {
+      this.transcript.append({ kind: "out", text: msg.out });
+    }
+    if (typeof msg.err === "string" && msg.err.length > 0) {
       this.transcript.append({ kind: "err", text: msg.err });
     }
     if (typeof msg.value === "string") {
@@ -213,14 +241,15 @@ export class ConnectionManager {
 
   /** Streams a message to the transcript and accumulates it into `outcome`. */
   private collectEvalMessage(msg: NreplMessage, outcome: EvalOutcome): void {
-    this.appendEvalMessage(msg);
-    if (typeof msg.value === "string") {
-      outcome.value = msg.value;
+    const clean = this.sanitizeMessage(msg);
+    this.appendEvalMessage(clean);
+    if (typeof clean.value === "string") {
+      outcome.value = clean.value;
     }
-    if (typeof msg.err === "string") {
-      outcome.err = (outcome.err ?? "") + msg.err;
+    if (typeof clean.err === "string" && clean.err.length > 0) {
+      outcome.err = (outcome.err ?? "") + clean.err;
     }
-    if (Array.isArray(msg.status) && msg.status.includes("namespace-not-found")) {
+    if (Array.isArray(clean.status) && clean.status.includes("namespace-not-found")) {
       outcome.namespaceNotFound = true;
     }
   }
@@ -232,7 +261,7 @@ export class ConnectionManager {
     msg: NreplMessage,
   ): void {
     if (this.connections[0] === connection && msg.session === connection.session) {
-      this.appendEvalMessage(msg);
+      this.appendEvalMessage(this.sanitizeMessage(msg));
     }
   }
 
