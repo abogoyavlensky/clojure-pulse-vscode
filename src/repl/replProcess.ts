@@ -13,6 +13,7 @@
 import { ChildProcess, spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { AnsiStripper } from "./ansi";
 import { readPortFile } from "./replConfig";
 
 const PORT_LINE = /nREPL server started on port (\d+)/;
@@ -111,8 +112,19 @@ export class ReplProcess implements ReplProcessLike {
     });
     this.child = child;
 
-    child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk.toString()));
-    child.stderr?.on("data", (chunk: Buffer) => this.onData(chunk.toString()));
+    // Colored output (server banners, malli dev-mode) would land in the
+    // output channel as literal escape codes — and could hide the port line
+    // from the scan below. One stripper per source: stdout and stderr chunk
+    // independently, and a sequence split across one stream's chunks must not
+    // eat an interleaved chunk of the other.
+    const stdoutAnsi = new AnsiStripper();
+    const stderrAnsi = new AnsiStripper();
+    child.stdout?.on("data", (chunk: Buffer) =>
+      this.onData(stdoutAnsi.strip(chunk.toString())),
+    );
+    child.stderr?.on("data", (chunk: Buffer) =>
+      this.onData(stderrAnsi.strip(chunk.toString())),
+    );
     child.on("error", (err) => {
       // A failed spawn (missing cwd, unusable shell) emits `error` and then
       // `close`, never `exit` — so this path has to release the poll timer too.
@@ -251,6 +263,11 @@ export class ReplProcess implements ReplProcessLike {
   }
 
   private onData(text: string): void {
+    // A chunk can strip to nothing (it was entirely a held-back escape
+    // fragment); an empty transcript entry helps no one.
+    if (text.length === 0) {
+      return;
+    }
     this.emitOutput(text);
     if (this.settled) {
       return;

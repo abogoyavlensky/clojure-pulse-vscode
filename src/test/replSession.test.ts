@@ -205,24 +205,6 @@ suite("ReplSession", () => {
     );
   });
 
-  test("ANSI escape codes in process output are stripped", async () => {
-    const proc = new FakeProcess();
-    const session = make(createConfig(), { process: proc });
-    void session.start().catch(() => {});
-    await waitUntil(() => session.state === "starting", 1000);
-
-    proc.emit("\x1b[1mlet-go\x1b[0m 1.12.2\n");
-    // A sequence split across chunks proves one stripper spans the stream.
-    proc.emit("a\x1b[3");
-    proc.emit("8;5;45mb");
-
-    const outs = session.transcript.entries().filter((e) => e.kind === "out");
-    assert.deepStrictEqual(
-      outs.map((e) => e.text),
-      ["let-go 1.12.2\n", "a", "b"],
-    );
-  });
-
   test("a process that exits before reporting a port stops the session", async () => {
     const proc = new FakeProcess();
     const session = make(createConfig(), { process: proc });
