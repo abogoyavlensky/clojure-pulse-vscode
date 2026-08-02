@@ -300,6 +300,92 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
   return resolveIn(text, 0, text.length, null, clamped);
 }
 
+/** A resolved `deftest` for "Run Test at Cursor". */
+export interface TestAtCursor {
+  /** Range of the whole deftest form (leading `#_` markers stripped). */
+  range: FormRange;
+  /** The bare test name, e.g. `"my-test"` — no namespace, no metadata. */
+  name: string;
+}
+
+/**
+ * The top-level `deftest` form the cursor is in — or, when the cursor sits in
+ * top-level whitespace, the one ending right before it (matching
+ * `formAtCursor`'s rule 6, so "right after the closing paren" works too).
+ *
+ * The resolved form must be a `(deftest …)` list, head bare or qualified
+ * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
+ * range strips them like `formAtCursor` does — but any other reader prefix
+ * (`'`, `` ` ``, `^meta`, `#'`) means the form would not define a test var,
+ * so it does not resolve. Null when the cursor's form is not a deftest, the
+ * name is missing, or the code is unbalanced — never a silent fallback to an
+ * earlier deftest.
+ */
+export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+  const clamped = Math.max(0, Math.min(offset, text.length));
+  let prev: ReadForm | null = null;
+  let target: ReadForm | null = null;
+  let p = 0;
+  for (;;) {
+    // As in resolveIn: decide gaps from the next form's start before parsing
+    // it, so unbalanced code after the cursor cannot block resolution.
+    const nextStart = skipTrivia(text, p, text.length);
+    if (nextStart >= text.length || nextStart > clamped) {
+      target = prev;
+      break;
+    }
+    const result = readForm(text, nextStart, text.length);
+    if (result.kind === "closer") {
+      p = result.offset + 1; // stray top-level closer: skip
+      continue;
+    }
+    if (result.kind !== "form") {
+      return null; // the cursor's own form never completes
+    }
+    if (result.form.end < clamped) {
+      prev = result.form;
+      p = result.form.end;
+      continue;
+    }
+    target = result.form; // start <= offset <= end: the containing form
+    break;
+  }
+
+  if (
+    target === null ||
+    target.baseStart !== target.innerStart || // prefix other than `#_`
+    target.bracketOffset === null ||
+    text[target.bracketOffset] !== "("
+  ) {
+    return null;
+  }
+  const head = readForm(text, target.bracketOffset + 1, target.closerOffset!);
+  if (head.kind !== "form" || head.form.bracketOffset !== null) {
+    return null;
+  }
+  const headToken = text.slice(head.form.baseStart, head.form.end);
+  if (headToken !== "deftest" && !headToken.endsWith("/deftest")) {
+    return null;
+  }
+  const name = readForm(text, head.form.end, target.closerOffset!);
+  if (name.kind !== "form" || name.form.bracketOffset !== null) {
+    return null;
+  }
+  return {
+    range: stripped(target),
+    name: text.slice(name.form.baseStart, name.form.end),
+  };
+}
+
+/**
+ * True when a test-run result value — the summary map from
+ * `clojure.test/run-test-var` or a deref'd `*report-counters*` — reports any
+ * failures or errors. Drives revealing the REPL output channel.
+ */
+export function testRunFailed(value: string | undefined): boolean {
+  return value !== undefined && /:(?:fail|error)\s+[1-9]/.test(value);
+}
+
 /**
  * The name in the nearest top-level `(ns …)` form that ends before `offset`
  * (pass the start of the form being evaluated), or undefined. Evaluating the

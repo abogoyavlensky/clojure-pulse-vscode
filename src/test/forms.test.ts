@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { formAtCursor, nsBefore } from "../repl/forms";
+import { formAtCursor, nsBefore, testAtCursor, testRunFailed } from "../repl/forms";
 
 /** Splits a source with a single `|` cursor marker into text + offset. */
 function at(source: string): { text: string; offset: number } {
@@ -248,5 +248,134 @@ suite("nsBefore", () => {
 
   test("evaluating the ns form itself gets no ns param", () => {
     assert.strictEqual(ns("|(ns foo)"), undefined);
+  });
+});
+
+suite("testAtCursor", () => {
+  /** Resolves the deftest for the `|` cursor: its name plus the range text. */
+  function found(source: string): { name: string; text: string } | null {
+    const { text, offset } = at(source);
+    const result = testAtCursor(text, offset);
+    return result === null
+      ? null
+      : { name: result.name, text: text.slice(result.range.start, result.range.end) };
+  }
+
+  test("cursor inside the deftest body", () => {
+    assert.deepStrictEqual(found("(deftest my-test\n  (is (= 1 |1)))"), {
+      name: "my-test",
+      text: "(deftest my-test\n  (is (= 1 1)))",
+    });
+  });
+
+  test("cursor on the test name", () => {
+    assert.deepStrictEqual(found("(deftest my-|test\n  (is true))"), {
+      name: "my-test",
+      text: "(deftest my-test\n  (is true))",
+    });
+  });
+
+  test("cursor immediately after the closing paren", () => {
+    assert.deepStrictEqual(found("(deftest my-test (is true))|"), {
+      name: "my-test",
+      text: "(deftest my-test (is true))",
+    });
+  });
+
+  test("cursor in whitespace after the deftest", () => {
+    assert.deepStrictEqual(found("(deftest my-test (is true))\n\n|"), {
+      name: "my-test",
+      text: "(deftest my-test (is true))",
+    });
+  });
+
+  test("qualified deftest heads", () => {
+    assert.deepStrictEqual(found("(t/deftest foo (is |true))"), {
+      name: "foo",
+      text: "(t/deftest foo (is true))",
+    });
+    assert.deepStrictEqual(found("(clojure.test/deftest foo (is |true))"), {
+      name: "foo",
+      text: "(clojure.test/deftest foo (is true))",
+    });
+  });
+
+  test("metadata on the test name is skipped", () => {
+    assert.deepStrictEqual(found("(deftest ^:integration foo (is |true))"), {
+      name: "foo",
+      text: "(deftest ^:integration foo (is true))",
+    });
+  });
+
+  test("cursor inside a non-deftest top-level form", () => {
+    assert.strictEqual(found("(ns foo.|bar-test)"), null);
+    assert.strictEqual(
+      found("(deftest a (is true))\n(defn helper [] |1)\n(deftest b (is true))"),
+      null,
+    );
+  });
+
+  test("cursor in whitespace after a non-deftest form", () => {
+    assert.strictEqual(found("(defn helper [] 1)\n|"), null);
+  });
+
+  test("head that merely contains deftest does not match", () => {
+    assert.strictEqual(found("(deftest-like foo (is |true))"), null);
+  });
+
+  test("unbalanced deftest", () => {
+    assert.strictEqual(found("(deftest my-test (is |true)"), null);
+  });
+
+  test("empty buffer and missing name", () => {
+    assert.strictEqual(found("  |  "), null);
+    assert.strictEqual(found("(deftest|)"), null);
+    assert.strictEqual(found("(deftest [not-a-name] (is |true))"), null);
+  });
+
+  test("discarded deftest resolves with the marker stripped", () => {
+    assert.deepStrictEqual(found("#_(deftest foo (is |true))"), {
+      name: "foo",
+      text: "(deftest foo (is true))",
+    });
+  });
+
+  test("quoted deftest does not resolve", () => {
+    assert.strictEqual(found("'(deftest foo (is |true))"), null);
+    assert.strictEqual(found("`(deftest foo (is |true))"), null);
+  });
+});
+
+suite("testRunFailed", () => {
+  test("all passing summary", () => {
+    assert.strictEqual(
+      testRunFailed("{:test 1, :pass 2, :fail 0, :error 0, :type :summary}"),
+      false,
+    );
+  });
+
+  test("failures and errors", () => {
+    assert.strictEqual(
+      testRunFailed("{:test 1, :pass 0, :fail 1, :error 0, :type :summary}"),
+      true,
+    );
+    assert.strictEqual(
+      testRunFailed("{:test 1, :pass 0, :fail 0, :error 2, :type :summary}"),
+      true,
+    );
+    assert.strictEqual(
+      testRunFailed("{:test 5, :pass 0, :fail 10, :error 0, :type :summary}"),
+      true,
+    );
+  });
+
+  test("fallback counters map without :type", () => {
+    assert.strictEqual(testRunFailed("{:test 1, :pass 0, :fail 1, :error 0}"), true);
+    assert.strictEqual(testRunFailed("{:test 1, :pass 1, :fail 0, :error 0}"), false);
+  });
+
+  test("no value or non-map value", () => {
+    assert.strictEqual(testRunFailed(undefined), false);
+    assert.strictEqual(testRunFailed("nil"), false);
   });
 });
