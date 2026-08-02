@@ -269,17 +269,22 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
 
+      // Probe (ns already loaded here) → align the ns for let-go → define →
+      // run. let-go's nREPL ignores the eval `ns` param, so the explicit
+      // in-ns eval is what puts the definition in the file's namespace there.
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 2, "expected define + run evals");
-      assert.strictEqual(evals[0].code, "(deftest my-test\n  (is true))");
-      assert.strictEqual(evals[0].ns, "my.app-test");
-      assert.ok(String(evals[1].code).includes("run-test-var"));
-      assert.ok(String(evals[1].code).includes("#'my-test"));
+      assert.strictEqual(evals.length, 4, "expected probe + in-ns + define + run");
+      assert.ok(String(evals[0].code).includes("(find-ns 'my.app-test)"));
+      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
+      assert.strictEqual(evals[2].ns, "my.app-test");
+      assert.ok(String(evals[3].code).includes("run-test-var"));
+      assert.ok(String(evals[3].code).includes("#'my-test"));
       // The fallback must reference only vars that exist on let-go too, whose
       // compiler resolves both branches eagerly.
-      assert.ok(String(evals[1].code).includes("clojure.test/*report-counters*"));
-      assert.ok(!String(evals[1].code).includes("*initial-report-counters*"));
-      assert.strictEqual(evals[1].ns, "my.app-test");
+      assert.ok(String(evals[3].code).includes("clojure.test/*report-counters*"));
+      assert.ok(!String(evals[3].code).includes("*initial-report-counters*"));
+      assert.strictEqual(evals[3].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -311,12 +316,14 @@ suite("REPL commands", () => {
     try {
       server = await startFakeNrepl();
       await connect(server);
-      // Evals fail with namespace-not-found until a load-file arrives, as a
-      // real nREPL does for a namespace that was never loaded.
+      // The find-ns probe reports the namespace missing until a load-file
+      // arrives (the status-based namespace-not-found signal is JVM-only —
+      // let-go never sends it, so the command must not rely on it).
       let loaded = false;
       server.respond((msg, reply) => {
-        if (msg.op === "eval" && !loaded) {
-          reply({ session: msg.session, status: ["done", "namespace-not-found"] });
+        if (msg.op === "eval" && String(msg.code).includes("find-ns")) {
+          reply({ session: msg.session, value: loaded ? "true" : "false" });
+          reply({ session: msg.session, status: ["done"] });
           return;
         }
         if (msg.op === "load-file") {
@@ -338,14 +345,15 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(String(loadMsg?.file).includes("(deftest my-test"));
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals[1].code, "(deftest my-test\n  (is true))");
-      assert.strictEqual(evals[1].ns, "my.app-test");
-      assert.ok(String(evals[2].code).includes("run-test-var"));
+      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[2].ns, "my.app-test");
+      assert.ok(String(evals[3].code).includes("run-test-var"));
+      assert.strictEqual(evals[3].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -357,8 +365,9 @@ suite("REPL commands", () => {
       server = await startFakeNrepl();
       await connect(server);
       server.respond((msg, reply) => {
-        if (msg.op === "eval") {
-          reply({ session: msg.session, status: ["done", "namespace-not-found"] });
+        if (msg.op === "eval" && String(msg.code).includes("find-ns")) {
+          reply({ session: msg.session, value: "false" });
+          reply({ session: msg.session, status: ["done"] });
           return;
         }
         if (msg.op === "load-file") {
@@ -390,13 +399,15 @@ suite("REPL commands", () => {
     try {
       server = await startFakeNrepl();
       await connect(server);
+      // Probe and in-ns succeed; only the deftest define itself errors.
       server.respond((msg, reply) => {
-        if (msg.op === "eval") {
+        if (msg.op === "eval" && String(msg.code).includes("deftest")) {
           reply({ session: msg.session, err: "boom" });
           reply({ session: msg.session, status: ["done"] });
           return;
         }
-        reply({ status: ["done"] });
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
       });
 
       const doc = await vscode.workspace.openTextDocument({
@@ -409,7 +420,10 @@ suite("REPL commands", () => {
       await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
 
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 1, "the failed define must stop the run");
+      assert.ok(
+        !evals.some((m) => String(m.code).includes("run-test-var")),
+        "the failed define must stop the run",
+      );
     } finally {
       await server?.close();
     }

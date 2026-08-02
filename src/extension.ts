@@ -832,30 +832,45 @@ async function runTestAtCursor(
   }
   const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
   try {
-    const code = editor.document.getText(range);
-    const opts = { ...sourceParams(editor, range.start), ns: nsName };
-    let defined = await session.eval(code, opts);
-    if (defined.namespaceNotFound) {
-      // The namespace was never loaded: do what the error hint would tell
-      // the user to do — load the buffer (Evaluate File) — then retry once.
-      const doc = editor.document;
-      const onDisk = doc.uri.scheme === "file";
-      const loaded = await session.loadFile(doc.getText(), {
-        filePath: onDisk ? doc.uri.fsPath : undefined,
-        fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
-      });
-      if (loaded.err !== undefined) {
-        // The file itself does not compile; that error wins.
+    if (nsName !== undefined) {
+      // The namespace-not-found status is JVM-only — let-go's nREPL neither
+      // sends it nor honors the eval `ns` param. A find-ns probe detects an
+      // unloaded namespace on both runtimes; loading the buffer is what the
+      // old error hint told the user to do by hand.
+      const probe = await session.eval(`(some? (find-ns '${nsName}))`);
+      if (probe.value === "false") {
+        const doc = editor.document;
+        const onDisk = doc.uri.scheme === "file";
+        const loaded = await session.loadFile(doc.getText(), {
+          filePath: onDisk ? doc.uri.fsPath : undefined,
+          fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
+        });
+        if (loaded.err !== undefined) {
+          // The file itself does not compile; that error wins.
+          if (id) {
+            inlineResults.resolve(id, loaded);
+          }
+          return;
+        }
+      }
+      // On let-go the current namespace is process-global and the only ns
+      // targeting there is; on the JVM (where the evals below carry an
+      // explicit ns param) this is a harmless no-op.
+      const switched = await session.eval(`(in-ns '${nsName})`);
+      if (switched.err !== undefined) {
         if (id) {
-          inlineResults.resolve(id, loaded);
+          inlineResults.resolve(id, switched);
         }
         return;
       }
-      defined = await session.eval(code, opts);
     }
+    const defined = await session.eval(editor.document.getText(range), {
+      ...sourceParams(editor, range.start),
+      ns: nsName,
+    });
     if (defined.err !== undefined || defined.namespaceNotFound) {
-      // A test that failed to compile (or a namespace still missing after
-      // the load) must not run; the decoration shows why.
+      // A test that failed to compile (or a namespace the server still
+      // rejects) must not run; the decoration shows why.
       if (id) {
         inlineResults.resolve(id, defined);
       }
