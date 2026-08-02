@@ -225,9 +225,11 @@ rather than land somewhere you did not intend.
 - **Run Test at Cursor** — with the cursor inside a top-level `deftest` (or
   right after its closing paren), re-evaluates the test in the file's namespace
   so the buffer's current version is what runs, then executes it via
-  `clojure.test`. The summary map (`{:test 1, :pass 2, :fail 0, …}`) appears
-  inline on the form; the full report streams to the REPL's output channel,
-  which opens automatically when anything fails.
+  `clojure.test`. If the namespace isn't loaded yet, the file is loaded
+  automatically first — no manual **Evaluate File** needed. The summary map
+  (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
+  report streams to the REPL's output channel, which opens automatically when
+  anything fails. Works against JVM Clojure (1.11+) and let-go REPLs.
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the
@@ -287,7 +289,8 @@ Run these from the Command Palette:
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
   active REPL.
 - **Clojure Pulse: Run Test at Cursor** — re-evaluate and run the `deftest`
-  under the cursor in the active REPL.
+  under the cursor in the active REPL, loading the file's namespace first if
+  needed.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.
