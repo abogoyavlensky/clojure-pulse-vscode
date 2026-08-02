@@ -11,7 +11,8 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   A namespace that isn't loaded yet is loaded automatically (the whole file,
   as **Evaluate File** would). Works on JVM Clojure 1.11+ and let-go REPLs —
   on let-go the runner falls back to calling the test function directly with
-  `test`-ns counter accounting, since `run-test-var` doesn't exist there yet.
+  `test`-ns counter accounting, since `run-test-var` doesn't exist there yet
+  (this bypasses `use-fixtures` fixtures on let-go until then).
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`
