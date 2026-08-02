@@ -1,5 +1,7 @@
 # Test Status Bar and Gutter Polish Implementation Plan
 
+> **Status: COMPLETED** (2026-08-02) — see the summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop stealing focus on test failure, shrink the gutter circles to match VS Code's glyph sizing, and add a colored status-bar item showing the last test run's verdict (green pass / red-background fail, clickable to open the REPL output).
@@ -71,18 +73,19 @@ Follow the `replStatusBar` precedent: unit tests for the pure parts (`src/test/t
 **Files:**
 - Modify: `src/extension.ts`, `images/test-pass.svg`, `images/test-fail.svg`, `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Remove the failure auto-reveal**
+- [x] **Step 1: Remove the failure auto-reveal**
   Delete the `testRunFailed(...) → session.showOutput()` block in `runTestAtCursor`; drop the now-unused `testRunFailed` import if nothing else uses it there. Update the README sentence "which opens automatically when anything fails" and the matching CHANGELOG wording to say the output stays put (the status-bar item added in Task 2 is the click-path — final wording lands in Task 3).
 
-- [ ] **Step 2: Shrink the SVG glyphs**
+- [x] **Step 2: Shrink the SVG glyphs**
   Per Design §2 (circle `r≈5`, stroke `≈1.3`, paths scaled toward the center).
 
-- [ ] **Step 3: Run the full suite**
+- [x] **Step 3: Run the full suite**
   Run: `npm run pretest && xvfb-run -a npm test`
   Expected: PASS (no test asserts the auto-reveal).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "Stop revealing the output on test failure and shrink gutter icons"`
+  > Deviation: codex flagged two P3 docs nits — the "without stealing focus" claim needs qualifying for the inline-results-off path (output still shown up front, as with all eval commands), folded into Task 3's wording; and the doc comment's status-bar mention becomes true in Task 2.
 
 ### Task 2: Test status-bar item
 
@@ -90,21 +93,21 @@ Follow the `replStatusBar` precedent: unit tests for the pure parts (`src/test/t
 - Create: `src/repl/testStatusBar.ts`, `src/test/testStatusBar.test.ts`
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Write the failing unit tests**
+- [x] **Step 1: Write the failing unit tests**
   `testRunCounts`: summary with `:fail 1`/`:error 2` → counts; `"nil"`/undefined → null. `testStatusBarPresentation`: running spinner text; pass text + `testing.iconPassed` color + no background; fail suffix variants (`1 fail`, `2 errors`, `1 fail, 1 error`, bare `error` when counts are null) + `statusBarItem.errorBackground` + no color; command always `clojurePulse.showReplOutput`. Wrapper token tests via `current()`: a second `running()` supersedes the first token — the stale `finish` and `clear` are ignored; the current token's `finish` updates the view.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm run compile-tests && xvfb-run -a npm test`
   Expected: FAIL — module does not exist.
 
-- [ ] **Step 3: Implement and wire**
+- [x] **Step 3: Implement and wire**
   Module per Design §3; wire `running`/`finish`/`clear` into `runTestAtCursor` at the points listed in the Design (every early return and the catch), create in `setupRepl`, push to subscriptions.
 
-- [ ] **Step 4: Run tests and lint**
+- [x] **Step 4: Run tests and lint**
   Run: `npm run pretest && xvfb-run -a npm test`
   Expected: PASS, no lint errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Show the last test run's verdict in the status bar"`
 
 ### Task 3: Docs and final verification
@@ -112,12 +115,45 @@ Follow the `replStatusBar` precedent: unit tests for the pure parts (`src/test/t
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Update the docs**
+- [x] **Step 1: Update the docs**
   README Run Test at Cursor bullet: the status bar shows the last run's verdict (green pass / red fail with counts), click opens the REPL output; the output no longer opens on its own. CHANGELOG: extend the Unreleased entry accordingly.
+  > Deviation: also qualified the "without stealing focus" claim for the inline-results-off path, per Task 1's codex note.
 
-- [ ] **Step 2: Full suite**
+- [x] **Step 2: Full suite**
   Run: `npm run pretest && xvfb-run -a npm test`
   Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document the test status bar item"`
+
+## Completion Summary
+
+**Implemented** on branch `run-deftest`, commits `1b61419`, `6d85848`, plus
+this docs commit. (1) The output channel is no longer revealed on test
+failure — it still receives the full report; focus stays in the editor
+(unchanged pre-existing behavior: with inline results off, the channel is
+shown up front like every eval command). (2) Gutter circles shrunk from
+13px to 10px within the 16px cell to match VS Code's glyph sizing. (3) New
+`src/repl/testStatusBar.ts` following the `replStatusBar` pure-presentation
+pattern: spinner while a test runs, `$(testing-passed-icon) name` in
+`testing.iconPassed` green on pass, `$(testing-failed-icon) name — N fail`
+on `statusBarItem.errorBackground` red on failure, click →
+`clojurePulse.showReplOutput`, persisting until the next test command;
+token-guarded so a superseded run's late `finish`/`clear` is a no-op, with
+explicit `clear` on every abandoned-run path (no stale spinner). 455 tests
+passing — 13 new (counts parsing, presentation per phase, wrapper token
+races).
+
+**Issues encountered:** none blocking. Task 1's codex review raised two P3
+docs nits (over-broad focus claim; a doc comment referencing the status bar
+one commit early) — both resolved by Task 2/Task 3. Task 2's review was
+clean on the first round; the token guard was designed in up front by the
+plan-stage codex review.
+
+**Deviations:** the two docs-wording notes recorded under Tasks 1 and 3;
+no code deviations.
+
+**What the plan could have specified better:** the interim docs wording in
+Task 1 — writing an unqualified focus claim there caused the P3 findings;
+plans splitting one behavior change across a code task and a later docs
+task should carry the qualified wording from the start.

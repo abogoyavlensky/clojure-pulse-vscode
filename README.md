@@ -228,11 +228,16 @@ rather than land somewhere you did not intend.
   `clojure.test`. If the namespace isn't loaded yet, the file is loaded
   automatically first — no manual **Evaluate File** needed. The summary map
   (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
-  report streams to the REPL's output channel without stealing focus. The gutter marks the deftest with a green check circle on
+  report streams to the REPL's output channel without moving focus there
+  (when inline results are off, the channel is shown up front, as for every
+  eval command). The gutter marks the deftest with a green check circle on
   pass or a red cross circle on fail — hover the deftest's first line for the
-  failure report. Marks always show the result of the **last test command**
-  only: a new run wipes the previous report, and an edit to a marked deftest
-  removes its (now stale) verdict. Works against JVM Clojure (1.11+) and
+  failure report — and the status bar shows the verdict at a glance: the test
+  name in green when it passed, on a red background with fail/error counts
+  when it didn't; click it to open the REPL output. Marks and the status item
+  always show the result of the **last test command** only: a new run wipes
+  the previous report, and an edit to a marked deftest removes its (now
+  stale) gutter verdict. Works against JVM Clojure (1.11+) and
   let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
   single-test run there calls the test function directly, skipping
   `use-fixtures` fixtures.
