@@ -6,8 +6,9 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 - **Run Test at Cursor**: a command that runs the top-level `deftest` under
   (or right after) the cursor in the active REPL. It re-evaluates the test
-  first so the buffer's current version runs, shows the clojure.test summary
-  inline on the form, and opens the REPL's output channel when anything fails.
+  first so the buffer's current version runs, and shows the clojure.test
+  summary inline on the form; the full report streams to the REPL's output
+  channel without stealing focus.
   A namespace that isn't loaded yet is loaded automatically (the whole file,
   as **Evaluate File** would). Works on JVM Clojure 1.11+ and let-go REPLs —
   on let-go the runner falls back to calling the test function directly with

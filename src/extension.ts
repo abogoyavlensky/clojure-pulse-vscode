@@ -31,7 +31,7 @@ import {
   testStatusOf,
   TestStatusManager,
 } from "./repl/testStatus";
-import { formAtCursor, nsBefore, testAtCursor, testRunFailed } from "./repl/forms";
+import { formAtCursor, nsBefore, testAtCursor } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -809,8 +809,8 @@ async function evalCurrentForm(
  * the form in its namespace so the buffer's current version is what runs,
  * then executes it via clojure.test. Two evals share one inline decoration —
  * pending through both, resolved with the runner's summary map. The detailed
- * report streams to the REPL's output channel, which is revealed when the
- * summary counts any failures or errors.
+ * report streams to the REPL's output channel without stealing focus; the
+ * gutter mark's hover and the status bar carry the verdict.
  */
 async function runTestAtCursor(
   registry: ReplRegistry,
@@ -927,9 +927,6 @@ async function runTestAtCursor(
     }
     const status = testStatusOf(outcome);
     testStatus.report(runId, status, buildStatusHover(status, outcome));
-    if (testRunFailed(outcome.value)) {
-      session.showOutput();
-    }
   } catch (err: unknown) {
     if (id) {
       inlineResults.fail(id, err instanceof Error ? err.message : String(err));
