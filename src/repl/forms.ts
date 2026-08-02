@@ -300,44 +300,70 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
   return resolveIn(text, 0, text.length, null, clamped);
 }
 
-/**
- * Reads the next child form that is not wholly discarded: a child whose
- * leading `#_` marker means Clojure drops it, like `#_old` in
- * `(deftest #_old actual …)`, is skipped rather than returned.
- */
-function readLiveChild(text: string, pos: number, limit: number): ReadResult {
-  for (;;) {
-    const result = readForm(text, pos, limit);
-    if (result.kind !== "form" || result.form.innerStart === result.form.start) {
-      return result;
-    }
-    pos = result.form.end;
+/** The number of consecutive `#_` markers at a form's start. */
+function leadingDiscardMarkers(text: string, form: ReadForm): number {
+  let count = 0;
+  let p = form.start;
+  while (p < form.baseStart && text[p] === "#" && text[p + 1] === "_") {
+    count++;
+    p = skipTrivia(text, p + 2, form.baseStart);
   }
+  return count;
 }
 
 /**
- * True when a form's reader prefixes are only `#_` discard markers and
- * `^meta` annotations — the prefixes evaluation still runs the form under,
- * so a prefixed `deftest` would define its var. Quote-like prefixes (`'`,
- * `` ` ``, `~`, `@`, `#'`) suppress evaluation and fail the check.
+ * Reads the next child form that is not discarded. A child with n leading
+ * `#_` markers discards its own base plus the n-1 live forms after it —
+ * `(deftest #_#_old also-old actual …)` defines `actual` — so all of them
+ * are skipped rather than returned.
  */
-function definesWhenEvaluated(text: string, form: ReadForm): boolean {
+function readLiveChild(text: string, pos: number, limit: number): ReadResult {
+  const result = readForm(text, pos, limit);
+  if (result.kind !== "form") {
+    return result;
+  }
+  const markers = leadingDiscardMarkers(text, result.form);
+  if (markers === 0) {
+    return result;
+  }
+  let p = result.form.end; // the form's own base is the first discard
+  for (let extra = markers - 1; extra > 0; extra--) {
+    const dropped = readLiveChild(text, p, limit);
+    if (dropped.kind !== "form") {
+      return dropped;
+    }
+    p = dropped.form.end;
+  }
+  return readLiveChild(text, p, limit);
+}
+
+/**
+ * Where an evaluable range for the form starts, or null when a quote-like
+ * prefix (`'`, `` ` ``, `~`, `@`, `#'`) means evaluating it would not run
+ * the base form. `#_` markers and `^meta` are fine — evaluation still runs
+ * the base — but the range starts after the last discard marker (and any
+ * meta a marker discards along with), since a sent `#_` would discard the
+ * very form being evaluated.
+ */
+function evaluableStart(text: string, form: ReadForm): number | null {
   let p = form.start;
+  let start = form.start;
   while (p < form.baseStart) {
     const c = text[p];
     if (c === "#" && text[p + 1] === "_") {
       p = skipTrivia(text, p + 2, form.baseStart);
+      start = p;
     } else if (c === "^") {
       const meta = readForm(text, p + 1, form.baseStart);
       if (meta.kind !== "form") {
-        return false;
+        return null;
       }
       p = skipTrivia(text, meta.form.end, form.baseStart);
     } else {
-      return false;
+      return null;
     }
   }
-  return true;
+  return start;
 }
 
 /** A resolved `deftest` for "Run Test at Cursor". */
@@ -394,9 +420,12 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
   if (
     target === null ||
     target.bracketOffset === null ||
-    text[target.bracketOffset] !== "(" ||
-    !definesWhenEvaluated(text, target)
+    text[target.bracketOffset] !== "("
   ) {
+    return null;
+  }
+  const rangeStart = evaluableStart(text, target);
+  if (rangeStart === null) {
     return null;
   }
   const head = readLiveChild(text, target.bracketOffset + 1, target.closerOffset!);
@@ -412,7 +441,7 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
     return null;
   }
   return {
-    range: stripped(target),
+    range: { start: rangeStart, end: target.end },
     name: text.slice(name.form.baseStart, name.form.end),
   };
 }

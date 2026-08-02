@@ -344,6 +344,27 @@ suite("testAtCursor", () => {
     });
   });
 
+  test("nested #_#_ markers discard two children", () => {
+    assert.deepStrictEqual(
+      found("(deftest #_#_old also-old actual (is |true))"),
+      {
+        name: "actual",
+        text: "(deftest #_#_old also-old actual (is true))",
+      },
+    );
+  });
+
+  test("every leading discard marker is stripped from the range", () => {
+    assert.deepStrictEqual(found("#_#_(deftest foo (is |true)) (bar)"), {
+      name: "foo",
+      text: "(deftest foo (is true))",
+    });
+    assert.deepStrictEqual(found("^:a #_(deftest foo (is |true))"), {
+      name: "foo",
+      text: "(deftest foo (is true))",
+    });
+  });
+
   test("metadata on the deftest list itself is allowed", () => {
     assert.deepStrictEqual(found("^:focused (deftest foo (is |true))"), {
       name: "foo",
