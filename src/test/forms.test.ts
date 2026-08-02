@@ -333,6 +333,24 @@ suite("testAtCursor", () => {
     assert.strictEqual(found("(deftest [not-a-name] (is |true))"), null);
   });
 
+  test("discarded children are skipped when locating head and name", () => {
+    assert.deepStrictEqual(found("(deftest #_old actual (is |true))"), {
+      name: "actual",
+      text: "(deftest #_old actual (is true))",
+    });
+    assert.deepStrictEqual(found("(#_wat deftest foo (is |true))"), {
+      name: "foo",
+      text: "(#_wat deftest foo (is true))",
+    });
+  });
+
+  test("metadata on the deftest list itself is allowed", () => {
+    assert.deepStrictEqual(found("^:focused (deftest foo (is |true))"), {
+      name: "foo",
+      text: "^:focused (deftest foo (is true))",
+    });
+  });
+
   test("discarded deftest resolves with the marker stripped", () => {
     assert.deepStrictEqual(found("#_(deftest foo (is |true))"), {
       name: "foo",

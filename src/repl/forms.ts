@@ -300,6 +300,46 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
   return resolveIn(text, 0, text.length, null, clamped);
 }
 
+/**
+ * Reads the next child form that is not wholly discarded: a child whose
+ * leading `#_` marker means Clojure drops it, like `#_old` in
+ * `(deftest #_old actual …)`, is skipped rather than returned.
+ */
+function readLiveChild(text: string, pos: number, limit: number): ReadResult {
+  for (;;) {
+    const result = readForm(text, pos, limit);
+    if (result.kind !== "form" || result.form.innerStart === result.form.start) {
+      return result;
+    }
+    pos = result.form.end;
+  }
+}
+
+/**
+ * True when a form's reader prefixes are only `#_` discard markers and
+ * `^meta` annotations — the prefixes evaluation still runs the form under,
+ * so a prefixed `deftest` would define its var. Quote-like prefixes (`'`,
+ * `` ` ``, `~`, `@`, `#'`) suppress evaluation and fail the check.
+ */
+function definesWhenEvaluated(text: string, form: ReadForm): boolean {
+  let p = form.start;
+  while (p < form.baseStart) {
+    const c = text[p];
+    if (c === "#" && text[p + 1] === "_") {
+      p = skipTrivia(text, p + 2, form.baseStart);
+    } else if (c === "^") {
+      const meta = readForm(text, p + 1, form.baseStart);
+      if (meta.kind !== "form") {
+        return false;
+      }
+      p = skipTrivia(text, meta.form.end, form.baseStart);
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** A resolved `deftest` for "Run Test at Cursor". */
 export interface TestAtCursor {
   /** Range of the whole deftest form (leading `#_` markers stripped). */
@@ -315,11 +355,11 @@ export interface TestAtCursor {
  *
  * The resolved form must be a `(deftest …)` list, head bare or qualified
  * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
- * range strips them like `formAtCursor` does — but any other reader prefix
- * (`'`, `` ` ``, `^meta`, `#'`) means the form would not define a test var,
- * so it does not resolve. Null when the cursor's form is not a deftest, the
- * name is missing, or the code is unbalanced — never a silent fallback to an
- * earlier deftest.
+ * range strips them like `formAtCursor` does — and so is `^meta` on the list,
+ * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
+ * define a test var, so it does not resolve. Null when the cursor's form is
+ * not a deftest, the name is missing, or the code is unbalanced — never a
+ * silent fallback to an earlier deftest.
  */
 export function testAtCursor(text: string, offset: number): TestAtCursor | null {
   const clamped = Math.max(0, Math.min(offset, text.length));
@@ -353,13 +393,13 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
 
   if (
     target === null ||
-    target.baseStart !== target.innerStart || // prefix other than `#_`
     target.bracketOffset === null ||
-    text[target.bracketOffset] !== "("
+    text[target.bracketOffset] !== "(" ||
+    !definesWhenEvaluated(text, target)
   ) {
     return null;
   }
-  const head = readForm(text, target.bracketOffset + 1, target.closerOffset!);
+  const head = readLiveChild(text, target.bracketOffset + 1, target.closerOffset!);
   if (head.kind !== "form" || head.form.bracketOffset !== null) {
     return null;
   }
@@ -367,7 +407,7 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
   if (headToken !== "deftest" && !headToken.endsWith("/deftest")) {
     return null;
   }
-  const name = readForm(text, head.form.end, target.closerOffset!);
+  const name = readLiveChild(text, head.form.end, target.closerOffset!);
   if (name.kind !== "form" || name.form.bracketOffset !== null) {
     return null;
   }
