@@ -300,41 +300,61 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
   return resolveIn(text, 0, text.length, null, clamped);
 }
 
-/** The number of consecutive `#_` markers at a form's start. */
-function leadingDiscardMarkers(text: string, form: ReadForm): number {
-  let count = 0;
-  let p = form.start;
-  while (p < form.baseStart && text[p] === "#" && text[p + 1] === "_") {
-    count++;
-    p = skipTrivia(text, p + 2, form.baseStart);
+/**
+ * The number of `#_` markers in a form's reader-prefix run. `readForm`
+ * records the first one via `innerStart`, wherever it sits in the run
+ * (`^:m #_old` included); the rest are counted from there, skipping any
+ * interleaved `^meta`.
+ */
+function discardMarkers(text: string, form: ReadForm): number {
+  if (form.innerStart === form.start) {
+    return 0;
+  }
+  let count = 1;
+  let p = form.innerStart;
+  while (p < form.baseStart) {
+    const c = text[p];
+    if (c === "#" && text[p + 1] === "_") {
+      count++;
+      p = skipTrivia(text, p + 2, form.baseStart);
+    } else if (c === "^") {
+      const meta = readForm(text, p + 1, form.baseStart);
+      if (meta.kind !== "form") {
+        break;
+      }
+      p = skipTrivia(text, meta.form.end, form.baseStart);
+    } else {
+      break; // a quote-like prefix between markers: degenerate, stop counting
+    }
   }
   return count;
 }
 
 /**
- * Reads the next child form that is not discarded. A child with n leading
- * `#_` markers discards its own base plus the n-1 live forms after it —
+ * Reads the next child form that is not discarded. A child with n `#_`
+ * markers discards its own base plus the next n-1 live forms —
  * `(deftest #_#_old also-old actual …)` defines `actual` — so all of them
- * are skipped rather than returned.
+ * are skipped. Iterative, so arbitrarily many discarded siblings cannot
+ * overflow the stack.
  */
 function readLiveChild(text: string, pos: number, limit: number): ReadResult {
-  const result = readForm(text, pos, limit);
-  if (result.kind !== "form") {
-    return result;
-  }
-  const markers = leadingDiscardMarkers(text, result.form);
-  if (markers === 0) {
-    return result;
-  }
-  let p = result.form.end; // the form's own base is the first discard
-  for (let extra = markers - 1; extra > 0; extra--) {
-    const dropped = readLiveChild(text, p, limit);
-    if (dropped.kind !== "form") {
-      return dropped;
+  let pending = 0; // live forms still owed to earlier discard markers
+  for (;;) {
+    const result = readForm(text, pos, limit);
+    if (result.kind !== "form") {
+      return result;
     }
-    p = dropped.form.end;
+    const markers = discardMarkers(text, result.form);
+    if (markers === 0) {
+      if (pending === 0) {
+        return result;
+      }
+      pending--; // consumed by an outstanding discard
+    } else {
+      pending += markers - 1; // the form's own base is the first discard
+    }
+    pos = result.form.end;
   }
-  return readLiveChild(text, p, limit);
 }
 
 /**

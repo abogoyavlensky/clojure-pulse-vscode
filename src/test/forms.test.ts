@@ -344,6 +344,19 @@ suite("testAtCursor", () => {
     });
   });
 
+  test("metadata before a discard marker still skips the child", () => {
+    assert.deepStrictEqual(found("(deftest ^:m #_old actual (is |true))"), {
+      name: "actual",
+      text: "(deftest ^:m #_old actual (is true))",
+    });
+  });
+
+  test("thousands of discarded children do not overflow the stack", () => {
+    const source = "(deftest " + "#_x ".repeat(10000) + "my-test (is |true))";
+    const { text, offset } = at(source);
+    assert.strictEqual(testAtCursor(text, offset)?.name, "my-test");
+  });
+
   test("nested #_#_ markers discard two children", () => {
     assert.deepStrictEqual(
       found("(deftest #_#_old also-old actual (is |true))"),
