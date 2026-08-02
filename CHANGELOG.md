@@ -4,6 +4,10 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Run Test at Cursor**: a command that runs the top-level `deftest` under
+  (or right after) the cursor in the active REPL. It re-evaluates the test
+  first so the buffer's current version runs, shows the clojure.test summary
+  inline on the form, and opens the REPL's output channel when anything fails.
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`
