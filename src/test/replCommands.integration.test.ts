@@ -274,8 +274,10 @@ suite("REPL commands", () => {
       // in-ns eval is what puts the definition in the file's namespace there.
       const evals = server.received.filter((m) => m.op === "eval");
       assert.strictEqual(evals.length, 4, "expected probe + in-ns + define + run");
-      assert.ok(String(evals[0].code).includes("(find-ns 'my.app-test)"));
+      assert.ok(String(evals[0].code).includes("find-ns 'my.app-test"));
       assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
+      // The ns param keeps the JVM session's own *ns* binding untouched.
+      assert.strictEqual(evals[1].ns, "my.app-test");
       assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[2].ns, "my.app-test");
       assert.ok(String(evals[3].code).includes("run-test-var"));

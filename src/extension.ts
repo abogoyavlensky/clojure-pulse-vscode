@@ -837,7 +837,19 @@ async function runTestAtCursor(
       // sends it nor honors the eval `ns` param. A find-ns probe detects an
       // unloaded namespace on both runtimes; loading the buffer is what the
       // old error hint told the user to do by hand.
-      const probe = await session.eval(`(some? (find-ns '${nsName}))`);
+      // Qualified, so a session ns that shadows or excludes core names
+      // cannot break the probe.
+      const probe = await session.eval(
+        `(clojure.core/some? (clojure.core/find-ns '${nsName}))`,
+      );
+      if (probe.err !== undefined) {
+        // An unreadable probe means nothing below can be trusted to target
+        // the right namespace; surface it instead of guessing.
+        if (id) {
+          inlineResults.resolve(id, probe);
+        }
+        return;
+      }
       if (probe.value === "false") {
         const doc = editor.document;
         const onDisk = doc.uri.scheme === "file";
@@ -853,11 +865,12 @@ async function runTestAtCursor(
           return;
         }
       }
-      // On let-go the current namespace is process-global and the only ns
-      // targeting there is; on the JVM (where the evals below carry an
-      // explicit ns param) this is a harmless no-op.
-      const switched = await session.eval(`(in-ns '${nsName})`);
-      if (switched.err !== undefined) {
+      // On let-go the current namespace is process-global and this switch is
+      // the only ns targeting there is. The ns param matters on the JVM: it
+      // scopes the eval to the (now known to exist) namespace so the
+      // session's own *ns* binding is left untouched.
+      const switched = await session.eval(`(in-ns '${nsName})`, { ns: nsName });
+      if (switched.err !== undefined || switched.namespaceNotFound) {
         if (id) {
           inlineResults.resolve(id, switched);
         }
