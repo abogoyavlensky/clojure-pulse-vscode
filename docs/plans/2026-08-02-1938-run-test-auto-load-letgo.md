@@ -156,6 +156,7 @@ File `run-test-var.md` in `/Users/andrew/Projects/lgx/docs/issues/` (separate gi
 
 - [x] **Step 4: Commit**
   `git commit -m "Document auto-load and let-go support for Run Test at Cursor"`
+  > Deviation: codex review asked for the let-go fixture limitation (accepted in the design but undisclosed to users) to appear in README/CHANGELOG; fixup `4b2a30b`.
 
 ## Completion Summary
 
