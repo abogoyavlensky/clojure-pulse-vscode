@@ -301,6 +301,181 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
 }
 
 /**
+ * The number of `#_` markers in a form's reader-prefix run. `readForm`
+ * records the first one via `innerStart`, wherever it sits in the run
+ * (`^:m #_old` included); the rest are counted from there, skipping any
+ * interleaved `^meta`.
+ */
+function discardMarkers(text: string, form: ReadForm): number {
+  if (form.innerStart === form.start) {
+    return 0;
+  }
+  let count = 1;
+  let p = form.innerStart;
+  while (p < form.baseStart) {
+    const c = text[p];
+    if (c === "#" && text[p + 1] === "_") {
+      count++;
+      p = skipTrivia(text, p + 2, form.baseStart);
+    } else if (c === "^") {
+      const meta = readForm(text, p + 1, form.baseStart);
+      if (meta.kind !== "form") {
+        break;
+      }
+      p = skipTrivia(text, meta.form.end, form.baseStart);
+    } else {
+      break; // a quote-like prefix between markers: degenerate, stop counting
+    }
+  }
+  return count;
+}
+
+/**
+ * Reads the next child form that is not discarded. A child with n `#_`
+ * markers discards its own base plus the next n-1 live forms —
+ * `(deftest #_#_old also-old actual …)` defines `actual` — so all of them
+ * are skipped. Iterative, so arbitrarily many discarded siblings cannot
+ * overflow the stack.
+ */
+function readLiveChild(text: string, pos: number, limit: number): ReadResult {
+  let pending = 0; // live forms still owed to earlier discard markers
+  for (;;) {
+    const result = readForm(text, pos, limit);
+    if (result.kind !== "form") {
+      return result;
+    }
+    const markers = discardMarkers(text, result.form);
+    if (markers === 0) {
+      if (pending === 0) {
+        return result;
+      }
+      pending--; // consumed by an outstanding discard
+    } else {
+      pending += markers - 1; // the form's own base is the first discard
+    }
+    pos = result.form.end;
+  }
+}
+
+/**
+ * Where an evaluable range for the form starts, or null when a quote-like
+ * prefix (`'`, `` ` ``, `~`, `@`, `#'`) means evaluating it would not run
+ * the base form. `#_` markers and `^meta` are fine — evaluation still runs
+ * the base — but the range starts after the last discard marker (and any
+ * meta a marker discards along with), since a sent `#_` would discard the
+ * very form being evaluated.
+ */
+function evaluableStart(text: string, form: ReadForm): number | null {
+  let p = form.start;
+  let start = form.start;
+  while (p < form.baseStart) {
+    const c = text[p];
+    if (c === "#" && text[p + 1] === "_") {
+      p = skipTrivia(text, p + 2, form.baseStart);
+      start = p;
+    } else if (c === "^") {
+      const meta = readForm(text, p + 1, form.baseStart);
+      if (meta.kind !== "form") {
+        return null;
+      }
+      p = skipTrivia(text, meta.form.end, form.baseStart);
+    } else {
+      return null;
+    }
+  }
+  return start;
+}
+
+/** A resolved `deftest` for "Run Test at Cursor". */
+export interface TestAtCursor {
+  /** Range of the whole deftest form (leading `#_` markers stripped). */
+  range: FormRange;
+  /** The bare test name, e.g. `"my-test"` — no namespace, no metadata. */
+  name: string;
+}
+
+/**
+ * The top-level `deftest` form the cursor is in — or, when the cursor sits in
+ * top-level whitespace, the one ending right before it (matching
+ * `formAtCursor`'s rule 6, so "right after the closing paren" works too).
+ *
+ * The resolved form must be a `(deftest …)` list, head bare or qualified
+ * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
+ * range strips them like `formAtCursor` does — and so is `^meta` on the list,
+ * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
+ * define a test var, so it does not resolve. Null when the cursor's form is
+ * not a deftest, the name is missing, or the code is unbalanced — never a
+ * silent fallback to an earlier deftest.
+ */
+export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+  const clamped = Math.max(0, Math.min(offset, text.length));
+  let prev: ReadForm | null = null;
+  let target: ReadForm | null = null;
+  let p = 0;
+  for (;;) {
+    // As in resolveIn: decide gaps from the next form's start before parsing
+    // it, so unbalanced code after the cursor cannot block resolution.
+    const nextStart = skipTrivia(text, p, text.length);
+    if (nextStart >= text.length || nextStart > clamped) {
+      target = prev;
+      break;
+    }
+    const result = readForm(text, nextStart, text.length);
+    if (result.kind === "closer") {
+      p = result.offset + 1; // stray top-level closer: skip
+      continue;
+    }
+    if (result.kind !== "form") {
+      return null; // the cursor's own form never completes
+    }
+    if (result.form.end < clamped) {
+      prev = result.form;
+      p = result.form.end;
+      continue;
+    }
+    target = result.form; // start <= offset <= end: the containing form
+    break;
+  }
+
+  if (
+    target === null ||
+    target.bracketOffset === null ||
+    text[target.bracketOffset] !== "("
+  ) {
+    return null;
+  }
+  const rangeStart = evaluableStart(text, target);
+  if (rangeStart === null) {
+    return null;
+  }
+  const head = readLiveChild(text, target.bracketOffset + 1, target.closerOffset!);
+  if (head.kind !== "form" || head.form.bracketOffset !== null) {
+    return null;
+  }
+  const headToken = text.slice(head.form.baseStart, head.form.end);
+  if (headToken !== "deftest" && !headToken.endsWith("/deftest")) {
+    return null;
+  }
+  const name = readLiveChild(text, head.form.end, target.closerOffset!);
+  if (name.kind !== "form" || name.form.bracketOffset !== null) {
+    return null;
+  }
+  return {
+    range: { start: rangeStart, end: target.end },
+    name: text.slice(name.form.baseStart, name.form.end),
+  };
+}
+
+/**
+ * True when a test-run result value — the summary map from
+ * `clojure.test/run-test-var` or a deref'd `*report-counters*` — reports any
+ * failures or errors. Drives revealing the REPL output channel.
+ */
+export function testRunFailed(value: string | undefined): boolean {
+  return value !== undefined && /:(?:fail|error)\s+[1-9]/.test(value);
+}
+
+/**
  * The name in the nearest top-level `(ns …)` form that ends before `offset`
  * (pass the start of the form being evaluated), or undefined. Evaluating the
  * ns form itself therefore gets no ns param — it must run in the default

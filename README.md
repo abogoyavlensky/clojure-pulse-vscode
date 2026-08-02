@@ -222,6 +222,25 @@ rather than land somewhere you did not intend.
   nREPL's `load-file`, so the file's own `ns` form takes effect and stack
   traces carry real file/line locations.
 - **Evaluate Selection** — evaluate exactly the selected code.
+- **Run Test at Cursor** — with the cursor inside a top-level `deftest` (or
+  right after its closing paren), re-evaluates the test in the file's namespace
+  so the buffer's current version is what runs, then executes it via
+  `clojure.test`. If the namespace isn't loaded yet, the file is loaded
+  automatically first — no manual **Evaluate File** needed. The summary map
+  (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
+  report streams to the REPL's output channel without moving focus there
+  (when inline results are off, the channel is shown up front, as for every
+  eval command). The gutter marks the deftest with a green check circle on
+  pass or a red cross circle on fail — hover the deftest's first line for the
+  failure report — and the status bar shows the verdict at a glance: the test
+  name in green when it passed, on a red background with fail/error counts
+  when it didn't; click it to open the REPL output. Marks and the status item
+  always show the result of the **last test command** only: a new run wipes
+  the previous report, and an edit to a marked deftest removes its (now
+  stale) gutter verdict. Works against JVM Clojure (1.11+) and
+  let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
+  single-test run there calls the test function directly, skipping
+  `use-fixtures` fixtures.
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the
@@ -280,6 +299,9 @@ Run these from the Command Palette:
 - **Clojure Pulse: Evaluate File** — load the whole current file into the REPL.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
   active REPL.
+- **Clojure Pulse: Run Test at Cursor** — re-evaluate and run the `deftest`
+  under the cursor in the active REPL, loading the file's namespace first if
+  needed.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.

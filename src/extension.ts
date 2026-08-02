@@ -26,7 +26,17 @@ import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
 import { createReplStatusBar, ReplStatusState } from "./repl/replStatusBar";
 import { InlineResultsManager } from "./repl/inlineResults";
-import { formAtCursor, nsBefore } from "./repl/forms";
+import {
+  buildStatusHover,
+  testStatusOf,
+  TestStatusManager,
+} from "./repl/testStatus";
+import {
+  createTestStatusBar,
+  testRunCounts,
+  TestStatusBar,
+} from "./repl/testStatusBar";
+import { formAtCursor, nsBefore, testAtCursor } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -47,6 +57,7 @@ export interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
   replForm: ReplFormPanel;
+  testStatus: TestStatusManager;
 }
 
 export async function activate(
@@ -230,6 +241,11 @@ async function restart(): Promise<void> {
  */
 function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   const inlineResults = new InlineResultsManager();
+  const testStatus = new TestStatusManager({
+    passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
+    failIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-fail.svg"),
+  });
+  const testStatusBar = createTestStatusBar();
   const registry = new ReplRegistry({
     // A channel per REPL, with the `clojure` language id: syntax highlighting,
     // search, and cursor navigation over the transcript come for free.
@@ -285,6 +301,8 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     replStatus,
     inlineResults,
+    testStatus,
+    testStatusBar,
     // So a form left open closes with the extension.
     replForm,
     vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
@@ -338,6 +356,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
       evalFile(registry),
     ),
+    vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
+      runTestAtCursor(registry, inlineResults, testStatus, testStatusBar),
+    ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
     ),
@@ -349,7 +370,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       replMenu(registry, replForm),
     ),
   );
-  return { repls: registry, inlineResults, replForm };
+  return { repls: registry, inlineResults, replForm, testStatus };
 }
 
 /** The workspace root's file names, which the prefilled command follows. */
@@ -788,6 +809,153 @@ async function evalCurrentForm(
     code,
     opts: { ...sourceParams(editor, range.start), ns: nsName },
   });
+}
+
+/**
+ * Runs the top-level `deftest` at (or right after) the cursor: re-evaluates
+ * the form in its namespace so the buffer's current version is what runs,
+ * then executes it via clojure.test. Two evals share one inline decoration —
+ * pending through both, resolved with the runner's summary map. The detailed
+ * report streams to the REPL's output channel without stealing focus; the
+ * gutter mark's hover and the status bar carry the verdict.
+ */
+async function runTestAtCursor(
+  registry: ReplRegistry,
+  inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const text = editor.document.getText();
+  const found = testAtCursor(text, editor.document.offsetAt(editor.selection.active));
+  if (!found) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no deftest found at cursor",
+      3000,
+    );
+    return;
+  }
+  const range = new vscode.Range(
+    editor.document.positionAt(found.range.start),
+    editor.document.positionAt(found.range.end),
+  );
+  const nsName = nsBefore(text, found.range.start);
+  if (!inlineEnabled()) {
+    session.showOutput();
+  }
+  const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
+  // This command supersedes the previous test report: wipe the gutter and
+  // track the deftest about to run. Paths below that abandon the run simply
+  // never resolve the pending mark — but must clear the status bar's
+  // spinner, which otherwise persists.
+  const runId = testStatus.beginRun(editor, range);
+  const barToken = statusBar.running(found.name);
+  try {
+    if (nsName !== undefined) {
+      // The namespace-not-found status is JVM-only — let-go's nREPL neither
+      // sends it nor honors the eval `ns` param. A find-ns probe detects an
+      // unloaded namespace on both runtimes; loading the buffer is what the
+      // old error hint told the user to do by hand.
+      // Qualified, so a session ns that shadows or excludes core names
+      // cannot break the probe.
+      const probe = await session.eval(
+        `(clojure.core/some? (clojure.core/find-ns '${nsName}))`,
+      );
+      if (probe.err !== undefined) {
+        // An unreadable probe means nothing below can be trusted to target
+        // the right namespace; surface it instead of guessing.
+        if (id) {
+          inlineResults.resolve(id, probe);
+        }
+        statusBar.clear(barToken);
+        return;
+      }
+      if (probe.value === "false") {
+        const doc = editor.document;
+        const onDisk = doc.uri.scheme === "file";
+        const loaded = await session.loadFile(doc.getText(), {
+          filePath: onDisk ? doc.uri.fsPath : undefined,
+          fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
+        });
+        if (loaded.err !== undefined) {
+          // The file itself does not compile; that error wins.
+          if (id) {
+            inlineResults.resolve(id, loaded);
+          }
+          statusBar.clear(barToken);
+          return;
+        }
+      }
+      // On let-go the current namespace is process-global and this switch is
+      // the only ns targeting there is. The ns param matters on the JVM: it
+      // scopes the eval to the (now known to exist) namespace so the
+      // session's own *ns* binding is left untouched.
+      const switched = await session.eval(`(in-ns '${nsName})`, { ns: nsName });
+      if (switched.err !== undefined || switched.namespaceNotFound) {
+        if (id) {
+          inlineResults.resolve(id, switched);
+        }
+        statusBar.clear(barToken);
+        return;
+      }
+    }
+    const defined = await session.eval(editor.document.getText(range), {
+      ...sourceParams(editor, range.start),
+      ns: nsName,
+    });
+    if (defined.err !== undefined || defined.namespaceNotFound) {
+      // A test that failed to compile (or a namespace the server still
+      // rejects) must not run; the decoration shows why.
+      if (id) {
+        inlineResults.resolve(id, defined);
+      }
+      statusBar.clear(barToken);
+      return;
+    }
+    // `run-test-var` (Clojure 1.11+) prints the report and returns the
+    // summary map. The fallback serves let-go, whose compiler resolves both
+    // branches eagerly — so it may only reference vars that exist there too:
+    // `*report-counters*` is a set!-able map on let-go with the same keys as
+    // clojure.test's summary, and its test vars hold plain functions. A test
+    // that throws becomes `:error 1` (let-go accepts the JVM catch syntax).
+    // On a pre-1.11 JVM (unsupported) the fallback's set! throws a clear
+    // error.
+    const runner =
+      `(let [v #'${found.name}] ` +
+      `(if-let [f (resolve 'clojure.test/run-test-var)] (f v) ` +
+      `(do (set! clojure.test/*report-counters* {:test 1 :pass 0 :fail 0 :error 0}) ` +
+      `(try ((deref v)) (catch Exception e ` +
+      `(set! clojure.test/*report-counters* (update clojure.test/*report-counters* :error inc)) ` +
+      `(println "ERROR in test:" e))) ` +
+      `clojure.test/*report-counters*)))`;
+    const outcome = await session.eval(runner, { ns: nsName });
+    if (id) {
+      inlineResults.resolve(id, outcome);
+    }
+    const status = testStatusOf(outcome);
+    testStatus.report(runId, status, buildStatusHover(status, outcome));
+    const counts = testRunCounts(outcome.value);
+    statusBar.finish(barToken, {
+      phase: "done",
+      name: found.name,
+      status,
+      fail: counts?.fail ?? 0,
+      error: counts?.error ?? 0,
+    });
+  } catch (err: unknown) {
+    if (id) {
+      inlineResults.fail(id, err instanceof Error ? err.message : String(err));
+    }
+    statusBar.clear(barToken);
+    reportEvalError(err);
+  }
 }
 
 async function evalFile(registry: ReplRegistry): Promise<void> {

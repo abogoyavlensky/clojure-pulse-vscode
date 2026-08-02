@@ -269,6 +269,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.runTestAtCursor",
+        "title": "Run Test at Cursor",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.clearInlineResults",
         "title": "Clear Inline Results",
         "category": "Clojure Pulse"
