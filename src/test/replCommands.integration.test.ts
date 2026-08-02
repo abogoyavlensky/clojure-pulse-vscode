@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { InlineResultsManager } from "../repl/inlineResults";
 import { ReplRegistry } from "../repl/replRegistry";
 import { ReplSessionLike } from "../repl/replSession";
+import { TestStatusManager } from "../repl/testStatus";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
@@ -12,6 +13,7 @@ const REPL_NAME = "commands";
 interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
+  testStatus: TestStatusManager;
 }
 
 async function waitUntil(
@@ -426,6 +428,101 @@ suite("REPL commands", () => {
         !evals.some((m) => String(m.code).includes("run-test-var")),
         "the failed define must stop the run",
       );
+      // The pending gutter mark never resolves — no verdict is painted.
+      assert.deepStrictEqual(api.testStatus.marks(), []);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor paints a green gutter mark on a passing run", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 1);
+      assert.strictEqual(marks[0].status, "pass");
+      assert.strictEqual(marks[0].line, 1);
+      assert.strictEqual(marks[0].uri, doc.uri.toString());
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor paints a red mark with the failure report on hover", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("run-test-var")) {
+          reply({ session: msg.session, out: "FAIL in (my-test)\nexpected: (= 1 2)\n" });
+          reply({
+            session: msg.session,
+            value: "{:test 1, :pass 0, :fail 1, :error 0, :type :summary}",
+          });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is (= 1 2)))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 1);
+      assert.strictEqual(marks[0].status, "fail");
+      assert.ok(marks[0].hover.includes("FAIL in (my-test)"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("a new test command wipes the previous run's marks", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const first = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns first-ns)\n(deftest first-test (is true))",
+      });
+      let editor = await vscode.window.showTextDocument(first);
+      editor.selection = new vscode.Selection(1, 12, 1, 12);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.testStatus.marks().length, 1);
+
+      const second = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns second-ns)\n(deftest second-test (is true))",
+      });
+      editor = await vscode.window.showTextDocument(second);
+      editor.selection = new vscode.Selection(1, 12, 1, 12);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 1, "only the last command's report remains");
+      assert.strictEqual(marks[0].uri, second.uri.toString());
     } finally {
       await server?.close();
     }

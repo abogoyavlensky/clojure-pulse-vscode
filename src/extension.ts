@@ -26,6 +26,11 @@ import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
 import { createReplStatusBar, ReplStatusState } from "./repl/replStatusBar";
 import { InlineResultsManager } from "./repl/inlineResults";
+import {
+  buildStatusHover,
+  testStatusOf,
+  TestStatusManager,
+} from "./repl/testStatus";
 import { formAtCursor, nsBefore, testAtCursor, testRunFailed } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
@@ -47,6 +52,7 @@ export interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
   replForm: ReplFormPanel;
+  testStatus: TestStatusManager;
 }
 
 export async function activate(
@@ -230,6 +236,10 @@ async function restart(): Promise<void> {
  */
 function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   const inlineResults = new InlineResultsManager();
+  const testStatus = new TestStatusManager({
+    passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
+    failIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-fail.svg"),
+  });
   const registry = new ReplRegistry({
     // A channel per REPL, with the `clojure` language id: syntax highlighting,
     // search, and cursor navigation over the transcript come for free.
@@ -285,6 +295,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   context.subscriptions.push(
     replStatus,
     inlineResults,
+    testStatus,
     // So a form left open closes with the extension.
     replForm,
     vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
@@ -339,7 +350,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       evalFile(registry),
     ),
     vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
-      runTestAtCursor(registry, inlineResults),
+      runTestAtCursor(registry, inlineResults, testStatus),
     ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
@@ -352,7 +363,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       replMenu(registry, replForm),
     ),
   );
-  return { repls: registry, inlineResults, replForm };
+  return { repls: registry, inlineResults, replForm, testStatus };
 }
 
 /** The workspace root's file names, which the prefilled command follows. */
@@ -804,6 +815,7 @@ async function evalCurrentForm(
 async function runTestAtCursor(
   registry: ReplRegistry,
   inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
 ): Promise<void> {
   const session = activeSession(registry);
   if (!session) {
@@ -831,6 +843,10 @@ async function runTestAtCursor(
     session.showOutput();
   }
   const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
+  // This command supersedes the previous test report: wipe the gutter and
+  // track the deftest about to run. Paths below that abandon the run simply
+  // never resolve the pending mark.
+  const runId = testStatus.beginRun(editor, range);
   try {
     if (nsName !== undefined) {
       // The namespace-not-found status is JVM-only — let-go's nREPL neither
@@ -909,6 +925,8 @@ async function runTestAtCursor(
     if (id) {
       inlineResults.resolve(id, outcome);
     }
+    const status = testStatusOf(outcome);
+    testStatus.report(runId, status, buildStatusHover(status, outcome));
     if (testRunFailed(outcome.value)) {
       session.showOutput();
     }
