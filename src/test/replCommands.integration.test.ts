@@ -275,6 +275,10 @@ suite("REPL commands", () => {
       assert.strictEqual(evals[0].ns, "my.app-test");
       assert.ok(String(evals[1].code).includes("run-test-var"));
       assert.ok(String(evals[1].code).includes("#'my-test"));
+      // The fallback must reference only vars that exist on let-go too, whose
+      // compiler resolves both branches eagerly.
+      assert.ok(String(evals[1].code).includes("clojure.test/*report-counters*"));
+      assert.ok(!String(evals[1].code).includes("*initial-report-counters*"));
       assert.strictEqual(evals[1].ns, "my.app-test");
     } finally {
       await server?.close();

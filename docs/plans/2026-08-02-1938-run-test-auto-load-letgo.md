@@ -68,11 +68,12 @@ File `run-test-var.md` in `/Users/andrew/Projects/lgx/docs/issues/` (separate gi
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Validate the new snippet on both real runtimes**
+- [x] **Step 1: Validate the new snippet on both real runtimes**
   In `$CLAUDE_JOB_DIR/tmp`, write scratch scripts that define a passing and a failing test and evaluate the exact new runner form:
-  - Clojure CLI: primary branch (as-is) and else branch (forced, by calling it directly) — expect summary/counters maps, `:fail 1` on the failing test.
+  - Clojure CLI: primary branch (as-is) — expect summary maps, `:fail 1` on the failing test. Forcing the else branch must throw `Can't change/establish root binding` — that error is the accepted pre-1.11 degradation, since modern JVMs never reach the branch.
   - let-go: run a `.lg` script through `/Users/andrew/Projects/let-go/lg` with `(:require [clojure.test :refer [deftest is]])` — expect the form to compile, PASS/FAIL lines printed, and the returned map to show `:fail 0` / `:fail 1`.
   If let-go rejects any part (e.g. `set!` from another ns), adjust the snippet here before touching the extension, and record the deviation.
+  > Deviation: the plan originally expected the forced JVM else branch to return counters; in reality `set!` throws there, which is the designed pre-1.11 behavior (codex's plan review flagged the same wording). Validated: let-go pass/fail counters correct, JVM primary branch correct, JVM forced else throws the expected clear error.
 
 - [ ] **Step 2: Update the integration test expectations**
   In the happy-path test, assert the runner eval contains `run-test-var`, `#'my-test`, and `clojure.test/*report-counters*`, and does **not** contain `*initial-report-counters*`.
