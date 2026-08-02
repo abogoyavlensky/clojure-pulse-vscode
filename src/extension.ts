@@ -31,6 +31,11 @@ import {
   testStatusOf,
   TestStatusManager,
 } from "./repl/testStatus";
+import {
+  createTestStatusBar,
+  testRunCounts,
+  TestStatusBar,
+} from "./repl/testStatusBar";
 import { formAtCursor, nsBefore, testAtCursor } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
@@ -240,6 +245,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
     failIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-fail.svg"),
   });
+  const testStatusBar = createTestStatusBar();
   const registry = new ReplRegistry({
     // A channel per REPL, with the `clojure` language id: syntax highlighting,
     // search, and cursor navigation over the transcript come for free.
@@ -296,6 +302,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     replStatus,
     inlineResults,
     testStatus,
+    testStatusBar,
     // So a form left open closes with the extension.
     replForm,
     vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
@@ -350,7 +357,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       evalFile(registry),
     ),
     vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
-      runTestAtCursor(registry, inlineResults, testStatus),
+      runTestAtCursor(registry, inlineResults, testStatus, testStatusBar),
     ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
@@ -816,6 +823,7 @@ async function runTestAtCursor(
   registry: ReplRegistry,
   inlineResults: InlineResultsManager,
   testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
 ): Promise<void> {
   const session = activeSession(registry);
   if (!session) {
@@ -845,8 +853,10 @@ async function runTestAtCursor(
   const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
   // This command supersedes the previous test report: wipe the gutter and
   // track the deftest about to run. Paths below that abandon the run simply
-  // never resolve the pending mark.
+  // never resolve the pending mark — but must clear the status bar's
+  // spinner, which otherwise persists.
   const runId = testStatus.beginRun(editor, range);
+  const barToken = statusBar.running(found.name);
   try {
     if (nsName !== undefined) {
       // The namespace-not-found status is JVM-only — let-go's nREPL neither
@@ -864,6 +874,7 @@ async function runTestAtCursor(
         if (id) {
           inlineResults.resolve(id, probe);
         }
+        statusBar.clear(barToken);
         return;
       }
       if (probe.value === "false") {
@@ -878,6 +889,7 @@ async function runTestAtCursor(
           if (id) {
             inlineResults.resolve(id, loaded);
           }
+          statusBar.clear(barToken);
           return;
         }
       }
@@ -890,6 +902,7 @@ async function runTestAtCursor(
         if (id) {
           inlineResults.resolve(id, switched);
         }
+        statusBar.clear(barToken);
         return;
       }
     }
@@ -903,6 +916,7 @@ async function runTestAtCursor(
       if (id) {
         inlineResults.resolve(id, defined);
       }
+      statusBar.clear(barToken);
       return;
     }
     // `run-test-var` (Clojure 1.11+) prints the report and returns the
@@ -927,10 +941,19 @@ async function runTestAtCursor(
     }
     const status = testStatusOf(outcome);
     testStatus.report(runId, status, buildStatusHover(status, outcome));
+    const counts = testRunCounts(outcome.value);
+    statusBar.finish(barToken, {
+      phase: "done",
+      name: found.name,
+      status,
+      fail: counts?.fail ?? 0,
+      error: counts?.error ?? 0,
+    });
   } catch (err: unknown) {
     if (id) {
       inlineResults.fail(id, err instanceof Error ? err.message : String(err));
     }
+    statusBar.clear(barToken);
     reportEvalError(err);
   }
 }
