@@ -26,7 +26,7 @@ import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
 import { createReplStatusBar, ReplStatusState } from "./repl/replStatusBar";
 import { InlineResultsManager } from "./repl/inlineResults";
-import { formAtCursor, nsBefore } from "./repl/forms";
+import { formAtCursor, nsBefore, testAtCursor, testRunFailed } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -337,6 +337,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     ),
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
       evalFile(registry),
+    ),
+    vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
+      runTestAtCursor(registry, inlineResults),
     ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
@@ -788,6 +791,80 @@ async function evalCurrentForm(
     code,
     opts: { ...sourceParams(editor, range.start), ns: nsName },
   });
+}
+
+/**
+ * Runs the top-level `deftest` at (or right after) the cursor: re-evaluates
+ * the form in its namespace so the buffer's current version is what runs,
+ * then executes it via clojure.test. Two evals share one inline decoration —
+ * pending through both, resolved with the runner's summary map. The detailed
+ * report streams to the REPL's output channel, which is revealed when the
+ * summary counts any failures or errors.
+ */
+async function runTestAtCursor(
+  registry: ReplRegistry,
+  inlineResults: InlineResultsManager,
+): Promise<void> {
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const text = editor.document.getText();
+  const found = testAtCursor(text, editor.document.offsetAt(editor.selection.active));
+  if (!found) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no deftest found at cursor",
+      3000,
+    );
+    return;
+  }
+  const range = new vscode.Range(
+    editor.document.positionAt(found.range.start),
+    editor.document.positionAt(found.range.end),
+  );
+  const nsName = nsBefore(text, found.range.start);
+  if (!inlineEnabled()) {
+    session.showOutput();
+  }
+  const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
+  try {
+    const defined = await session.eval(editor.document.getText(range), {
+      ...sourceParams(editor, range.start),
+      ns: nsName,
+    });
+    if (defined.err !== undefined || defined.namespaceNotFound) {
+      // A test that failed to compile (or a namespace that is not loaded)
+      // must not run; the decoration shows why.
+      if (id) {
+        inlineResults.resolve(id, defined);
+      }
+      return;
+    }
+    // `run-test-var` (Clojure 1.11+) prints the report and returns the
+    // summary map; the fallback rebinds the counters so older runtimes
+    // return the same shape instead of test-vars' nil.
+    const runner =
+      `(let [v #'${found.name}] ` +
+      `(if-let [f (resolve 'clojure.test/run-test-var)] (f v) ` +
+      `(binding [clojure.test/*report-counters* (ref clojure.test/*initial-report-counters*)] ` +
+      `(clojure.test/test-vars [v]) @clojure.test/*report-counters*)))`;
+    const outcome = await session.eval(runner, { ns: nsName });
+    if (id) {
+      inlineResults.resolve(id, outcome);
+    }
+    if (testRunFailed(outcome.value)) {
+      session.showOutput();
+    }
+  } catch (err: unknown) {
+    if (id) {
+      inlineResults.fail(id, err instanceof Error ? err.message : String(err));
+    }
+    reportEvalError(err);
+  }
 }
 
 async function evalFile(registry: ReplRegistry): Promise<void> {

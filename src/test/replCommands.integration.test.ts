@@ -97,6 +97,7 @@ suite("REPL commands", () => {
       "clojurePulse.replMenu",
       "clojurePulse.evalCurrentForm",
       "clojurePulse.evalFile",
+      "clojurePulse.runTestAtCursor",
       "clojurePulse.clearInlineResults",
       "clojurePulse.copyEvalResult",
     ]) {
@@ -243,6 +244,89 @@ suite("REPL commands", () => {
       const valueEntry = entries.find((e) => e.kind === "value");
       assert.strictEqual(inEntry?.text, "(+ 20 22)");
       assert.strictEqual(valueEntry?.text, "42");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor without a connection warns instead of throwing", async () => {
+    await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+  });
+
+  test("runTestAtCursor redefines the deftest then runs it in its namespace", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      // Cursor inside the deftest body.
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals.length, 2, "expected define + run evals");
+      assert.strictEqual(evals[0].code, "(deftest my-test\n  (is true))");
+      assert.strictEqual(evals[0].ns, "my.app-test");
+      assert.ok(String(evals[1].code).includes("run-test-var"));
+      assert.ok(String(evals[1].code).includes("#'my-test"));
+      assert.strictEqual(evals[1].ns, "my.app-test");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor outside a deftest sends nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(defn helper [] 1)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(1, 8, 1, 8);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      assert.ok(!server.received.some((m) => m.op === "eval"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor does not run the test when defining it fails", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval") {
+          reply({ session: msg.session, err: "boom" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals.length, 1, "the failed define must stop the run");
     } finally {
       await server?.close();
     }
