@@ -848,13 +848,18 @@ async function runTestAtCursor(
     // summary map. The fallback serves let-go, whose compiler resolves both
     // branches eagerly — so it may only reference vars that exist there too:
     // `*report-counters*` is a set!-able map on let-go with the same keys as
-    // clojure.test's summary, and its test vars hold plain functions. On a
-    // pre-1.11 JVM (unsupported) the fallback's set! throws a clear error.
+    // clojure.test's summary, and its test vars hold plain functions. A test
+    // that throws becomes `:error 1` (let-go accepts the JVM catch syntax).
+    // On a pre-1.11 JVM (unsupported) the fallback's set! throws a clear
+    // error.
     const runner =
       `(let [v #'${found.name}] ` +
       `(if-let [f (resolve 'clojure.test/run-test-var)] (f v) ` +
       `(do (set! clojure.test/*report-counters* {:test 1 :pass 0 :fail 0 :error 0}) ` +
-      `((deref v)) clojure.test/*report-counters*)))`;
+      `(try ((deref v)) (catch Exception e ` +
+      `(set! clojure.test/*report-counters* (update clojure.test/*report-counters* :error inc)) ` +
+      `(println "ERROR in test:" e))) ` +
+      `clojure.test/*report-counters*)))`;
     const outcome = await session.eval(runner, { ns: nsName });
     if (id) {
       inlineResults.resolve(id, outcome);
