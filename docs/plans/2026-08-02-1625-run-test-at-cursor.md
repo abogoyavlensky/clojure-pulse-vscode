@@ -1,5 +1,7 @@
 # Run Test at Cursor Implementation Plan
 
+> **Status: COMPLETED** (2026-08-02) — see the summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A "Run Test at Cursor" command that finds the top-level `deftest` at (or right after) the cursor, re-evaluates it in the active REPL, runs it via `clojure.test`, and shows the summary inline.
@@ -94,7 +96,7 @@ The two-evals-one-decoration flow means `runEval` is not reused as-is; write a s
 - Modify: `src/repl/forms.ts`
 - Test: `src/test/forms.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   New suite `testAtCursor` in `src/test/forms.test.ts`, reusing the `at()` helper. Cases:
   - cursor inside a deftest body → `{name: "my-test"}` and range = whole form text
   - cursor on the test name; cursor immediately after the closing paren
@@ -108,19 +110,21 @@ The two-evals-one-decoration flow means `runEval` is not reused as-is; write a s
   - `'(deftest foo ...)` (or any non-discard prefix) with cursor inside → null
   New suite `testRunFailed`: `"{:test 1, :pass 2, :fail 0, :error 0, :type :summary}"` → false; `:fail 1` → true; `:error 2` → true; `undefined` → false; `"nil"` → false; `:fail 10` → true; fallback-shaped map without `:type` (`"{:test 1, :pass 0, :fail 1, :error 0}"`) → true.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm run compile-tests && npm test`
   Expected: FAIL — new tests error (functions not exported yet).
 
-- [ ] **Step 3: Implement `testAtCursor` and `testRunFailed`**
+- [x] **Step 3: Implement `testAtCursor` and `testRunFailed`**
   In `src/repl/forms.ts`, per the Design section: top-level walk with `readForm` (pattern of `nsBefore`), containing-or-previous form selection, deftest head check, second-child name extraction, and the failure regex. Keep the file free of vscode imports.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm run compile-tests && npm test`
   Expected: PASS (all suites, including existing ones).
+  > Deviation: headless environment — the suite runs via `xvfb-run -a npm test` (no X display); 416 passing.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add deftest resolution at cursor to forms"`
+  > Deviation: three codex review rounds surfaced discard-marker semantics the plan missed; fixup commits `8412664`, `e1da139`, `620b389` added: skipping `#_`-discarded children when locating head/name (incl. nested `#_#_` and metadata-before-discard), accepting `^meta` on the deftest list itself, stripping every leading discard marker from the returned range, and an iterative (stack-safe) discard walk.
 
 ### Task 2: Command wiring and eval flow
 
@@ -128,26 +132,26 @@ The two-evals-one-decoration flow means `runEval` is not reused as-is; write a s
 - Modify: `src/extension.ts`, `package.json`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing integration tests**
+- [x] **Step 1: Write the failing integration tests**
   In the existing "REPL commands" suite (fake nREPL server + temp docs pattern used by the `evalCurrentForm` tests):
   - `runTestAtCursor` with cursor inside a deftest sends two evals in order: (1) the deftest source with `ns` set from the file's `ns` form, (2) code containing `run-test-var` and `#'my-test`, same `ns`.
   - cursor not in a deftest → no eval ops sent, command resolves.
   - no connection → warns instead of throwing (mirror the existing disconnected test).
   - deftest eval returning `err` → runner eval is not sent (fake server can respond with an error for the first eval).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm run compile-tests && npm test`
   Expected: FAIL — `clojurePulse.runTestAtCursor` not found.
 
-- [ ] **Step 3: Implement the command**
+- [x] **Step 3: Implement the command**
   - `package.json`: add the command contribution (title "Run Test at Cursor", category "Clojure Pulse").
   - `src/extension.ts`: implement `runTestAtCursor` per the Design flow (guard, resolve, one pending decoration, eval deftest, stop on `err`/`namespaceNotFound`, eval runner, resolve decoration, `showOutput()` when `testRunFailed(outcome.value)`); register it in `setupRepl`.
 
-- [ ] **Step 4: Run tests and lint**
+- [x] **Step 4: Run tests and lint**
   Run: `npm run pretest && npm test`
   Expected: PASS, no lint errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add Run Test at Cursor command"`
 
 ### Task 3: Docs
@@ -155,8 +159,39 @@ The two-evals-one-decoration flow means `runEval` is not reused as-is; write a s
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Document the command**
+- [x] **Step 1: Document the command**
   README: add "Run Test at Cursor" to the REPL commands section (works inside or right after a `deftest`; re-evaluates the test, inline summary, output channel opens on failure). CHANGELOG: entry under Unreleased.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Document Run Test at Cursor"`
+
+## Completion Summary
+
+**Implemented** on branch `run-deftest`, commits `d477b8c`..`eb4d67e`: the
+`clojurePulse.runTestAtCursor` command ("Run Test at Cursor"), backed by pure
+`testAtCursor`/`testRunFailed` helpers in `src/repl/forms.ts` and a two-eval
+flow in `src/extension.ts` (re-define the deftest in its namespace, then run
+it via `run-test-var` with a `*report-counters*` fallback). 10 tests were
+added beyond the plan's list (22 unit + 4 integration); full suite: 426
+passing.
+
+**Verification:** full suite green; both runner-snippet branches exercised on
+real Clojure 1.12 (passing test → `:fail 0` summary, failing test → `:fail 1`
+plus printed FAIL report, fallback branch returns the counters map instead of
+nil); integration tests drive the real command in a live extension host
+against the fake nREPL server.
+
+**Deviations (all recorded inline under their tasks):**
+- Tests run via `xvfb-run -a npm test` — the environment has no X display.
+- Codex reviews (3 rounds on Task 1) surfaced discard-marker semantics the
+  plan missed; fixups `8412664`, `e1da139`, `620b389` added: skipping
+  `#_`-discarded children when locating the head and name (including nested
+  `#_#_` and metadata-before-discard), accepting `^meta` on the deftest list,
+  stripping every leading discard marker from the returned range, and an
+  iterative stack-safe discard walk. Tasks 2 and 3 reviews came back clean.
+
+**What the plan could have specified better:** the `#_` discard-marker
+semantics for children of the deftest form (nested markers, markers mixed
+with metadata) — the plan pinned the prefix rules for the deftest form itself
+but said nothing about discarded children, which is where all three review
+rounds' findings landed.
