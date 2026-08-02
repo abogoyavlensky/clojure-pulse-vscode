@@ -832,13 +832,30 @@ async function runTestAtCursor(
   }
   const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
   try {
-    const defined = await session.eval(editor.document.getText(range), {
-      ...sourceParams(editor, range.start),
-      ns: nsName,
-    });
+    const code = editor.document.getText(range);
+    const opts = { ...sourceParams(editor, range.start), ns: nsName };
+    let defined = await session.eval(code, opts);
+    if (defined.namespaceNotFound) {
+      // The namespace was never loaded: do what the error hint would tell
+      // the user to do — load the buffer (Evaluate File) — then retry once.
+      const doc = editor.document;
+      const onDisk = doc.uri.scheme === "file";
+      const loaded = await session.loadFile(doc.getText(), {
+        filePath: onDisk ? doc.uri.fsPath : undefined,
+        fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
+      });
+      if (loaded.err !== undefined) {
+        // The file itself does not compile; that error wins.
+        if (id) {
+          inlineResults.resolve(id, loaded);
+        }
+        return;
+      }
+      defined = await session.eval(code, opts);
+    }
     if (defined.err !== undefined || defined.namespaceNotFound) {
-      // A test that failed to compile (or a namespace that is not loaded)
-      // must not run; the decoration shows why.
+      // A test that failed to compile (or a namespace still missing after
+      // the load) must not run; the decoration shows why.
       if (id) {
         inlineResults.resolve(id, defined);
       }

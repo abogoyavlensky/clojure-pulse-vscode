@@ -306,6 +306,85 @@ suite("REPL commands", () => {
     }
   });
 
+  test("runTestAtCursor auto-loads the file when the namespace is missing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      // Evals fail with namespace-not-found until a load-file arrives, as a
+      // real nREPL does for a namespace that was never loaded.
+      let loaded = false;
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && !loaded) {
+          reply({ session: msg.session, status: ["done", "namespace-not-found"] });
+          return;
+        }
+        if (msg.op === "load-file") {
+          loaded = true;
+        }
+        reply({ session: msg.session, value: "42" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval"]);
+      const loadMsg = server.received.find((m) => m.op === "load-file");
+      assert.ok(String(loadMsg?.file).includes("(deftest my-test"));
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals[1].code, "(deftest my-test\n  (is true))");
+      assert.strictEqual(evals[1].ns, "my.app-test");
+      assert.ok(String(evals[2].code).includes("run-test-var"));
+      assert.strictEqual(evals[2].ns, "my.app-test");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor stops when the auto-load itself fails", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval") {
+          reply({ session: msg.session, status: ["done", "namespace-not-found"] });
+          return;
+        }
+        if (msg.op === "load-file") {
+          reply({ session: msg.session, err: "file does not compile" });
+        }
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["eval", "load-file"]);
+    } finally {
+      await server?.close();
+    }
+  });
+
   test("runTestAtCursor does not run the test when defining it fails", async () => {
     let server: FakeNrepl | undefined;
     try {
