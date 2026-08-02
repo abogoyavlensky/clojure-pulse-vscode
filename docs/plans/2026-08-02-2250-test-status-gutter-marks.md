@@ -1,5 +1,7 @@
 # Test Status Gutter Marks Implementation Plan
 
+> **Status: COMPLETED** (2026-08-02) — see the summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Cursive-style gutter marks on `deftest` forms — a green check circle on pass, a red cross circle on fail with the failure report on hover — always showing the result of the *last test command* only.
@@ -73,21 +75,21 @@ Settled in discussion with the user (see the screenshot in `screenshots/` for th
 - Modify: `src/repl/connectionManager.ts`
 - Test: `src/test/connectionManager.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Next to "eval streams out and err entries": an eval whose reply sends two `out` chunks then a value resolves with `outcome.out` equal to the chunks concatenated in order; an eval with no `out` messages leaves `outcome.out` undefined.
 
-- [ ] **Step 2: Run tests to verify it fails**
+- [x] **Step 2: Run tests to verify it fails**
   Run: `npm run compile-tests && xvfb-run -a npm test`
   Expected: FAIL — `out` is not on `EvalOutcome`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Optional `out` on `EvalOutcome` (doc comment mirroring `err`'s), accumulated in `collectEvalMessage` from the sanitized message — after ANSI stripping, like the transcript sees it.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `npm run compile-tests && xvfb-run -a npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Capture eval out chunks in the outcome"`
 
 ### Task 2: TestStatusManager, icons, and command wiring
@@ -97,23 +99,23 @@ Settled in discussion with the user (see the screenshot in `screenshots/` for th
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   - `testStatus.test.ts`: status mapping (err → fail; `:fail 1` value → fail; clean summary → pass) and hover building (fail combines out + err trimmed; pass shows the value).
   - Integration: the four command-level scenarios from the Testing strategy, inspecting `api.testStatus.marks()` (uri/line/status/hover).
   - Manager-level race tests per the Testing strategy: stale `report` after a newer `beginRun`, edit-during-run dropping the pending mark, document close during the run.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `npm run compile-tests && xvfb-run -a npm test`
   Expected: FAIL — module and API do not exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `TestStatusManager` per Design §2-3, SVGs per Design §4, wiring per Design §5.
 
-- [ ] **Step 4: Run tests and lint**
+- [x] **Step 4: Run tests and lint**
   Run: `npm run pretest && xvfb-run -a npm test`
   Expected: PASS, no lint errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add test status gutter marks"`
 
 ### Task 3: Docs and final verification
@@ -121,12 +123,42 @@ Settled in discussion with the user (see the screenshot in `screenshots/` for th
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Update the docs**
+- [x] **Step 1: Update the docs**
   README (Run Test at Cursor bullet): the gutter shows a green check / red cross circle for the last test run, failure details on hover; marks reflect only the most recent test command. CHANGELOG: extend the Unreleased Run Test at Cursor entry.
 
-- [ ] **Step 2: Full suite**
+- [x] **Step 2: Full suite**
   Run: `npm run pretest && xvfb-run -a npm test`
   Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document test status gutter marks"`
+
+## Completion Summary
+
+**Implemented** on branch `run-deftest`, commits `bc72b39`, `52a9d94`, plus
+this docs commit: `EvalOutcome.out` capture (ANSI-stripped chunk
+accumulation), the `TestStatusManager` (`src/repl/testStatus.ts`) with
+id-based `beginRun`/`report`, green/red SVG gutter icons in `images/`, and
+`runTestAtCursor` wiring. Semantics as designed: the gutter shows only the
+last test command's report, wiped at command start; marks shift with edits,
+drop when their deftest is edited or the document closes, and ignore
+Escape/Clear Inline Results; a stale in-flight run can never paint a mark
+(superseded ids no-op). Hover on the deftest's first line shows the failure
+report (captured out + err) or the pass summary. 445 tests passing — 15 new
+across unit (status/hover mapping), manager-level races (supersede,
+edit-drop, shift, doc close), and command integration (green, red + hover,
+wipe-on-next-run, no-mark-on-define-failure).
+
+**Issues encountered:** none during execution; all three per-task codex
+reviews came back clean on the first round (the race handling was designed
+in up front thanks to the plan-stage codex findings).
+
+**Deviations:** none — the plan held as written.
+
+**What the plan could have specified better:** nothing — the plan-stage
+review catching the two in-flight races before implementation is what made
+execution clean; worth repeating that pattern.
+
+**Note:** hover lands on the deftest's first line (VS Code offers no hover
+or click on gutter icons themselves) — the accepted tradeoff from the design
+discussion.

@@ -12,7 +12,12 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   as **Evaluate File** would). Works on JVM Clojure 1.11+ and let-go REPLs —
   on let-go the runner falls back to calling the test function directly with
   `test`-ns counter accounting, since `run-test-var` doesn't exist there yet
-  (this bypasses `use-fixtures` fixtures on let-go until then).
+  (this bypasses `use-fixtures` fixtures on let-go until then). Cursive-style
+  gutter marks show the verdict on the deftest itself — a green check circle
+  on pass, a red cross circle on fail with the failure report on hover over
+  the deftest line. The gutter always reflects the last test command only:
+  each run replaces the previous report, and editing a marked deftest clears
+  its stale verdict.
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`

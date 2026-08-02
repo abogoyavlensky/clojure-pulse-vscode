@@ -229,9 +229,14 @@ rather than land somewhere you did not intend.
   automatically first — no manual **Evaluate File** needed. The summary map
   (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
   report streams to the REPL's output channel, which opens automatically when
-  anything fails. Works against JVM Clojure (1.11+) and let-go REPLs — with
-  one let-go caveat: until let-go gains `run-test-var`, a single-test run
-  there calls the test function directly, skipping `use-fixtures` fixtures.
+  anything fails. The gutter marks the deftest with a green check circle on
+  pass or a red cross circle on fail — hover the deftest's first line for the
+  failure report. Marks always show the result of the **last test command**
+  only: a new run wipes the previous report, and an edit to a marked deftest
+  removes its (now stale) verdict. Works against JVM Clojure (1.11+) and
+  let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
+  single-test run there calls the test function directly, skipping
+  `use-fixtures` fixtures.
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the
