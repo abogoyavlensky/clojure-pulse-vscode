@@ -130,6 +130,34 @@ suite("ConnectionManager", () => {
     assert.ok(entries.includes("value|nil"), entries.join(", "));
   });
 
+  test("eval accumulates out chunks into the outcome", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        reply({ "new-session": "sess-1", status: ["done"] });
+        return;
+      }
+      if (msg.op === "describe") {
+        reply({ versions: {}, status: ["done"] });
+        return;
+      }
+      reply({ session: msg.session, out: "FAIL in (my-test)\n" });
+      reply({ session: msg.session, out: "expected: (= 1 2)\n" });
+      reply({ session: msg.session, value: "nil" });
+      reply({ session: msg.session, status: ["done"] });
+    });
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(run)");
+
+    assert.strictEqual(outcome.out, "FAIL in (my-test)\nexpected: (= 1 2)\n");
+  });
+
+  test("eval with no out messages leaves outcome.out undefined", async () => {
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const outcome = await manager.eval("(+ 1 2)");
+
+    assert.strictEqual(outcome.out, undefined);
+  });
+
   test("ANSI escape codes in out and err are stripped", async () => {
     server.respond((msg, reply) => {
       if (msg.op === "clone") {

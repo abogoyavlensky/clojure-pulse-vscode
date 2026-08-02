@@ -30,6 +30,8 @@ export interface EvalOutcome {
   value?: string;
   /** All `err` chunks concatenated in arrival order, if any. */
   err?: string;
+  /** All `out` chunks concatenated in arrival order (ANSI-stripped), if any. */
+  out?: string;
   /** True when any message's status reported `namespace-not-found`. */
   namespaceNotFound: boolean;
 }
@@ -248,6 +250,9 @@ export class ConnectionManager {
     }
     if (typeof clean.err === "string" && clean.err.length > 0) {
       outcome.err = (outcome.err ?? "") + clean.err;
+    }
+    if (typeof clean.out === "string" && clean.out.length > 0) {
+      outcome.out = (outcome.out ?? "") + clean.out;
     }
     if (Array.isArray(clean.status) && clean.status.includes("namespace-not-found")) {
       outcome.namespaceNotFound = true;
