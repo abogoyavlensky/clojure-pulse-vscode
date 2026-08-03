@@ -254,7 +254,8 @@ rather than land somewhere you did not intend.
   test is how you disable it, and the load never defines it), as is one
   wrapped in a reader conditional (`#?(:clj (deftest …))`); and because each
   test runs on its own, `:once` fixtures run once *per test*, not once per
-  namespace.
+  namespace (and on a let-go without `run-test-var`, the same fallback the
+  single-test command uses skips fixtures entirely).
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the

@@ -32,7 +32,8 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   and the REPL's output channel — so an error that aborts the run is reported
   as a notification. Discarded (`#_(deftest …)`) and reader-conditional
   deftests are skipped, and `:once` fixtures run once per test rather than
-  once per namespace, since each test runs on its own.
+  once per namespace, since each test runs on its own — or not at all on a
+  let-go without `run-test-var`, whose fallback runner bypasses fixtures.
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`
