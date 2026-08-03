@@ -84,7 +84,8 @@ suite("TestStatusManager races", () => {
 
   test("report resolves the pending mark of the current run", async () => {
     const editor = await openTestDoc();
-    const id = manager.beginRun(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const id = manager.track(editor, DEFTEST_RANGE);
     assert.deepStrictEqual(manager.marks(), []); // pending renders nothing
     manager.report(id, "pass", "{:pass 1}");
     assert.strictEqual(manager.marks().length, 1);
@@ -94,8 +95,10 @@ suite("TestStatusManager races", () => {
 
   test("a later beginRun supersedes an unresolved run", async () => {
     const editor = await openTestDoc();
-    const staleId = manager.beginRun(editor, DEFTEST_RANGE);
-    const freshId = manager.beginRun(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const staleId = manager.track(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const freshId = manager.track(editor, DEFTEST_RANGE);
     manager.report(staleId, "fail", "stale");
     assert.deepStrictEqual(manager.marks(), [], "a stale run must paint nothing");
     manager.report(freshId, "pass", "fresh");
@@ -103,9 +106,41 @@ suite("TestStatusManager races", () => {
     assert.strictEqual(manager.marks()[0].status, "pass");
   });
 
+  test("two tracked marks of one run resolve independently", async () => {
+    const editor = await openTestDoc();
+    manager.beginRun();
+    const first = manager.track(editor, new vscode.Range(1, 0, 1, 16));
+    const second = manager.track(editor, DEFTEST_RANGE);
+    manager.report(second, "fail", "boom");
+    assert.strictEqual(manager.marks().length, 1, "the unresolved one stays invisible");
+    assert.strictEqual(manager.marks()[0].status, "fail");
+    manager.report(first, "pass", "{:pass 1}");
+    assert.deepStrictEqual(
+      manager.marks().map((mark) => mark.status),
+      ["pass", "fail"],
+    );
+  });
+
+  test("beginRun wipes every mark of the previous run", async () => {
+    const editor = await openTestDoc();
+    manager.beginRun();
+    const first = manager.track(editor, new vscode.Range(1, 0, 1, 16));
+    const second = manager.track(editor, DEFTEST_RANGE);
+    manager.report(first, "pass", "{:pass 1}");
+    manager.report(second, "fail", "boom");
+    assert.strictEqual(manager.marks().length, 2);
+
+    manager.beginRun();
+    assert.deepStrictEqual(manager.marks(), []);
+    manager.report(first, "pass", "late");
+    manager.report(second, "pass", "late");
+    assert.deepStrictEqual(manager.marks(), [], "superseded ids paint nothing");
+  });
+
   test("an edit overlapping the deftest during the run drops the mark", async () => {
     const editor = await openTestDoc();
-    const id = manager.beginRun(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const id = manager.track(editor, DEFTEST_RANGE);
     await editor.edit((edit) => {
       edit.replace(new vscode.Range(1, 9, 1, 16), "renamed-test");
     });
@@ -115,7 +150,8 @@ suite("TestStatusManager races", () => {
 
   test("an edit above the deftest shifts the mark instead", async () => {
     const editor = await openTestDoc();
-    const id = manager.beginRun(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const id = manager.track(editor, DEFTEST_RANGE);
     await editor.edit((edit) => {
       edit.insert(new vscode.Position(0, 0), ";; note\n");
     });
@@ -127,7 +163,8 @@ suite("TestStatusManager races", () => {
   test("closing the document during the run drops the mark", async () => {
     const editor = await openTestDoc();
     const uri = editor.document.uri.toString();
-    const id = manager.beginRun(editor, DEFTEST_RANGE);
+    manager.beginRun();
+    const id = manager.track(editor, DEFTEST_RANGE);
     const closed = new Promise<void>((resolve) => {
       const sub = vscode.workspace.onDidCloseTextDocument((doc) => {
         if (doc.uri.toString() === uri) {

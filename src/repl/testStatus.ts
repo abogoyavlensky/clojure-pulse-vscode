@@ -11,10 +11,12 @@ import {
 // deftest that passed, a red cross circle on one that failed, the failure
 // report on hover. One invariant governs the state: every visible mark
 // belongs to the most recent test command. beginRun() wipes the previous
-// report and registers an invisible pending mark; report() resolves it by id
-// and is a no-op when the id is gone — superseded by a later run, dropped by
-// an edit on the deftest, or its document closed — so a stale run can never
-// paint a verdict. Marks are deliberately not cleared by Clear Inline
+// report; track() registers an invisible pending mark per deftest the run
+// will execute (one for a single test, one each for a namespace run);
+// report() resolves one by id and is a no-op when the id is gone —
+// superseded by a later run, dropped by an edit on the deftest, or its
+// document closed — so a stale run can never paint a verdict. Marks are
+// deliberately not cleared by Clear Inline
 // Results: they leave only via the next test command, an edit, or the
 // document closing.
 
@@ -98,21 +100,31 @@ export class TestStatusManager {
 
   /**
    * Starts a new test command: the previous report is superseded, so all
-   * marks are wiped, and the deftest about to run gets an invisible pending
-   * mark that tracks edits while the run is in flight. Returns its id.
+   * marks are wiped. Every id handed out by an earlier run is now gone, so a
+   * late report from it paints nothing.
    */
-  beginRun(editor: vscode.TextEditor, range: vscode.Range): string {
-    this.current = [
-      {
-        id: `test-${this.nextId++}`,
-        uri: editor.document.uri.toString(),
-        range: toSimpleRange(range),
-        status: "pending",
-        hover: "",
-      },
-    ];
+  beginRun(): void {
+    this.current = [];
     this.renderAll();
-    return this.current[0].id;
+  }
+
+  /**
+   * Registers a deftest of the current run: an invisible pending mark that
+   * tracks edits while the run is in flight. Returns its id, which `report`
+   * resolves. A bulk run tracks every test up front, so each one's verdict
+   * lands on the right form as it finishes.
+   */
+  track(editor: vscode.TextEditor, range: vscode.Range): string {
+    const mark: Mark = {
+      id: `test-${this.nextId++}`,
+      uri: editor.document.uri.toString(),
+      range: toSimpleRange(range),
+      status: "pending",
+      hover: "",
+    };
+    this.current.push(mark);
+    this.renderAll();
+    return mark.id;
   }
 
   /** Resolves a pending mark into a verdict. A no-op when the id is gone —

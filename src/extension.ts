@@ -855,7 +855,8 @@ async function runTestAtCursor(
   // track the deftest about to run. Paths below that abandon the run simply
   // never resolve the pending mark — but must clear the status bar's
   // spinner, which otherwise persists.
-  const runId = testStatus.beginRun(editor, range);
+  testStatus.beginRun();
+  const runId = testStatus.track(editor, range);
   const barToken = statusBar.running(found.name);
   try {
     if (nsName !== undefined) {
