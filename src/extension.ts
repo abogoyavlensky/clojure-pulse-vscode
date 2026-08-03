@@ -12,7 +12,11 @@ import {
 } from "./ignoredForms";
 import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
-import { ConnectCancelledError, EvalOptions } from "./repl/connectionManager";
+import {
+  ConnectCancelledError,
+  EvalOptions,
+  EvalOutcome,
+} from "./repl/connectionManager";
 import {
   createCommandHint,
   defaultCreateCommand,
@@ -29,6 +33,7 @@ import { InlineResultsManager } from "./repl/inlineResults";
 import {
   buildStatusHover,
   testStatusOf,
+  TestRunStatus,
   TestStatusManager,
 } from "./repl/testStatus";
 import {
@@ -36,7 +41,7 @@ import {
   testRunCounts,
   TestStatusBar,
 } from "./repl/testStatusBar";
-import { formAtCursor, nsBefore, testAtCursor } from "./repl/forms";
+import { formAtCursor, nsBefore, testAtCursor, testsInText } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -58,6 +63,7 @@ export interface ExtensionApi {
   inlineResults: InlineResultsManager;
   replForm: ReplFormPanel;
   testStatus: TestStatusManager;
+  testStatusBar: TestStatusBar;
 }
 
 export async function activate(
@@ -359,6 +365,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
       runTestAtCursor(registry, inlineResults, testStatus, testStatusBar),
     ),
+    vscode.commands.registerCommand("clojurePulse.runNsTests", () =>
+      runNsTests(registry, testStatus, testStatusBar),
+    ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
     ),
@@ -370,7 +379,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       replMenu(registry, replForm),
     ),
   );
-  return { repls: registry, inlineResults, replForm, testStatus };
+  return { repls: registry, inlineResults, replForm, testStatus, testStatusBar };
 }
 
 /** The workspace root's file names, which the prefilled command follows. */
@@ -920,35 +929,16 @@ async function runTestAtCursor(
       statusBar.clear(barToken);
       return;
     }
-    // `run-test-var` (Clojure 1.11+) prints the report and returns the
-    // summary map. The fallback serves let-go, whose compiler resolves both
-    // branches eagerly — so it may only reference vars that exist there too:
-    // `*report-counters*` is a set!-able map on let-go with the same keys as
-    // clojure.test's summary, and its test vars hold plain functions. A test
-    // that throws becomes `:error 1` (let-go accepts the JVM catch syntax).
-    // On a pre-1.11 JVM (unsupported) the fallback's set! throws a clear
-    // error.
-    const runner =
-      `(let [v #'${found.name}] ` +
-      `(if-let [f (resolve 'clojure.test/run-test-var)] (f v) ` +
-      `(do (set! clojure.test/*report-counters* {:test 1 :pass 0 :fail 0 :error 0}) ` +
-      `(try ((deref v)) (catch Exception e ` +
-      `(set! clojure.test/*report-counters* (update clojure.test/*report-counters* :error inc)) ` +
-      `(println "ERROR in test:" e))) ` +
-      `clojure.test/*report-counters*)))`;
-    const outcome = await session.eval(runner, { ns: nsName });
+    const result = await runTestVar(session, testStatus, runId, found.name, nsName);
     if (id) {
-      inlineResults.resolve(id, outcome);
+      inlineResults.resolve(id, result.outcome);
     }
-    const status = testStatusOf(outcome);
-    testStatus.report(runId, status, buildStatusHover(status, outcome));
-    const counts = testRunCounts(outcome.value);
     statusBar.finish(barToken, {
       phase: "done",
       name: found.name,
-      status,
-      fail: counts?.fail ?? 0,
-      error: counts?.error ?? 0,
+      status: result.status,
+      fail: result.fail,
+      error: result.error,
     });
   } catch (err: unknown) {
     if (id) {
@@ -957,6 +947,175 @@ async function runTestAtCursor(
     statusBar.clear(barToken);
     reportEvalError(err);
   }
+}
+
+/** One test var's run: its verdict, the counts a caller sums, and the raw
+ *  outcome for the single-test command's inline decoration. */
+interface TestVarResult {
+  status: TestRunStatus;
+  fail: number;
+  error: number;
+  outcome: EvalOutcome;
+}
+
+/**
+ * Runs one already-defined test var and resolves its gutter mark. Shared by
+ * both test commands: the single-test one wraps it in probe/define, the
+ * namespace one calls it per deftest in buffer order.
+ *
+ * `run-test-var` (Clojure 1.11+) prints the report and returns the summary
+ * map. The fallback serves let-go, whose compiler resolves both branches
+ * eagerly — so it may only reference vars that exist there too:
+ * `*report-counters*` is a set!-able map on let-go with the same keys as
+ * clojure.test's summary, and its test vars hold plain functions. A test that
+ * throws becomes `:error 1` (let-go accepts the JVM catch syntax). On a
+ * pre-1.11 JVM (unsupported) the fallback's set! throws a clear error.
+ */
+async function runTestVar(
+  session: ReplSessionLike,
+  testStatus: TestStatusManager,
+  markId: string,
+  name: string,
+  nsName: string | undefined,
+): Promise<TestVarResult> {
+  const runner =
+    `(let [v #'${name}] ` +
+    `(if-let [f (resolve 'clojure.test/run-test-var)] (f v) ` +
+    `(do (set! clojure.test/*report-counters* {:test 1 :pass 0 :fail 0 :error 0}) ` +
+    `(try ((deref v)) (catch Exception e ` +
+    `(set! clojure.test/*report-counters* (update clojure.test/*report-counters* :error inc)) ` +
+    `(println "ERROR in test:" e))) ` +
+    `clojure.test/*report-counters*)))`;
+  const outcome = await session.eval(runner, { ns: nsName });
+  const status = testStatusOf(outcome);
+  testStatus.report(markId, status, buildStatusHover(status, outcome));
+  const counts = testRunCounts(outcome.value);
+  return { status, fail: counts?.fail ?? 0, error: counts?.error ?? 0, outcome };
+}
+
+/**
+ * Runs every top-level `deftest` in the buffer, in order. The buffer is
+ * loaded first — "run all tests" means "test this buffer" — which refreshes
+ * helpers and every deftest and guarantees the enumerated vars exist; then
+ * each test runs through the same single-var runner, so the gutter fills in
+ * progressively and the behavior is identical on the JVM and let-go. A test
+ * that reports an error still only fails its own mark: the run continues, as
+ * a test runner should. Note that `:once` fixtures therefore run once per
+ * test, not once per namespace.
+ *
+ * Bulk runs paint no inline decorations, so an error that aborts the run
+ * (a load failure, an in-ns failure) surfaces as a notification instead.
+ */
+async function runNsTests(
+  registry: ReplRegistry,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const doc = editor.document;
+  const text = doc.getText();
+  const tests = testsInText(text);
+  if (tests.length === 0) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no deftests in this file",
+      3000,
+    );
+    return;
+  }
+
+  // This command supersedes the previous report: wipe the gutter, then track
+  // every deftest up front so each verdict lands on the right form as it
+  // arrives. Paths below that abandon the run leave their marks pending —
+  // invisible, and gone with the next test command.
+  testStatus.beginRun();
+  const markIds = tests.map((found) =>
+    testStatus.track(
+      editor,
+      new vscode.Range(
+        doc.positionAt(found.range.start),
+        doc.positionAt(found.range.end),
+      ),
+    ),
+  );
+  // A buffer with several ns forms runs all of its tests, labeled with the
+  // first one's namespace.
+  const runName = nsBefore(text, tests[0].range.start) ?? "tests";
+  const barToken = statusBar.running(runName);
+  if (!inlineEnabled()) {
+    session.showOutput();
+  }
+
+  try {
+    const onDisk = doc.uri.scheme === "file";
+    const loaded = await session.loadFile(text, {
+      filePath: onDisk ? doc.uri.fsPath : undefined,
+      fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
+    });
+    if (loaded.err !== undefined) {
+      // The file does not compile: nothing below it can be trusted to run.
+      reportRunError(loaded.err);
+      statusBar.clear(barToken);
+      return;
+    }
+
+    let currentNs: string | undefined;
+    let fail = 0;
+    let error = 0;
+    let anyFailed = false;
+    for (const [index, found] of tests.entries()) {
+      // No ns form before the test: the load defined it in the session's
+      // current namespace, so send the runner unqualified.
+      const testNs = nsBefore(text, found.range.start);
+      if (testNs !== undefined && testNs !== currentNs) {
+        // On let-go the current namespace is process-global and this switch
+        // is the only ns targeting there is; the ns param scopes the eval on
+        // the JVM, leaving the session's own *ns* binding untouched.
+        const switched = await session.eval(`(in-ns '${testNs})`, { ns: testNs });
+        if (switched.err !== undefined || switched.namespaceNotFound) {
+          reportRunError(switched.err ?? `namespace ${testNs} was not found`);
+          statusBar.clear(barToken);
+          return;
+        }
+        currentNs = testNs;
+      }
+      const result = await runTestVar(
+        session,
+        testStatus,
+        markIds[index],
+        found.name,
+        testNs,
+      );
+      fail += result.fail;
+      error += result.error;
+      anyFailed = anyFailed || result.status === "fail";
+    }
+    statusBar.finish(barToken, {
+      phase: "done",
+      name: runName,
+      status: anyFailed ? "fail" : "pass",
+      fail,
+      error,
+    });
+  } catch (err: unknown) {
+    statusBar.clear(barToken);
+    reportEvalError(err);
+  }
+}
+
+/** Surfaces an error that aborts a bulk test run, which has no inline
+ *  decoration to carry it. First line only — the full report is in the
+ *  REPL's output channel. */
+function reportRunError(message: string): void {
+  const firstLine =
+    message.split("\n").find((line) => line.trim().length > 0)?.trim() ?? message;
+  void vscode.window.showErrorMessage(`Clojure Pulse: ${firstLine}`);
 }
 
 async function evalFile(registry: ReplRegistry): Promise<void> {

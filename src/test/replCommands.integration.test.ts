@@ -4,6 +4,7 @@ import { InlineResultsManager } from "../repl/inlineResults";
 import { ReplRegistry } from "../repl/replRegistry";
 import { ReplSessionLike } from "../repl/replSession";
 import { TestStatusManager } from "../repl/testStatus";
+import { TestStatusBar } from "../repl/testStatusBar";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
@@ -14,6 +15,7 @@ interface ExtensionApi {
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
   testStatus: TestStatusManager;
+  testStatusBar: TestStatusBar;
 }
 
 async function waitUntil(
@@ -100,6 +102,7 @@ suite("REPL commands", () => {
       "clojurePulse.evalCurrentForm",
       "clojurePulse.evalFile",
       "clojurePulse.runTestAtCursor",
+      "clojurePulse.runNsTests",
       "clojurePulse.clearInlineResults",
       "clojurePulse.copyEvalResult",
     ]) {
@@ -523,6 +526,165 @@ suite("REPL commands", () => {
       const marks = api.testStatus.marks();
       assert.strictEqual(marks.length, 1, "only the last command's report remains");
       assert.strictEqual(marks[0].uri, second.uri.toString());
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runNsTests without a connection warns instead of throwing", async () => {
+    await vscode.commands.executeCommand("clojurePulse.runNsTests");
+  });
+
+  test("runNsTests loads the buffer then runs every deftest in order", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content:
+          "(ns my.app-test)\n(deftest first-test\n  (is true))\n" +
+          "(defn helper [] 1)\n(deftest second-test\n  (is true))\n",
+      });
+      await vscode.window.showTextDocument(doc);
+
+      await vscode.commands.executeCommand("clojurePulse.runNsTests");
+
+      // The buffer is loaded once, the namespace aligned once (let-go ignores
+      // the eval `ns` param), then one runner eval per deftest.
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+      const loadMsg = server.received.find((m) => m.op === "load-file");
+      assert.ok(String(loadMsg?.file).includes("(deftest second-test"));
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals[0].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(evals[0].ns, "my.app-test");
+      assert.ok(String(evals[1].code).includes("#'first-test"));
+      assert.strictEqual(evals[1].ns, "my.app-test");
+      assert.ok(String(evals[2].code).includes("#'second-test"));
+      assert.strictEqual(evals[2].ns, "my.app-test");
+
+      // One gutter mark per deftest, on its own first line.
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 2);
+      assert.deepStrictEqual(
+        marks.map((mark) => ({ line: mark.line, status: mark.status })),
+        [
+          { line: 1, status: "pass" },
+          { line: 4, status: "pass" },
+        ],
+      );
+      assert.ok(marks.every((mark) => mark.uri === doc.uri.toString()));
+
+      const bar = api.testStatusBar.current();
+      assert.ok(bar?.text.includes("my.app-test"), `unexpected bar: ${bar?.text}`);
+      assert.ok(bar?.text.includes("testing-passed-icon"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runNsTests marks the failing test and sums the counts in the status bar", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("#'second-test")) {
+          reply({ session: msg.session, out: "FAIL in (second-test)\nexpected: (= 1 2)\n" });
+          reply({
+            session: msg.session,
+            value: "{:test 1, :pass 0, :fail 1, :error 0, :type :summary}",
+          });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({
+          session: msg.session,
+          value: "{:test 1, :pass 1, :fail 0, :error 0, :type :summary}",
+        });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content:
+          "(ns my.app-test)\n(deftest first-test\n  (is true))\n" +
+          "(deftest second-test\n  (is (= 1 2)))\n",
+      });
+      await vscode.window.showTextDocument(doc);
+
+      await vscode.commands.executeCommand("clojurePulse.runNsTests");
+
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 2);
+      assert.deepStrictEqual(
+        marks.map((mark) => mark.status),
+        ["pass", "fail"],
+      );
+      assert.ok(marks[1].hover.includes("FAIL in (second-test)"));
+
+      const bar = api.testStatusBar.current();
+      assert.ok(bar?.text.includes("testing-failed-icon"), `unexpected bar: ${bar?.text}`);
+      assert.ok(bar?.text.includes("my.app-test — 1 fail"), `unexpected bar: ${bar?.text}`);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runNsTests with no deftests in the buffer sends nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(defn helper [] 1)\n#_(deftest skipped (is true))",
+      });
+      await vscode.window.showTextDocument(doc);
+
+      await vscode.commands.executeCommand("clojurePulse.runNsTests");
+
+      assert.ok(
+        !server.received.some((m) => m.op === "eval" || m.op === "load-file"),
+        "a buffer with no runnable deftests must not load or eval anything",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runNsTests stops when the load itself fails", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "load-file") {
+          reply({ session: msg.session, err: "file does not compile" });
+        }
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest first-test\n  (is true))\n",
+      });
+      await vscode.window.showTextDocument(doc);
+
+      await vscode.commands.executeCommand("clojurePulse.runNsTests");
+
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["load-file"]);
+      // The pending marks never resolve, and the status bar is cleared.
+      assert.deepStrictEqual(api.testStatus.marks(), []);
+      assert.strictEqual(api.testStatusBar.current(), undefined);
     } finally {
       await server?.close();
     }

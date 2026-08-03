@@ -274,6 +274,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.runNsTests",
+        "title": "Run Tests in Namespace",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.clearInlineResults",
         "title": "Clear Inline Results",
         "category": "Clojure Pulse"
