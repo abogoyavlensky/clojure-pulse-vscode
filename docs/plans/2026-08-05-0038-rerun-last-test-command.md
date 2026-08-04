@@ -149,18 +149,18 @@ All test runs use `make test` (wraps `npm test` with xvfb on Linux). It compiles
 **Files:**
 - Modify: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
   Add `clojurePulse.rerunLastTest` to the registered-commands list test. New tests, using the existing fake-nREPL helpers:
   - **Rerun with no prior test command** does not throw and sends no evals (fresh suite state; the module-level record survives across tests in one host, so run this scenario first or reset via the ordering the suite already relies on).
   - **Rerun repeats a single-test run from another file**: open a test buffer, run `runTestAtCursor`, then open and focus a different (non-test) document, execute `rerunLastTest`, and assert the fake server received the same define + runner evals again, the status bar finished with the test's verdict, and `vscode.window.activeTextEditor` still shows the non-test document — the feature's focus-preservation promise.
   - **Rerun repeats an ns run**: same shape with `runNsTests`.
   - **Renamed test**: after a single-test run, edit the buffer to rename the deftest, execute `rerunLastTest`, assert no runner eval is sent.
 
-- [ ] **Step 2: Run the tests**
+- [x] **Step 2: Run the tests**
   Run: `make test`
   Expected: PASS, including the new tests.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "test: cover Run Last Test Command"`
 
 ### Task 5: Documentation
@@ -169,8 +169,20 @@ All test runs use `make test` (wraps `npm test` with xvfb on Linux). It compiles
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Document the command**
+- [x] **Step 1: Document the command**
   README: add **Run Last Test Command** next to the two existing test commands (both in the feature section around line 225 and the command list around line 317) — one short paragraph: re-runs the last test command from anywhere, without switching to the test file. CHANGELOG: add an entry under the unreleased section, matching the style of the existing test-command entries. Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: document Run Last Test Command"`
+
+---
+
+## Completion Summary
+
+**Status: completed.** All five tasks implemented and committed on `last-test-command`; the full suite passes (477 tests, up from 473) and the production bundle builds. The feature was exercised end-to-end by the cross-file integration tests: a real extension host runs `clojurePulse.rerunLastTest` from a non-test buffer and the verdict lands in the status bar and on the test file's gutter while focus stays put.
+
+Commits: `3a516a4` (track by document), `825d663` (document-centric cores), `bca7e2d` (the command), `ca4a8b5` (tests), `ec8d32e` (docs). Every task passed its codex review checkpoint with no actionable findings.
+
+**Deviations:** none — the plan was executed as written.
+
+**What the plan could have specified better:** nothing significant. One small discovery during execution: `basename` in `extension.ts` is a local helper, not a `node:path` import, so the rerun's "no longer found" message used it for free — the plan didn't need to care, and didn't.
