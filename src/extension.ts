@@ -865,7 +865,7 @@ async function runTestAtCursor(
   // never resolve the pending mark — but must clear the status bar's
   // spinner, which otherwise persists.
   testStatus.beginRun();
-  const runId = testStatus.track(editor, range);
+  const runId = testStatus.track(editor.document, range);
   const barToken = statusBar.running(found.name);
   try {
     if (nsName !== undefined) {
@@ -1037,7 +1037,7 @@ async function runNsTests(
   testStatus.beginRun();
   const markIds = tests.map((found) =>
     testStatus.track(
-      editor,
+      doc,
       new vscode.Range(
         doc.positionAt(found.range.start),
         doc.positionAt(found.range.end),

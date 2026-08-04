@@ -114,10 +114,10 @@ export class TestStatusManager {
    * resolves. A bulk run tracks every test up front, so each one's verdict
    * lands on the right form as it finishes.
    */
-  track(editor: vscode.TextEditor, range: vscode.Range): string {
+  track(document: vscode.TextDocument, range: vscode.Range): string {
     const mark: Mark = {
       id: `test-${this.nextId++}`,
-      uri: editor.document.uri.toString(),
+      uri: document.uri.toString(),
       range: toSimpleRange(range),
       status: "pending",
       hover: "",
