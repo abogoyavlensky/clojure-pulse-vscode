@@ -437,18 +437,24 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
     break;
   }
 
-  if (
-    target === null ||
-    target.bracketOffset === null ||
-    text[target.bracketOffset] !== "("
-  ) {
+  return target === null ? null : resolveDeftest(text, target);
+}
+
+/**
+ * The `deftest` a read form denotes, or null when it is not one: a non-list
+ * base, a quote-like prefix (which would not define a test var), a head that
+ * is not `deftest` (bare or qualified), or a missing / non-symbol name.
+ * Leading `#_` markers are stripped from the range, as `formAtCursor` does.
+ */
+function resolveDeftest(text: string, form: ReadForm): TestAtCursor | null {
+  if (form.bracketOffset === null || text[form.bracketOffset] !== "(") {
     return null;
   }
-  const rangeStart = evaluableStart(text, target);
+  const rangeStart = evaluableStart(text, form);
   if (rangeStart === null) {
     return null;
   }
-  const head = readLiveChild(text, target.bracketOffset + 1, target.closerOffset!);
+  const head = readLiveChild(text, form.bracketOffset + 1, form.closerOffset!);
   if (head.kind !== "form" || head.form.bracketOffset !== null) {
     return null;
   }
@@ -456,14 +462,42 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
   if (headToken !== "deftest" && !headToken.endsWith("/deftest")) {
     return null;
   }
-  const name = readLiveChild(text, head.form.end, target.closerOffset!);
+  const name = readLiveChild(text, head.form.end, form.closerOffset!);
   if (name.kind !== "form" || name.form.bracketOffset !== null) {
     return null;
   }
   return {
-    range: { start: rangeStart, end: target.end },
+    range: { start: rangeStart, end: form.end },
     name: text.slice(name.form.baseStart, name.form.end),
   };
+}
+
+/**
+ * Every runnable top-level `deftest`, in buffer order — what "Run Tests in
+ * Namespace" enumerates after loading the buffer. Discarded deftests are
+ * excluded (`readLiveChild` skips them): a load-file never defines them, so
+ * running one would fail on an unresolved var — and discarding a test is how
+ * you disable it. Quoted deftests are excluded for the same reason. Code the
+ * reader cannot finish yields the tests read before it, never a garbage range.
+ */
+export function testsInText(text: string): TestAtCursor[] {
+  const tests: TestAtCursor[] = [];
+  let p = 0;
+  for (;;) {
+    const result = readLiveChild(text, p, text.length);
+    if (result.kind === "closer") {
+      p = result.offset + 1; // stray top-level closer: skip
+      continue;
+    }
+    if (result.kind !== "form") {
+      return tests; // end of buffer, or an unbalanced tail
+    }
+    p = result.form.end;
+    const found = resolveDeftest(text, result.form);
+    if (found) {
+      tests.push(found);
+    }
+  }
 }
 
 /**

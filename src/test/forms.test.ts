@@ -1,5 +1,11 @@
 import * as assert from "assert";
-import { formAtCursor, nsBefore, testAtCursor, testRunFailed } from "../repl/forms";
+import {
+  formAtCursor,
+  nsBefore,
+  testAtCursor,
+  testRunFailed,
+  testsInText,
+} from "../repl/forms";
 
 /** Splits a source with a single `|` cursor marker into text + offset. */
 function at(source: string): { text: string; offset: number } {
@@ -395,6 +401,97 @@ suite("testAtCursor", () => {
   test("quoted deftest does not resolve", () => {
     assert.strictEqual(found("'(deftest foo (is |true))"), null);
     assert.strictEqual(found("`(deftest foo (is |true))"), null);
+  });
+});
+
+suite("testsInText", () => {
+  /** Every enumerated test as `{ name, text-of-range }`, in buffer order. */
+  function tests(text: string): { name: string; text: string }[] {
+    return testsInText(text).map((found) => ({
+      name: found.name,
+      text: text.slice(found.range.start, found.range.end),
+    }));
+  }
+
+  test("every top-level deftest in buffer order", () => {
+    assert.deepStrictEqual(
+      tests("(ns app-test)\n(deftest a (is true))\n(deftest b\n  (is false))\n"),
+      [
+        { name: "a", text: "(deftest a (is true))" },
+        { name: "b", text: "(deftest b\n  (is false))" },
+      ],
+    );
+  });
+
+  test("non-deftest forms are skipped", () => {
+    assert.deepStrictEqual(
+      tests("(ns app-test)\n(defn helper [] 1)\n(deftest a (is true))\n(def x 1)"),
+      [{ name: "a", text: "(deftest a (is true))" }],
+    );
+  });
+
+  test("qualified deftest heads are included", () => {
+    assert.deepStrictEqual(
+      tests("(t/deftest a (is true))\n(clojure.test/deftest b (is true))"),
+      [
+        { name: "a", text: "(t/deftest a (is true))" },
+        { name: "b", text: "(clojure.test/deftest b (is true))" },
+      ],
+    );
+  });
+
+  test("metadata on the deftest is included, metadata on the name too", () => {
+    assert.deepStrictEqual(
+      tests("^:focused (deftest a (is true))\n(deftest ^:integration b (is true))"),
+      [
+        { name: "a", text: "^:focused (deftest a (is true))" },
+        { name: "b", text: "(deftest ^:integration b (is true))" },
+      ],
+    );
+  });
+
+  test("discarded deftests are excluded — a load-file never defines them", () => {
+    assert.deepStrictEqual(
+      tests("#_(deftest gone (is true))\n(deftest a (is true))"),
+      [{ name: "a", text: "(deftest a (is true))" }],
+    );
+    assert.deepStrictEqual(tests("^:m #_(deftest gone (is true))"), []);
+    assert.deepStrictEqual(tests("#_#_(deftest gone (is true)) (deftest also (is true))"), []);
+  });
+
+  test("quoted deftests are excluded", () => {
+    assert.deepStrictEqual(tests("'(deftest a (is true))\n`(deftest b (is true))"), []);
+  });
+
+  test("discarded children inside a deftest still resolve the name", () => {
+    assert.deepStrictEqual(tests("(deftest #_old actual (is true))"), [
+      { name: "actual", text: "(deftest #_old actual (is true))" },
+    ]);
+  });
+
+  test("a deftest with no name is skipped", () => {
+    assert.deepStrictEqual(tests("(deftest)\n(deftest a (is true))"), [
+      { name: "a", text: "(deftest a (is true))" },
+    ]);
+    assert.deepStrictEqual(tests("(deftest [not-a-name] (is true))"), []);
+  });
+
+  test("an unbalanced tail degrades to the tests read so far", () => {
+    assert.deepStrictEqual(tests("(deftest a (is true))\n(deftest b (is true"), [
+      { name: "a", text: "(deftest a (is true))" },
+    ]);
+    assert.deepStrictEqual(tests("(deftest a (is true"), []);
+  });
+
+  test("empty and comment-only buffers", () => {
+    assert.deepStrictEqual(tests(""), []);
+    assert.deepStrictEqual(tests("  ;; nothing here\n"), []);
+  });
+
+  test("stray top-level closers do not stop enumeration", () => {
+    assert.deepStrictEqual(tests(")\n(deftest a (is true))"), [
+      { name: "a", text: "(deftest a (is true))" },
+    ]);
   });
 });
 

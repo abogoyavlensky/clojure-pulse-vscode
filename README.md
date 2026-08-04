@@ -241,6 +241,21 @@ rather than land somewhere you did not intend.
   let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
   single-test run there calls the test function directly, skipping
   `use-fixtures` fixtures.
+- **Run Tests in Namespace** — runs every top-level `deftest` in the current
+  buffer. The buffer is loaded first (as **Evaluate File** does), so helpers
+  and tests are refreshed and what runs is exactly what you see; then each
+  test runs in turn, and its gutter mark appears as it finishes. A failing
+  test does not stop the run. The status bar shows the namespace name — a
+  spinner while it runs, then green on pass, or a red background with the
+  summed fail/error counts. Results live in the gutter and the REPL's output
+  channel: bulk runs paint no inline decorations, so an error that aborts the
+  run (a file that doesn't compile) is reported as a notification. Two
+  deliberate limits: a discarded `#_(deftest …)` is skipped (discarding a
+  test is how you disable it, and the load never defines it), as is one
+  wrapped in a reader conditional (`#?(:clj (deftest …))`); and because each
+  test runs on its own, `:once` fixtures run once *per test*, not once per
+  namespace (and on a let-go without `run-test-var`, the same fallback the
+  single-test command uses skips fixtures entirely).
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the
@@ -302,6 +317,8 @@ Run these from the Command Palette:
 - **Clojure Pulse: Run Test at Cursor** — re-evaluate and run the `deftest`
   under the cursor in the active REPL, loading the file's namespace first if
   needed.
+- **Clojure Pulse: Run Tests in Namespace** — load the current file and run
+  every top-level `deftest` in it, one after another.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.

@@ -23,6 +23,17 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   the deftest line. The gutter always reflects the last test command only:
   each run replaces the previous report, and editing a marked deftest clears
   its stale verdict.
+- **Run Tests in Namespace**: a command that runs every top-level `deftest` in
+  the current buffer. The buffer is loaded first (as **Evaluate File** does),
+  so what runs is what you see; then each test runs in turn and paints its own
+  gutter mark as it finishes, a failing one not stopping the rest. The status
+  bar carries the namespace's aggregate verdict with the summed fail/error
+  counts. Bulk runs paint no inline decorations — results live in the gutter
+  and the REPL's output channel — so an error that aborts the run is reported
+  as a notification. Discarded (`#_(deftest …)`) and reader-conditional
+  deftests are skipped, and `:once` fixtures run once per test rather than
+  once per namespace, since each test runs on its own — or not at all on a
+  let-go without `run-test-var`, whose fallback runner bypasses fixtures.
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`
