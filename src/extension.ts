@@ -374,6 +374,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand("clojurePulse.runNsTests", () =>
       runNsTests(registry, testStatus, testStatusBar),
     ),
+    vscode.commands.registerCommand("clojurePulse.rerunLastTest", () =>
+      rerunLastTest(registry, inlineResults, testStatus, testStatusBar),
+    ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
     ),
@@ -857,6 +860,22 @@ async function runTestAtCursor(
   await runSingleTest(session, editor.document, found, inlineResults, testStatus, statusBar);
 }
 
+/**
+ * What the last test command meant, semantically — enough to re-resolve it
+ * against the document's current content. A single test is identified by
+ * namespace + name (a buffer can hold several ns forms with same-named
+ * tests), never by offset, so edits to the test file are survived. Written by
+ * the document-centric cores right after they locate something to run, so a
+ * command that found nothing never clobbers a valid record; a rerun re-writes
+ * the same values, which keeps repeated reruns stable.
+ */
+type LastTestCommand =
+  | { kind: "single"; uri: vscode.Uri; ns: string | undefined; testName: string }
+  | { kind: "ns"; uri: vscode.Uri };
+
+/** In-memory and per-window, like Cursive's re-run action: a restart clears it. */
+let lastTestCommand: LastTestCommand | undefined;
+
 /** The first visible editor showing `doc`, if any. Inline decorations need an
  *  editor to paint on, and a rerun's document may not be open in any pane. */
 function visibleEditorFor(doc: vscode.TextDocument): vscode.TextEditor | undefined {
@@ -886,6 +905,7 @@ async function runSingleTest(
     doc.positionAt(found.range.end),
   );
   const nsName = nsBefore(text, found.range.start);
+  lastTestCommand = { kind: "single", uri: doc.uri, ns: nsName, testName: found.name };
   if (!inlineEnabled()) {
     session.showOutput();
   }
@@ -1071,6 +1091,7 @@ async function runTestsInDocument(
     );
     return;
   }
+  lastTestCommand = { kind: "ns", uri: doc.uri };
 
   // This command supersedes the previous report: wipe the gutter, then track
   // every deftest up front so each verdict lands on the right form as it
@@ -1149,6 +1170,58 @@ async function runTestsInDocument(
     statusBar.clear(barToken);
     reportEvalError(err);
   }
+}
+
+/**
+ * Re-runs whatever test command ran last — Cursive's "re-run last test
+ * action". The record is re-resolved against the document's *current*
+ * content, so a moved or edited deftest is found again by namespace + name
+ * and an ns run picks up new tests. The document is opened without showing
+ * it, so focus stays wherever the user is working; when the test file is not
+ * visible the status bar and REPL output carry the verdict.
+ */
+async function rerunLastTest(
+  registry: ReplRegistry,
+  inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const last = lastTestCommand;
+  if (!last) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no test command has been run yet",
+      3000,
+    );
+    return;
+  }
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  let doc: vscode.TextDocument;
+  try {
+    doc = await vscode.workspace.openTextDocument(last.uri);
+  } catch {
+    reportRunError(`cannot open ${last.uri.fsPath} to re-run its tests`);
+    return;
+  }
+  if (last.kind === "ns") {
+    await runTestsInDocument(session, doc, testStatus, statusBar);
+    return;
+  }
+  const text = doc.getText();
+  const found = testsInText(text).find(
+    (test) =>
+      test.name === last.testName && nsBefore(text, test.range.start) === last.ns,
+  );
+  if (!found) {
+    void vscode.window.setStatusBarMessage(
+      `Clojure Pulse: deftest ${last.testName} no longer found in ${basename(doc.uri.fsPath)}`,
+      3000,
+    );
+    return;
+  }
+  await runSingleTest(session, doc, found, inlineResults, testStatus, statusBar);
 }
 
 /** Surfaces an error that aborts a bulk test run, which has no inline

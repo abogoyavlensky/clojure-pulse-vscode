@@ -103,20 +103,20 @@ All test runs use `make test` (wraps `npm test` with xvfb on Linux). It compiles
 **Files:**
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Extract `runSingleTest`**
+- [x] **Step 1: Extract `runSingleTest`**
   Split `runTestAtCursor` into:
   - `runTestAtCursor(…)` (wrapper): resolves the active editor and cursor, calls `testAtCursor`, shows the existing "no deftest found at cursor" message, then delegates.
   - `runSingleTest(session, doc: vscode.TextDocument, found: TestAtCursor, …)` (core): everything from the `beginRun()` block down, rewritten against `doc` instead of `editor` — ranges via `doc.positionAt`, code via `doc.getText(range)`, `testStatus.track(doc, range)`.
   Inline decorations: `const editor = visibleEditorFor(doc)` (new helper: first visible editor whose document is `doc`); mark pending only when `inlineEnabled()` **and** an editor was found. Add a document-based `sourceParams` variant (same fields, from `doc.uri` + position) and use it in the core.
 
-- [ ] **Step 2: Extract `runTestsInDocument`**
+- [x] **Step 2: Extract `runTestsInDocument`**
   Same split for `runNsTests`: the wrapper resolves the active editor and delegates; the core `runTestsInDocument(session, doc, …)` takes the document, computes `testsInText`, shows the existing "no deftests in this file" message when empty, and runs the existing load/in-ns/per-test loop against `doc`.
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
   Run: `make test`
   Expected: PASS — the existing `runTestAtCursor`/`runNsTests` integration tests cover both wrappers end to end.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "refactor: document-centric cores for test commands"`
 
 ### Task 3: Record the last test command and add the rerun command
