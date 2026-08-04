@@ -85,17 +85,17 @@ All test runs use `make test` (wraps `npm test` with xvfb on Linux). It compiles
 - Modify: `src/test/testStatus.test.ts`
 - Modify: `src/extension.ts` (call sites)
 
-- [ ] **Step 1: Change the signature**
+- [x] **Step 1: Change the signature**
   In `src/repl/testStatus.ts`, change `track(editor: vscode.TextEditor, range: vscode.Range)` to `track(document: vscode.TextDocument, range: vscode.Range)` and build the mark's `uri` from `document.uri`. Update the doc comment.
 
-- [ ] **Step 2: Update callers**
+- [x] **Step 2: Update callers**
   In `src/extension.ts`, both `testStatus.track(editor, …)` call sites pass `editor.document`. In `src/test/testStatus.test.ts`, every `manager.track(editor, …)` passes the editor's document.
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
   Run: `make test`
   Expected: PASS (pure refactor, no behavior change).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "refactor: track test marks by document, not editor"`
 
 ### Task 2: Extract document-centric cores from the test commands

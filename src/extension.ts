@@ -41,7 +41,13 @@ import {
   testRunCounts,
   TestStatusBar,
 } from "./repl/testStatusBar";
-import { formAtCursor, nsBefore, testAtCursor, testsInText } from "./repl/forms";
+import {
+  formAtCursor,
+  nsBefore,
+  testAtCursor,
+  TestAtCursor,
+  testsInText,
+} from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -821,12 +827,9 @@ async function evalCurrentForm(
 }
 
 /**
- * Runs the top-level `deftest` at (or right after) the cursor: re-evaluates
- * the form in its namespace so the buffer's current version is what runs,
- * then executes it via clojure.test. Two evals share one inline decoration —
- * pending through both, resolved with the runner's summary map. The detailed
- * report streams to the REPL's output channel without stealing focus; the
- * gutter mark's hover and the status bar carry the verdict.
+ * Runs the top-level `deftest` at (or right after) the cursor. The cursor is
+ * the only editor-bound part; the run itself is `runSingleTest`, shared with
+ * the rerun command.
  */
 async function runTestAtCursor(
   registry: ReplRegistry,
@@ -851,21 +854,50 @@ async function runTestAtCursor(
     );
     return;
   }
+  await runSingleTest(session, editor.document, found, inlineResults, testStatus, statusBar);
+}
+
+/** The first visible editor showing `doc`, if any. Inline decorations need an
+ *  editor to paint on, and a rerun's document may not be open in any pane. */
+function visibleEditorFor(doc: vscode.TextDocument): vscode.TextEditor | undefined {
+  return vscode.window.visibleTextEditors.find((editor) => editor.document === doc);
+}
+
+/**
+ * Runs one `deftest` of a document: re-evaluates the form in its namespace so
+ * the buffer's current version is what runs, then executes it via
+ * clojure.test. Two evals share one inline decoration — pending through both,
+ * resolved with the runner's summary map — painted only when some visible
+ * editor shows the document. The detailed report streams to the REPL's output
+ * channel without stealing focus; the gutter mark's hover and the status bar
+ * carry the verdict.
+ */
+async function runSingleTest(
+  session: ReplSessionLike,
+  doc: vscode.TextDocument,
+  found: TestAtCursor,
+  inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const text = doc.getText();
   const range = new vscode.Range(
-    editor.document.positionAt(found.range.start),
-    editor.document.positionAt(found.range.end),
+    doc.positionAt(found.range.start),
+    doc.positionAt(found.range.end),
   );
   const nsName = nsBefore(text, found.range.start);
   if (!inlineEnabled()) {
     session.showOutput();
   }
-  const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
+  const editor = visibleEditorFor(doc);
+  const id =
+    inlineEnabled() && editor ? inlineResults.markPending(editor, range) : undefined;
   // This command supersedes the previous test report: wipe the gutter and
   // track the deftest about to run. Paths below that abandon the run simply
   // never resolve the pending mark — but must clear the status bar's
   // spinner, which otherwise persists.
   testStatus.beginRun();
-  const runId = testStatus.track(editor.document, range);
+  const runId = testStatus.track(doc, range);
   const barToken = statusBar.running(found.name);
   try {
     if (nsName !== undefined) {
@@ -888,7 +920,6 @@ async function runTestAtCursor(
         return;
       }
       if (probe.value === "false") {
-        const doc = editor.document;
         const onDisk = doc.uri.scheme === "file";
         const loaded = await session.loadFile(doc.getText(), {
           filePath: onDisk ? doc.uri.fsPath : undefined,
@@ -916,8 +947,8 @@ async function runTestAtCursor(
         return;
       }
     }
-    const defined = await session.eval(editor.document.getText(range), {
-      ...sourceParams(editor, range.start),
+    const defined = await session.eval(doc.getText(range), {
+      ...docSourceParams(doc, range.start),
       ns: nsName,
     });
     if (defined.err !== undefined || defined.namespaceNotFound) {
@@ -1019,7 +1050,18 @@ async function runNsTests(
   if (!editor) {
     return;
   }
-  const doc = editor.document;
+  await runTestsInDocument(session, editor.document, testStatus, statusBar);
+}
+
+/** The document-centric body of Run Tests in Namespace, shared with the
+ *  rerun command: the active editor chooses the document above; here only
+ *  the document matters. */
+async function runTestsInDocument(
+  session: ReplSessionLike,
+  doc: vscode.TextDocument,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
   const text = doc.getText();
   const tests = testsInText(text);
   if (tests.length === 0) {
@@ -1146,9 +1188,15 @@ function sourceParams(
   editor: vscode.TextEditor,
   position: vscode.Position,
 ): EvalOptions {
-  const uri = editor.document.uri;
+  return docSourceParams(editor.document, position);
+}
+
+function docSourceParams(
+  doc: vscode.TextDocument,
+  position: vscode.Position,
+): EvalOptions {
   return {
-    file: uri.scheme === "file" ? uri.fsPath : undefined,
+    file: doc.uri.scheme === "file" ? doc.uri.fsPath : undefined,
     line: position.line + 1,
     column: position.character + 1,
   };
