@@ -103,10 +103,31 @@ suite("REPL commands", () => {
       "clojurePulse.evalFile",
       "clojurePulse.runTestAtCursor",
       "clojurePulse.runNsTests",
+      "clojurePulse.rerunLastTest",
       "clojurePulse.clearInlineResults",
       "clojurePulse.copyEvalResult",
     ]) {
       assert.ok(commands.includes(id), `missing command ${id}`);
+    }
+  });
+
+  test("rerunLastTest before any test command sends nothing", async () => {
+    // Deliberately placed before the first test that runs a test command:
+    // the last-test record is module state in the extension host and
+    // survives across tests, so "no prior run" only exists here.
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      await vscode.commands.executeCommand("clojurePulse.rerunLastTest");
+
+      assert.ok(
+        !server.received.some((m) => m.op === "eval" || m.op === "load-file"),
+        "with no last test command there is nothing to send",
+      );
+    } finally {
+      await server?.close();
     }
   });
 
@@ -685,6 +706,129 @@ suite("REPL commands", () => {
       // The pending marks never resolve, and the status bar is cleared.
       assert.deepStrictEqual(api.testStatus.marks(), []);
       assert.strictEqual(api.testStatusBar.current(), undefined);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("rerunLastTest repeats the last single-test run from another file", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const testDoc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(testDoc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // Switch to a business-logic buffer; the rerun must not need the test
+      // file to be active — that is the point of the command.
+      const other = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app)\n(defn add [a b] (+ a b))",
+      });
+      await vscode.window.showTextDocument(other);
+
+      const before = server.received.length;
+      await vscode.commands.executeCommand("clojurePulse.rerunLastTest");
+
+      const evals = server.received
+        .slice(before)
+        .filter((m) => m.op === "eval");
+      assert.strictEqual(evals.length, 4, "probe + in-ns + define + run again");
+      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
+      assert.ok(String(evals[3].code).includes("#'my-test"));
+
+      // Focus never left the business-logic buffer.
+      assert.strictEqual(
+        vscode.window.activeTextEditor?.document.uri.toString(),
+        other.uri.toString(),
+      );
+
+      // The verdict lands on the test file and in the status bar as usual.
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 1);
+      assert.strictEqual(marks[0].uri, testDoc.uri.toString());
+      assert.strictEqual(marks[0].status, "pass");
+      const bar = api.testStatusBar.current();
+      assert.ok(bar?.text.includes("my-test"), `unexpected bar: ${bar?.text}`);
+      assert.ok(bar?.text.includes("testing-passed-icon"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("rerunLastTest repeats the last namespace run", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const testDoc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content:
+          "(ns my.app-test)\n(deftest first-test\n  (is true))\n" +
+          "(deftest second-test\n  (is true))\n",
+      });
+      await vscode.window.showTextDocument(testDoc);
+      await vscode.commands.executeCommand("clojurePulse.runNsTests");
+
+      const other = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app)\n(defn add [a b] (+ a b))",
+      });
+      await vscode.window.showTextDocument(other);
+
+      const before = server.received.length;
+      await vscode.commands.executeCommand("clojurePulse.rerunLastTest");
+
+      const ops = server.received
+        .slice(before)
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+
+      const marks = api.testStatus.marks();
+      assert.strictEqual(marks.length, 2);
+      assert.ok(marks.every((mark) => mark.uri === testDoc.uri.toString()));
+      const bar = api.testStatusBar.current();
+      assert.ok(bar?.text.includes("my.app-test"), `unexpected bar: ${bar?.text}`);
+      assert.ok(bar?.text.includes("testing-passed-icon"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("rerunLastTest after renaming the deftest sends nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const testDoc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(testDoc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // The recorded identity is namespace + name; renaming breaks it.
+      await editor.edit((edit) => {
+        edit.replace(new vscode.Range(1, 9, 1, 16), "other-test");
+      });
+
+      const before = server.received.length;
+      await vscode.commands.executeCommand("clojurePulse.rerunLastTest");
+
+      assert.ok(
+        !server.received.slice(before).some((m) => m.op === "eval"),
+        "a renamed deftest must not be guessed at",
+      );
     } finally {
       await server?.close();
     }

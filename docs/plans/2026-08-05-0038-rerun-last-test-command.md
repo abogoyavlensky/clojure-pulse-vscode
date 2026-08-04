@@ -125,23 +125,23 @@ All test runs use `make test` (wraps `npm test` with xvfb on Linux). It compiles
 - Modify: `src/extension.ts`
 - Modify: `package.json`
 
-- [ ] **Step 1: Add the record**
+- [x] **Step 1: Add the record**
   In `src/extension.ts`, add the `LastTestCommand` type (shape from the Design section) and a module-level `let lastTestCommand: LastTestCommand | undefined`. Set it inside the cores, after each one's locate check, so a command that found nothing to run never clobbers a valid record:
   - in `runSingleTest`, where `nsName` is computed: `{ kind: "single", uri: doc.uri, ns: nsName, testName: found.name }`;
   - in `runTestsInDocument`, right after the `testsInText` non-empty check: `{ kind: "ns", uri: doc.uri }`.
   A rerun flows through the same cores and re-records identical values — a deliberate no-op (Design decision 4).
 
-- [ ] **Step 2: Implement `rerunLastTest`**
+- [x] **Step 2: Implement `rerunLastTest`**
   New function following the Design section: no record → status-bar hint; `openTextDocument` failure → error message via the `reportRunError` pattern; `kind: "single"` → find the entry in `testsInText(doc.getText())` whose name matches `record.testName` **and** whose `nsBefore` matches `record.ns`, missing → status-bar message with the test name, found → `runSingleTest`; `kind: "ns"` → `runTestsInDocument`.
 
-- [ ] **Step 3: Register and declare the command**
+- [x] **Step 3: Register and declare the command**
   Register `clojurePulse.rerunLastTest` alongside the other test commands in `activate`. In `package.json` `contributes.commands`, add it with title `Run Last Test Command` (same `category` pattern as the neighboring entries).
 
-- [ ] **Step 4: Compile and lint**
+- [x] **Step 4: Compile and lint**
   Run: `npm run compile && npm run lint`
   Expected: clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add Run Last Test Command"`
 
 ### Task 4: Integration tests
