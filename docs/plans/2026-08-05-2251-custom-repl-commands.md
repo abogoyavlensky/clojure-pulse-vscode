@@ -151,31 +151,31 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Create: `src/repl/customCommands.ts`
 - Test: `src/test/customCommands.test.ts`
 
-- [ ] **Step 1: Write failing tests for `parseCustomReplCommands`**
+- [x] **Step 1: Write failing tests for `parseCustomReplCommands`**
   Mirror `replConfig.test.ts`'s parser cases: undefined/null → empty with no warnings; non-array →
   one warning; valid entries pass with `name`/`code` trimmed at the name level (code kept verbatim
   apart from requiring non-blank); entries skipped with a descriptive warning when: not an object,
   name missing/blank, code missing/blank/not a string, duplicate name (first valid wins). Warning
   text identifies the entry by name or `#index` (reuse the `describe` approach).
 
-- [ ] **Step 2: Write failing tests for presentation**
+- [x] **Step 2: Write failing tests for presentation**
   `presentCustomCommand({name, code})` returns `{label, description, tooltip, contextValue}`:
   label = name, description = first line of `code` (trimmed), tooltip = full code,
   contextValue = `"customReplCommand"`. Cover multi-line code and single-line code.
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — module doesn't exist.
 
-- [ ] **Step 4: Implement types, parser, and presentation**
+- [x] **Step 4: Implement types, parser, and presentation**
   `CustomReplCommand` as in the Design section; `ParsedCustomReplCommands = { commands, warnings }`.
   Pure module, no `vscode` import. Follow `replConfig.ts`'s doc-comment style.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "feat: parse and present custom REPL commands"`
 
 ### Task 2: Pure module — form-edit rules
@@ -184,7 +184,7 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Modify: `src/repl/customCommands.ts`
 - Test: `src/test/customCommands.test.ts`
 
-- [ ] **Step 1: Write failing tests for the edit rules**
+- [x] **Step 1: Write failing tests for the edit rules**
   Mirror `replConfigEdit.test.ts` for the two-field shape:
   - `commandFormValuesFor(entry)` → `{name, code}` strings; missing fields fall back to `""`.
   - `validateCommandFormValues(values, entries, originalName?)` → errors object: name required,
@@ -198,18 +198,18 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
   - `findCommandEntry(entries, name)` / `removeCommandEntry(entries, name)` — remove drops every
     entry with the name; unrelated and even invalid entries survive all operations untouched.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — functions missing.
 
-- [ ] **Step 3: Implement the edit rules**
+- [x] **Step 3: Implement the edit rules**
   Same file. Do **not** import from `replConfigEdit.ts` — parallel implementation, per the design.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: form-edit rules for custom REPL commands"`
 
 ### Task 3: Form panel
@@ -218,7 +218,7 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Create: `src/repl/customCommandFormPanel.ts`
 - Test: `src/test/customCommandFormPanel.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Mirror `replFormPanel.test.ts` with a fake panel host: open add → posts load with empty values;
   open edit → loads the entry's values; open reuses an existing panel (title updated, values
   re-posted); submit with errors re-posts errors and writes nothing; valid submit writes the
@@ -226,23 +226,32 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
   still shows the same state — the `owns` guard); delete asks for confirmation, writes removal,
   closes; cancel/dispose close the panel.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — module doesn't exist.
 
-- [ ] **Step 3: Implement the panel**
+- [x] **Step 3: Implement the panel**
   Port `ReplFormPanel`'s structure: same deps shape (`createPanel`, `readEntries`, `writeEntries`,
   `confirmDelete` — no `defaultCommand`), same message protocol, same `owns` guard, same
   CSP/nonce HTML approach. Form body: Name input, Code textarea (`rows="5"`, editor font), hint
   "Runs in the active REPL. Use fully-qualified symbols, e.g. (user/reset).", Save/Cancel/Delete
   buttons identical in style. Titles: "Add REPL Command" / `Edit REPL Command: <name>`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: custom REPL command form panel"`
+
+> Deviation: codex review flagged that overlapping saves could derive from the same
+> settings snapshot and silently drop one another's changes (last write wins). Added a
+> serialized read-modify-write queue (`updateEntries`) to the panel plus a regression test —
+> goes beyond the mirrored `ReplFormPanel`, which still carries the same latent race.
+> A second round moved validation inside the queued section too, so an overlapping save
+> that just lost its name to a predecessor reports the conflict instead of appending a
+> shadowed duplicate. A third round disabled the webview's Save button while a submission
+> is in flight, so a double-click cannot race itself into a false name conflict.
 
 ### Task 4: Tree provider
 
@@ -250,7 +259,7 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Create: `src/repl/customCommandsTree.ts`
 - Test: `src/test/customCommandsTree.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Provider takes `{ readCommands: () => CustomReplCommand[] }`. `getChildren()` → one node
   `{name}` per command, in settings order; `getTreeItem` maps `presentCustomCommand` onto a
   `vscode.TreeItem` with ThemeIcon `code` and a click command invoking
@@ -258,18 +267,18 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
   `onDidChangeTreeData`. (Tests run under vscode-test, so importing `vscode` is fine —
   see `replTree.test.ts`.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement the provider**
+- [x] **Step 3: Implement the provider**
   Thin class, presentation delegated to the pure function (pattern: `ReplTreeProvider`).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: custom REPL commands tree provider"`
 
 ### Task 5: Command status bar
@@ -278,7 +287,7 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Create: `src/repl/commandStatusBar.ts`
 - Test: `src/test/commandStatusBar.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Mirror `testStatusBar.test.ts`'s structure for the simpler shape:
   - Pure presentation: running → `$(loading~spin) <name>`; success → `$(check) <name>` with
     color `testing.iconPassed` and the result value in the tooltip, truncated to its first
@@ -290,11 +299,11 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
     `finish(token, run)` renders the verdict; a superseded token's `finish`/`clear` is a no-op;
     `clear(token)` hides the item.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — module doesn't exist.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
   Port `testStatusBar.ts`'s split: a pure `commandStatusBarPresentation(run)` over
   `{ phase: "running"; name } | { phase: "done"; name; status: "ok" | "err"; value?: string }`,
   and a `createCommandStatusBar()` factory with the same token-guarded
@@ -302,11 +311,11 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
   item's 98), item name "Clojure Pulse Command". No count parsing — that is the test bar's
   concern.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: status bar feedback for custom REPL commands"`
 
 ### Task 6: package.json contributions
@@ -314,14 +323,14 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Add the setting**
+- [x] **Step 1: Add the setting**
   `clojurePulse.customReplCommands`: array, default `[]`, `"scope": "resource"`, items requiring
   `name` + `code` (both strings, `additionalProperties: false`), a `markdownDescription` that
   includes the keybinding example
   `{ "key": "ctrl+alt+r", "command": "clojurePulse.runCustomReplCommand", "args": "reset" }`,
   and one defaultSnippet (`name: "reset"`, `code: "(user/reset)"`).
 
-- [ ] **Step 2: Add view, welcome, commands, menus**
+- [x] **Step 2: Add view, welcome, commands, menus**
   - View `clojurePulse.customCommands` ("REPL Commands") inserted **between** `replManager` and
     `externalLibraries` in the `views` array.
   - viewsWelcome: "No commands yet." + one line about keybindings + `[Add Command](command:clojurePulse.addCustomReplCommand)`.
@@ -331,12 +340,16 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
     `viewItem == customReplCommand`: run `inline@1`, run `1_run@1`, edit `2_config@1`,
     delete `2_config@2`.
 
-- [ ] **Step 3: Compile**
+- [x] **Step 3: Compile**
   Run: `make compile`
   Expected: clean.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "feat: contribute custom REPL commands view, setting, and commands"`
+
+> Note: codex flagged the manifest-before-wiring state (contributed commands/view with
+> no handlers) as P1; that is the plan's sequencing — Task 7 registers everything in the
+> immediately following commit.
 
 ### Task 7: Extension wiring and integration test
 
@@ -344,18 +357,18 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 - Modify: `src/extension.ts`
 - Test: `src/test/customCommands.integration.test.ts`
 
-- [ ] **Step 1: Write failing integration test**
+- [x] **Step 1: Write failing integration test**
   Model on `replCommands.integration.test.ts` + `fakeNreplServer.ts`: configure a custom command
   in settings, connect a session, mark it active, execute `clojurePulse.runCustomReplCommand`
   with the name as arg, assert the fake server received the code as an eval op. Also cover: name
   that doesn't exist → no eval sent. Teardown must restore `clojurePulse.customReplCommands` to
   its prior value so state never leaks across tests.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `make test`
   Expected: FAIL — command not registered.
 
-- [ ] **Step 3: Wire everything in `activate`'s REPL section**
+- [x] **Step 3: Wire everything in `activate`'s REPL section**
   - Raw read/write helpers for `clojurePulse.customReplCommands` (pattern:
     `rawReplConfigurations` / `writeReplConfigurations`).
   - Instantiate the form panel (webview options and icon copied from the `replForm` block), the
@@ -374,11 +387,11 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
     modal (pattern: `confirmDeleteConfig`) and writes `removeCommandEntry`.
   - Log parse warnings to `outputChannel` on read (pattern: `applyReplConfigs`).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS, including all earlier suites.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: run, add, edit, and delete custom REPL commands"`
 
 ### Task 8: Docs and final check
@@ -386,13 +399,45 @@ Test command throughout: `make test` (wraps `npm test` in xvfb on Linux). Full g
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Document the feature**
+- [x] **Step 1: Document the feature**
   Short section: what custom commands are, the pane (click to edit, play to run), the setting
   shape, and the keybinding example. Use /writing-clearly.
 
-- [ ] **Step 2: Full gate**
+- [x] **Step 2: Full gate**
   Run: `make check`
   Expected: lint, compile, and tests all pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "docs: custom REPL commands"`
+
+> Deviation (Task 7, recorded here): `commandStatusBar` was added to the `ExtensionApi`
+> returned by `activate()` so the integration tests can assert the run verdict — mirrors
+> how `testStatusBar` is already exposed.
+
+---
+
+## Completion Summary (2026-08-06)
+
+**Status: completed.** All 8 tasks done; `make check` passes (lint, compile, 559 tests);
+the .vsix packages cleanly. Every task commit passed a codex second-opinion review.
+
+What was built: the `clojurePulse.customReplCommands` setting (resource scope), the pure
+rules module `customCommands.ts`, the editor-tab form `customCommandFormPanel.ts`, the
+sidebar pane `customCommandsTree.ts` (between REPL and External Libraries; click = edit,
+play = run), the silent run pipeline with `commandStatusBar.ts` verdicts, four commands
+(run/add/edit/delete) with quick-pick fallbacks, manifest contributions, integration tests
+against the fake nREPL server, and a README section with the keybinding recipe.
+
+Deviations (all recorded inline under their tasks):
+- Form panel hardening beyond the mirrored `ReplFormPanel`, driven by three codex review
+  rounds: serialized settings writes, validation inside the queued section, and a Save
+  button disabled while a submission is in flight. `ReplFormPanel` still carries the same
+  latent write race — worth a follow-up port of the same queue.
+- Task 6's manifest-before-wiring state was flagged P1 by codex; resolved by Task 7's
+  commit as sequenced.
+- `commandStatusBar` exposed on `ExtensionApi` for integration assertions.
+
+What the plan could have specified better: it said to port `ReplFormPanel`'s structure
+verbatim; specifying serialized read-modify-write for settings up front would have saved
+two review rounds. Otherwise it held up — every file, identifier, and flow landed as
+written.
