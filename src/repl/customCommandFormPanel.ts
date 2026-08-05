@@ -384,6 +384,7 @@ function renderHtml(): string {
   const vscodeApi = acquireVsCodeApi();
   const FIELDS = ["name", "code"];
   const deleteButton = document.getElementById("delete");
+  const saveButton = document.getElementById("save");
 
   function readValues() {
     const values = {};
@@ -415,6 +416,8 @@ function renderHtml(): string {
     }
     setError("form", msg.errors.form);
     deleteButton.hidden = msg.mode !== "edit";
+    // A failed save answers with a load; the button comes back with it.
+    saveButton.disabled = false;
     const name = document.getElementById("name");
     name.focus();
     name.select();
@@ -422,6 +425,9 @@ function renderHtml(): string {
 
   document.getElementById("command-form").addEventListener("submit", (event) => {
     event.preventDefault();
+    // One save at a time: a double-click must not race itself into a
+    // false name conflict against its own first submission.
+    saveButton.disabled = true;
     vscodeApi.postMessage({ type: "save", values: readValues() });
   });
   document.getElementById("cancel").addEventListener("click", () => {
