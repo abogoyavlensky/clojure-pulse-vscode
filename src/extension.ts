@@ -25,6 +25,21 @@ import {
 } from "./repl/replConfig";
 import { removeEntry } from "./repl/replConfigEdit";
 import { ReplFormPanel } from "./repl/replFormPanel";
+import {
+  CustomReplCommand,
+  parseCustomReplCommands,
+  presentCustomCommand,
+  removeCommandEntry,
+} from "./repl/customCommands";
+import { CustomCommandFormPanel } from "./repl/customCommandFormPanel";
+import {
+  CustomCommandsTreeProvider,
+  CustomCommandTreeNode,
+} from "./repl/customCommandsTree";
+import {
+  CommandStatusBar,
+  createCommandStatusBar,
+} from "./repl/commandStatusBar";
 import { ReplRegistry } from "./repl/replRegistry";
 import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
@@ -70,6 +85,7 @@ export interface ExtensionApi {
   replForm: ReplFormPanel;
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
+  commandStatusBar: CommandStatusBar;
 }
 
 export async function activate(
@@ -299,6 +315,34 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     confirmDelete: (name) => confirmDeleteConfig(name),
   });
 
+  // The custom commands pane and form, siblings of the REPL manager's: the
+  // same editor-tab form pattern over the pure rules in customCommands.ts.
+  const commandForm = new CustomCommandFormPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.customCommandForm",
+        "Add REPL Command",
+        vscode.ViewColumn.Active,
+        // Worth a little memory: an in-progress edit survives tabbing away.
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "repl-icon.svg",
+      );
+      return panel;
+    },
+    readEntries: rawCustomReplCommands,
+    writeEntries: writeCustomReplCommands,
+    confirmDelete: (name) => confirmDeleteCustomCommand(name),
+  });
+  const commandsTree = new CustomCommandsTreeProvider({
+    readCommands: customReplCommands,
+  });
+  const commandBar = createCommandStatusBar();
+  logCustomCommandWarnings();
+
   const tree = new ReplTreeProvider(registry);
   const replStatus = createReplStatusBar();
   const paint = (): void => replStatus.update(statusState(registry));
@@ -317,10 +361,20 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     testStatusBar,
     // So a form left open closes with the extension.
     replForm,
+    commandForm,
+    commandBar,
     vscode.window.registerTreeDataProvider("clojurePulse.replManager", tree),
+    vscode.window.registerTreeDataProvider(
+      "clojurePulse.customCommands",
+      commandsTree,
+    ),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration("clojurePulse.replConfigurations")) {
         applyReplConfigs(registry);
+      }
+      if (event.affectsConfiguration("clojurePulse.customReplCommands")) {
+        logCustomCommandWarnings();
+        commandsTree.refresh();
       }
     }),
     vscode.commands.registerCommand("clojurePulse.startRepl", (arg?: unknown) =>
@@ -387,8 +441,30 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand("clojurePulse.replMenu", () =>
       replMenu(registry, replForm),
     ),
+    vscode.commands.registerCommand(
+      "clojurePulse.runCustomReplCommand",
+      (arg?: unknown) => runCustomReplCommand(registry, commandBar, arg),
+    ),
+    vscode.commands.registerCommand("clojurePulse.addCustomReplCommand", () =>
+      commandForm.open({ kind: "add" }),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.editCustomReplCommand",
+      (arg?: unknown) => editCustomReplCommand(commandForm, arg),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.deleteCustomReplCommand",
+      (arg?: unknown) => deleteCustomReplCommand(arg),
+    ),
   );
-  return { repls: registry, inlineResults, replForm, testStatus, testStatusBar };
+  return {
+    repls: registry,
+    inlineResults,
+    replForm,
+    testStatus,
+    testStatusBar,
+    commandStatusBar: commandBar,
+  };
 }
 
 /** The workspace root's file names, which the prefilled command follows. */
@@ -727,6 +803,176 @@ async function writeReplConfigurations(entries: unknown[]): Promise<void> {
   await vscode.workspace
     .getConfiguration("clojurePulse")
     .update("replConfigurations", entries, target);
+}
+
+/** The parsed custom commands — what the pane, picks, and runs act on. */
+function customReplCommands(): CustomReplCommand[] {
+  return parseCustomReplCommands(
+    vscode.workspace.getConfiguration("clojurePulse").get<unknown>("customReplCommands"),
+  ).commands;
+}
+
+/** Logged on activation and on each settings change — not on every read,
+ *  which repaints would turn into channel spam. */
+function logCustomCommandWarnings(): void {
+  const { warnings } = parseCustomReplCommands(
+    vscode.workspace.getConfiguration("clojurePulse").get<unknown>("customReplCommands"),
+  );
+  for (const warning of warnings) {
+    outputChannel?.appendLine(`[clojure-pulse] ${warning}`);
+  }
+}
+
+/**
+ * The configured entries exactly as settings hold them — unfiltered, so an
+ * entry the parser only warns about survives a form edit untouched.
+ */
+function rawCustomReplCommands(): unknown[] {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("customReplCommands");
+  return Array.isArray(raw) ? raw : [];
+}
+
+/** Saves the commands: workspace settings when a folder is open, so they
+ *  travel with the project; user settings otherwise. */
+async function writeCustomReplCommands(entries: unknown[]): Promise<void> {
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("clojurePulse")
+    .update("customReplCommands", entries, target);
+}
+
+/** The command a run/edit/delete refers to: a keybinding's name string, a
+ *  tree node, or nothing — the caller then falls back to a quick pick. */
+function resolveCommandName(arg: unknown): string | undefined {
+  if (typeof arg === "string" && arg.trim().length > 0) {
+    return arg.trim();
+  }
+  const node = arg as CustomCommandTreeNode | undefined;
+  return typeof node?.name === "string" ? node.name : undefined;
+}
+
+/** Quick-picks a configured command; `onEmpty` decides what no commands at
+ *  all offers — the add form for run, a plain notice for edit and delete. */
+async function pickCustomCommand(
+  placeHolder: string,
+  onEmpty: "add-form" | "message",
+): Promise<string | undefined> {
+  const commands = customReplCommands();
+  if (commands.length === 0) {
+    if (onEmpty === "add-form") {
+      await vscode.commands.executeCommand("clojurePulse.addCustomReplCommand");
+    } else {
+      vscode.window.showInformationMessage(
+        "No custom REPL commands configured yet.",
+      );
+    }
+    return undefined;
+  }
+  const choice = await vscode.window.showQuickPick(
+    commands.map((command) => ({
+      label: command.name,
+      description: presentCustomCommand(command).description,
+    })),
+    { placeHolder },
+  );
+  return choice?.label;
+}
+
+/** Resolves the command an action should act on, or reports why it cannot. */
+async function customCommandFor(
+  arg: unknown,
+  pick: () => Promise<string | undefined>,
+): Promise<CustomReplCommand | undefined> {
+  const name = resolveCommandName(arg) ?? (await pick());
+  if (name === undefined) {
+    return undefined;
+  }
+  const command = customReplCommands().find((candidate) => candidate.name === name);
+  if (!command) {
+    void vscode.window.showErrorMessage(
+      `Clojure Pulse: no custom REPL command named "${name}" — check clojurePulse.customReplCommands.`,
+    );
+    return undefined;
+  }
+  return command;
+}
+
+/**
+ * Runs a custom command against the active REPL. Silent by design: no output
+ * panel reveal, no notifications — the status bar spinner-then-verdict is the
+ * feedback, and the transcript records everything for the click-through.
+ */
+async function runCustomReplCommand(
+  registry: ReplRegistry,
+  bar: CommandStatusBar,
+  arg?: unknown,
+): Promise<void> {
+  const command = await customCommandFor(arg, () =>
+    pickCustomCommand("Run which REPL command?", "add-form"),
+  );
+  if (!command) {
+    return;
+  }
+  // Before running(): with nothing connected the warning prompt is the
+  // feedback, and the status bar must not flash a spinner for a non-run.
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  const token = bar.running(command.name);
+  try {
+    const outcome = await session.eval(command.code);
+    bar.finish(token, {
+      phase: "done",
+      name: command.name,
+      status: outcome.err === undefined ? "ok" : "err",
+      value: outcome.value,
+    });
+  } catch {
+    // A thrown eval (connection dropped mid-run) is a failure like any other.
+    bar.finish(token, { phase: "done", name: command.name, status: "err" });
+  }
+}
+
+async function editCustomReplCommand(
+  form: CustomCommandFormPanel,
+  arg?: unknown,
+): Promise<void> {
+  const command = await customCommandFor(arg, () =>
+    pickCustomCommand("Edit which REPL command?", "message"),
+  );
+  if (command) {
+    form.open({ kind: "edit", name: command.name });
+  }
+}
+
+async function deleteCustomReplCommand(arg?: unknown): Promise<void> {
+  const command = await customCommandFor(arg, () =>
+    pickCustomCommand("Delete which REPL command?", "message"),
+  );
+  if (!command) {
+    return;
+  }
+  if (!(await confirmDeleteCustomCommand(command.name))) {
+    return;
+  }
+  await writeCustomReplCommands(
+    removeCommandEntry(rawCustomReplCommands(), command.name),
+  );
+}
+
+/** The one confirmation both delete routes — the row's and the form's — show. */
+async function confirmDeleteCustomCommand(name: string): Promise<boolean> {
+  const confirmed = await vscode.window.showWarningMessage(
+    `Delete the custom REPL command "${name}"?`,
+    { modal: true },
+    "Delete",
+  );
+  return confirmed === "Delete";
 }
 
 /** True when inline eval results are enabled in settings (default on). */
