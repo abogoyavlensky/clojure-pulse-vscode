@@ -1,7 +1,13 @@
 import * as assert from "assert";
 import {
+  commandFormValuesFor,
+  findCommandEntry,
   parseCustomReplCommands,
   presentCustomCommand,
+  removeCommandEntry,
+  toCommandEntry,
+  upsertCommandEntry,
+  validateCommandFormValues,
 } from "../repl/customCommands";
 
 suite("parseCustomReplCommands", () => {
@@ -128,5 +134,227 @@ suite("presentCustomCommand", () => {
       code: "  (user/reset)  \n(println :done)",
     });
     assert.strictEqual(view.description, "(user/reset)");
+  });
+});
+
+suite("commandFormValuesFor", () => {
+  test("adding starts empty", () => {
+    assert.deepStrictEqual(commandFormValuesFor(undefined), { name: "", code: "" });
+  });
+
+  test("fills an entry's values, showing the name the pane shows", () => {
+    assert.deepStrictEqual(
+      commandFormValuesFor({ name: "  reset  ", code: "(user/reset)" }),
+      { name: "reset", code: "(user/reset)" },
+    );
+  });
+
+  test("missing fields fall back to empty strings", () => {
+    assert.deepStrictEqual(commandFormValuesFor({ name: "reset" }), {
+      name: "reset",
+      code: "",
+    });
+    assert.deepStrictEqual(commandFormValuesFor({ code: 42 }), { name: "", code: "" });
+    assert.deepStrictEqual(commandFormValuesFor("junk"), { name: "", code: "" });
+  });
+});
+
+suite("validateCommandFormValues", () => {
+  test("accepts a complete command", () => {
+    assert.deepStrictEqual(
+      validateCommandFormValues({ name: "reset", code: "(user/reset)" }, []),
+      {},
+    );
+  });
+
+  test("requires a name", () => {
+    assert.ok(validateCommandFormValues({ name: "   ", code: "(user/reset)" }, []).name);
+  });
+
+  test("requires non-blank code", () => {
+    assert.ok(validateCommandFormValues({ name: "reset", code: "  " }, []).code);
+    assert.ok(validateCommandFormValues({ name: "reset", code: "" }, []).code);
+  });
+
+  test("rejects a name another command already uses", () => {
+    const entries = [{ name: "reset", code: "(user/reset)" }];
+    const error = validateCommandFormValues(
+      { name: "reset", code: "(user/other)" },
+      entries,
+    ).name;
+    assert.ok(error, "expected a name conflict");
+    assert.ok(error.includes("reset"), error);
+    // Trailing spaces do not buy a second "reset": the pane shows one name.
+    assert.ok(
+      validateCommandFormValues({ name: " reset ", code: "(x)" }, entries).name,
+    );
+  });
+
+  test("an entry being edited keeps its own name", () => {
+    const entries = [
+      { name: "reset", code: "(user/reset)" },
+      { name: "stop", code: "(user/stop)" },
+    ];
+    assert.strictEqual(
+      validateCommandFormValues({ name: "reset", code: "(x)" }, entries, "reset").name,
+      undefined,
+    );
+    assert.ok(
+      validateCommandFormValues({ name: "stop", code: "(x)" }, entries, "reset").name,
+    );
+  });
+
+  test("a broken entry cannot block a name", () => {
+    // The parser skips an entry with no code, so it never reaches the pane —
+    // and must not reserve "reset" either.
+    const entries = [{ name: "reset" }];
+    assert.strictEqual(
+      validateCommandFormValues({ name: "reset", code: "(x)" }, entries).name,
+      undefined,
+    );
+  });
+});
+
+suite("toCommandEntry", () => {
+  test("trims the name and keeps the code as typed", () => {
+    assert.deepStrictEqual(
+      toCommandEntry({ name: "  reset  ", code: "  (user/reset)\n" }),
+      { name: "reset", code: "  (user/reset)\n" },
+    );
+  });
+
+  test("preserves keys this version does not know about", () => {
+    const original = { name: "reset", code: "(old)", note: "keep me" };
+    assert.deepStrictEqual(toCommandEntry({ name: "reset", code: "(new)" }, original), {
+      name: "reset",
+      code: "(new)",
+      note: "keep me",
+    });
+  });
+
+  test("ignores an original that is not an object", () => {
+    assert.deepStrictEqual(toCommandEntry({ name: "reset", code: "(x)" }, "junk"), {
+      name: "reset",
+      code: "(x)",
+    });
+  });
+});
+
+suite("upsertCommandEntry", () => {
+  const reset = { name: "reset", code: "(user/reset)" };
+
+  test("replaces the entry with the original name, in place", () => {
+    const entries = [
+      { name: "a", code: "(a)" },
+      { name: "reset", code: "(old)" },
+      { name: "b", code: "(b)" },
+    ];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      entries[0],
+      reset,
+      entries[2],
+    ]);
+  });
+
+  test("matches an original name that needed trimming", () => {
+    const entries = [{ name: "  reset  ", code: "(old)" }];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [reset]);
+  });
+
+  test("replaces only the first of two entries sharing a name", () => {
+    const shadowed = { name: "reset", code: "(shadowed)" };
+    const entries = [{ name: "reset", code: "(old)" }, shadowed];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      reset,
+      shadowed,
+    ]);
+  });
+
+  test("replaces the entry the pane is showing, not a broken namesake before it", () => {
+    // The parser skips the code-less entry and shows the one behind it;
+    // renaming must not leave that one configured.
+    const broken = { name: "reset" };
+    const entries = [broken, { name: "reset", code: "(user/reset)" }];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      broken,
+      reset,
+    ]);
+  });
+
+  test("falls back to the first namesake when none of them parses", () => {
+    const entries = [{ name: "reset" }, { name: "a", code: "(a)" }];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      reset,
+      entries[1],
+    ]);
+  });
+
+  test("appends when the original entry is gone", () => {
+    const entries = [{ name: "a", code: "(a)" }];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      entries[0],
+      reset,
+    ]);
+  });
+
+  test("appends a new entry", () => {
+    const entries = [{ name: "a", code: "(a)" }];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset), [entries[0], reset]);
+  });
+
+  test("leaves entries it did not match alone, non-objects included", () => {
+    const entries = ["junk", 7, null, { name: "reset", code: "(old)" }, []];
+    assert.deepStrictEqual(upsertCommandEntry(entries, reset, "reset"), [
+      "junk",
+      7,
+      null,
+      reset,
+      entries[4],
+    ]);
+  });
+
+  test("does not touch the array it was given", () => {
+    const entries: unknown[] = [{ name: "reset", code: "(old)" }];
+    const before = [...entries];
+    upsertCommandEntry(entries, reset, "reset");
+    assert.deepStrictEqual(entries, before);
+  });
+});
+
+suite("findCommandEntry", () => {
+  test("returns the entry the pane is showing", () => {
+    const broken = { name: "reset" };
+    const shown = { name: "reset", code: "(user/reset)" };
+    assert.strictEqual(findCommandEntry([broken, shown], "reset"), shown);
+    assert.strictEqual(findCommandEntry(["junk", shown], "reset"), shown);
+  });
+
+  test("has nothing for a name that is not configured", () => {
+    assert.strictEqual(findCommandEntry([{ name: "a", code: "(a)" }], "reset"), undefined);
+    assert.strictEqual(findCommandEntry([], "reset"), undefined);
+  });
+});
+
+suite("removeCommandEntry", () => {
+  test("drops every entry with that name, duplicates included", () => {
+    const entries = [
+      { name: "a", code: "(a)" },
+      { name: "reset", code: "(user/reset)" },
+      { name: "  reset  ", code: "(other)" },
+    ];
+    assert.deepStrictEqual(removeCommandEntry(entries, "reset"), [entries[0]]);
+  });
+
+  test("leaves everything else in place, non-objects included", () => {
+    const entries = ["junk", 7, null, { name: "reset", code: "(x)" }];
+    assert.deepStrictEqual(removeCommandEntry(entries, "reset"), ["junk", 7, null]);
+    assert.deepStrictEqual(removeCommandEntry(entries, "missing"), entries);
+  });
+
+  test("does not touch the array it was given", () => {
+    const entries: unknown[] = [{ name: "reset", code: "(x)" }];
+    const before = [...entries];
+    removeCommandEntry(entries, "reset");
+    assert.deepStrictEqual(entries, before);
   });
 });
