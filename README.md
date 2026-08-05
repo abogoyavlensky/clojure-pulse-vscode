@@ -59,6 +59,10 @@ do not need any other Clojure extension.
 - **REPL manager** — name your project's REPLs in a form, start them (or
   connect to running ones) from the sidebar, and evaluate code from the editor.
   Several REPLs can run at once. See [REPL](#repl) below.
+- **Custom REPL commands** — save the snippets you send to the REPL all day
+  (`(user/reset)`, `(user/stop)`) as named commands, and run them from the
+  sidebar, the palette, or your own keybindings. See
+  [Custom commands](#custom-commands) below.
 
 The available language features track whatever your installed `clj-pulse`
 version supports — see the [clj-pulse README](https://github.com/abogoyavlensky/clj-pulse#features).
@@ -314,6 +318,44 @@ example in `keybindings.json`:
 }
 ```
 
+### Custom commands
+
+Save the snippets you send to the REPL all day — `(user/reset)`,
+`(user/stop)` — as named commands. The **REPL Commands** view sits between
+the REPL and External Libraries panes; the **+** on its title opens the same
+kind of editor-tab form the REPL manager uses, with a name and the code to
+run. Clicking a row opens that form; the play button on the row runs the
+command. The palette's **Run Custom REPL Command** picks one by name, and a
+keybinding runs one directly:
+
+```json
+{
+  "key": "ctrl+alt+r",
+  "command": "clojurePulse.runCustomReplCommand",
+  "args": "reset"
+}
+```
+
+A run is silent: no output panel stealing space, no notifications. The status
+bar shows a spinner while the code runs, then the verdict — the command name
+in green (hover for the result value) or on a red background when the
+evaluation failed. Click the item to open the REPL output; the transcript
+always carries the full exchange.
+
+The commands live in the `clojurePulse.customReplCommands` setting, saved to
+workspace settings when a folder is open:
+
+```json
+[
+  { "name": "reset", "code": "(user/reset)" }
+]
+```
+
+The code is sent to the active REPL exactly as written, in the session's
+current namespace, so use fully-qualified symbols as in `(user/reset)`. A
+keybinding refers to a command by name; rename the command and the keybinding
+needs the new name too.
+
 ## Commands
 
 Run these from the Command Palette:
@@ -353,6 +395,15 @@ Run these from the Command Palette:
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.
+- **Clojure Pulse: Run Custom REPL Command** — run a saved command in the
+  active REPL. Takes a name as its argument, so a keybinding can run one
+  directly; with nothing configured yet, it opens the form instead.
+- **Clojure Pulse: Add Custom REPL Command** — open the form for a new command
+  (also the **+** on the REPL Commands view).
+- **Clojure Pulse: Edit Custom REPL Command** — open the form on an existing
+  command (also a click on its row).
+- **Clojure Pulse: Delete Custom REPL Command** — remove a command, as the
+  form's **Delete** button does.
 
 ## Using it on its own
 
