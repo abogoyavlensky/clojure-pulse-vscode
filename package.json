@@ -145,6 +145,36 @@
               }
             }
           ]
+        },
+        "clojurePulse.customReplCommands": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Named snippets of Clojure code shown in the **REPL Commands** view and run against the active REPL. Use fully-qualified symbols (e.g. `(user/reset)`). Bind one to a key by name:\n\n```json\n{ \"key\": \"ctrl+alt+r\", \"command\": \"clojurePulse.runCustomReplCommand\", \"args\": \"reset\" }\n```",
+          "items": {
+            "type": "object",
+            "required": ["name", "code"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique name, shown in the REPL Commands view and used as keybinding args."
+              },
+              "code": {
+                "type": "string",
+                "description": "Clojure code sent verbatim to the active REPL."
+              }
+            },
+            "additionalProperties": false
+          },
+          "defaultSnippets": [
+            {
+              "label": "custom REPL command",
+              "body": {
+                "name": "$1reset",
+                "code": "(user/reset)"
+              }
+            }
+          ]
         }
       }
     },
@@ -169,6 +199,10 @@
           "name": "REPL"
         },
         {
+          "id": "clojurePulse.customCommands",
+          "name": "REPL Commands"
+        },
+        {
           "id": "clojurePulse.externalLibraries",
           "name": "External Libraries"
         }
@@ -178,6 +212,10 @@
       {
         "view": "clojurePulse.replManager",
         "contents": "No REPLs configured yet.\n\nAdd one to start an nREPL server for this project, or to connect to a server you already have running.\n\n[Add REPL Configuration](command:clojurePulse.addReplConfig)"
+      },
+      {
+        "view": "clojurePulse.customCommands",
+        "contents": "No commands yet.\n\nSave snippets like (user/reset) to run against the active REPL — from here, the palette, or your own keybindings.\n\n[Add Command](command:clojurePulse.addCustomReplCommand)"
       },
       {
         "view": "clojurePulse.externalLibraries",
@@ -299,6 +337,30 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.runCustomReplCommand",
+        "title": "Run Custom REPL Command",
+        "category": "Clojure Pulse",
+        "icon": "$(play)"
+      },
+      {
+        "command": "clojurePulse.addCustomReplCommand",
+        "title": "Add Custom REPL Command",
+        "category": "Clojure Pulse",
+        "icon": "$(add)"
+      },
+      {
+        "command": "clojurePulse.editCustomReplCommand",
+        "title": "Edit Custom REPL Command",
+        "category": "Clojure Pulse",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "clojurePulse.deleteCustomReplCommand",
+        "title": "Delete Custom REPL Command",
+        "category": "Clojure Pulse",
+        "icon": "$(trash)"
+      },
+      {
         "command": "clojurePulse.refreshExternalLibraries",
         "title": "Refresh External Libraries",
         "category": "Clojure Pulse",
@@ -310,6 +372,11 @@
         {
           "command": "clojurePulse.addReplConfig",
           "when": "view == clojurePulse.replManager",
+          "group": "navigation"
+        },
+        {
+          "command": "clojurePulse.addCustomReplCommand",
+          "when": "view == clojurePulse.customCommands",
           "group": "navigation"
         },
         {
@@ -357,6 +424,31 @@
         {
           "command": "clojurePulse.deleteReplConfig",
           "when": "view == clojurePulse.replManager",
+          "group": "2_config@2"
+        },
+        {
+          "command": "clojurePulse.runCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.editCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
+          "group": "inline@2"
+        },
+        {
+          "command": "clojurePulse.runCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
+          "group": "1_run@1"
+        },
+        {
+          "command": "clojurePulse.editCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
+          "group": "2_config@1"
+        },
+        {
+          "command": "clojurePulse.deleteCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
           "group": "2_config@2"
         }
       ]
