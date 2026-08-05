@@ -256,6 +256,16 @@ rather than land somewhere you did not intend.
   test runs on its own, `:once` fixtures run once *per test*, not once per
   namespace (and on a let-go without `run-test-var`, the same fallback the
   single-test command uses skips fixtures entirely).
+- **Run Last Test Command** — repeats whatever test command ran last, from
+  anywhere. The Cursive workflow this copies: run a `deftest`, switch to the
+  business-logic code, change something, eval it in the REPL — then re-run the
+  test without ever leaving the file you're in. The command re-reads the test
+  file's current content (unsaved edits included), finds the test again by
+  namespace and name — so it survives the deftest moving around the file — and
+  runs it exactly as the original command would: same gutter marks on the test
+  file, same status-bar verdict. Focus stays where you are; the test file is
+  never opened or revealed. If the recorded test has since been renamed or
+  deleted, a status-bar message says so instead of guessing.
 - **Inline results** — by default the value appears at the **end of the line**
   in a muted, Cursive-style hint (never wedged between brackets): faint while it
   runs, and the error's first line in red on failure. Hover the result for the
@@ -319,6 +329,8 @@ Run these from the Command Palette:
   needed.
 - **Clojure Pulse: Run Tests in Namespace** — load the current file and run
   every top-level `deftest` in it, one after another.
+- **Clojure Pulse: Run Last Test Command** — repeat the last test command
+  (either of the two above) without switching to the test file.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
   the cursor.

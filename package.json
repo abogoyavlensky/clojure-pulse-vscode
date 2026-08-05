@@ -279,6 +279,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.rerunLastTest",
+        "title": "Run Last Test Command",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.clearInlineResults",
         "title": "Clear Inline Results",
         "category": "Clojure Pulse"

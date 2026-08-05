@@ -41,7 +41,13 @@ import {
   testRunCounts,
   TestStatusBar,
 } from "./repl/testStatusBar";
-import { formAtCursor, nsBefore, testAtCursor, testsInText } from "./repl/forms";
+import {
+  formAtCursor,
+  nsBefore,
+  testAtCursor,
+  TestAtCursor,
+  testsInText,
+} from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
 
@@ -367,6 +373,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     ),
     vscode.commands.registerCommand("clojurePulse.runNsTests", () =>
       runNsTests(registry, testStatus, testStatusBar),
+    ),
+    vscode.commands.registerCommand("clojurePulse.rerunLastTest", () =>
+      rerunLastTest(registry, inlineResults, testStatus, testStatusBar),
     ),
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
@@ -821,12 +830,9 @@ async function evalCurrentForm(
 }
 
 /**
- * Runs the top-level `deftest` at (or right after) the cursor: re-evaluates
- * the form in its namespace so the buffer's current version is what runs,
- * then executes it via clojure.test. Two evals share one inline decoration —
- * pending through both, resolved with the runner's summary map. The detailed
- * report streams to the REPL's output channel without stealing focus; the
- * gutter mark's hover and the status bar carry the verdict.
+ * Runs the top-level `deftest` at (or right after) the cursor. The cursor is
+ * the only editor-bound part; the run itself is `runSingleTest`, shared with
+ * the rerun command.
  */
 async function runTestAtCursor(
   registry: ReplRegistry,
@@ -851,21 +857,67 @@ async function runTestAtCursor(
     );
     return;
   }
+  await runSingleTest(session, editor.document, found, inlineResults, testStatus, statusBar);
+}
+
+/**
+ * What the last test command meant, semantically — enough to re-resolve it
+ * against the document's current content. A single test is identified by
+ * namespace + name (a buffer can hold several ns forms with same-named
+ * tests), never by offset, so edits to the test file are survived. Written by
+ * the document-centric cores right after they locate something to run, so a
+ * command that found nothing never clobbers a valid record; a rerun re-writes
+ * the same values, which keeps repeated reruns stable.
+ */
+type LastTestCommand =
+  | { kind: "single"; uri: vscode.Uri; ns: string | undefined; testName: string }
+  | { kind: "ns"; uri: vscode.Uri };
+
+/** In-memory and per-window, like Cursive's re-run action: a restart clears it. */
+let lastTestCommand: LastTestCommand | undefined;
+
+/** The first visible editor showing `doc`, if any. Inline decorations need an
+ *  editor to paint on, and a rerun's document may not be open in any pane. */
+function visibleEditorFor(doc: vscode.TextDocument): vscode.TextEditor | undefined {
+  return vscode.window.visibleTextEditors.find((editor) => editor.document === doc);
+}
+
+/**
+ * Runs one `deftest` of a document: re-evaluates the form in its namespace so
+ * the buffer's current version is what runs, then executes it via
+ * clojure.test. Two evals share one inline decoration — pending through both,
+ * resolved with the runner's summary map — painted only when some visible
+ * editor shows the document. The detailed report streams to the REPL's output
+ * channel without stealing focus; the gutter mark's hover and the status bar
+ * carry the verdict.
+ */
+async function runSingleTest(
+  session: ReplSessionLike,
+  doc: vscode.TextDocument,
+  found: TestAtCursor,
+  inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const text = doc.getText();
   const range = new vscode.Range(
-    editor.document.positionAt(found.range.start),
-    editor.document.positionAt(found.range.end),
+    doc.positionAt(found.range.start),
+    doc.positionAt(found.range.end),
   );
   const nsName = nsBefore(text, found.range.start);
+  lastTestCommand = { kind: "single", uri: doc.uri, ns: nsName, testName: found.name };
   if (!inlineEnabled()) {
     session.showOutput();
   }
-  const id = inlineEnabled() ? inlineResults.markPending(editor, range) : undefined;
+  const editor = visibleEditorFor(doc);
+  const id =
+    inlineEnabled() && editor ? inlineResults.markPending(editor, range) : undefined;
   // This command supersedes the previous test report: wipe the gutter and
   // track the deftest about to run. Paths below that abandon the run simply
   // never resolve the pending mark — but must clear the status bar's
   // spinner, which otherwise persists.
   testStatus.beginRun();
-  const runId = testStatus.track(editor, range);
+  const runId = testStatus.track(doc, range);
   const barToken = statusBar.running(found.name);
   try {
     if (nsName !== undefined) {
@@ -888,7 +940,6 @@ async function runTestAtCursor(
         return;
       }
       if (probe.value === "false") {
-        const doc = editor.document;
         const onDisk = doc.uri.scheme === "file";
         const loaded = await session.loadFile(doc.getText(), {
           filePath: onDisk ? doc.uri.fsPath : undefined,
@@ -916,8 +967,8 @@ async function runTestAtCursor(
         return;
       }
     }
-    const defined = await session.eval(editor.document.getText(range), {
-      ...sourceParams(editor, range.start),
+    const defined = await session.eval(doc.getText(range), {
+      ...docSourceParams(doc, range.start),
       ns: nsName,
     });
     if (defined.err !== undefined || defined.namespaceNotFound) {
@@ -1019,7 +1070,18 @@ async function runNsTests(
   if (!editor) {
     return;
   }
-  const doc = editor.document;
+  await runTestsInDocument(session, editor.document, testStatus, statusBar);
+}
+
+/** The document-centric body of Run Tests in Namespace, shared with the
+ *  rerun command: the active editor chooses the document above; here only
+ *  the document matters. */
+async function runTestsInDocument(
+  session: ReplSessionLike,
+  doc: vscode.TextDocument,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
   const text = doc.getText();
   const tests = testsInText(text);
   if (tests.length === 0) {
@@ -1029,6 +1091,7 @@ async function runNsTests(
     );
     return;
   }
+  lastTestCommand = { kind: "ns", uri: doc.uri };
 
   // This command supersedes the previous report: wipe the gutter, then track
   // every deftest up front so each verdict lands on the right form as it
@@ -1037,7 +1100,7 @@ async function runNsTests(
   testStatus.beginRun();
   const markIds = tests.map((found) =>
     testStatus.track(
-      editor,
+      doc,
       new vscode.Range(
         doc.positionAt(found.range.start),
         doc.positionAt(found.range.end),
@@ -1109,6 +1172,58 @@ async function runNsTests(
   }
 }
 
+/**
+ * Re-runs whatever test command ran last — Cursive's "re-run last test
+ * action". The record is re-resolved against the document's *current*
+ * content, so a moved or edited deftest is found again by namespace + name
+ * and an ns run picks up new tests. The document is opened without showing
+ * it, so focus stays wherever the user is working; when the test file is not
+ * visible the status bar and REPL output carry the verdict.
+ */
+async function rerunLastTest(
+  registry: ReplRegistry,
+  inlineResults: InlineResultsManager,
+  testStatus: TestStatusManager,
+  statusBar: TestStatusBar,
+): Promise<void> {
+  const last = lastTestCommand;
+  if (!last) {
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: no test command has been run yet",
+      3000,
+    );
+    return;
+  }
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  let doc: vscode.TextDocument;
+  try {
+    doc = await vscode.workspace.openTextDocument(last.uri);
+  } catch {
+    reportRunError(`cannot open ${last.uri.fsPath} to re-run its tests`);
+    return;
+  }
+  if (last.kind === "ns") {
+    await runTestsInDocument(session, doc, testStatus, statusBar);
+    return;
+  }
+  const text = doc.getText();
+  const found = testsInText(text).find(
+    (test) =>
+      test.name === last.testName && nsBefore(text, test.range.start) === last.ns,
+  );
+  if (!found) {
+    void vscode.window.setStatusBarMessage(
+      `Clojure Pulse: deftest ${last.testName} no longer found in ${basename(doc.uri.fsPath)}`,
+      3000,
+    );
+    return;
+  }
+  await runSingleTest(session, doc, found, inlineResults, testStatus, statusBar);
+}
+
 /** Surfaces an error that aborts a bulk test run, which has no inline
  *  decoration to carry it. First line only — the full report is in the
  *  REPL's output channel. */
@@ -1146,9 +1261,15 @@ function sourceParams(
   editor: vscode.TextEditor,
   position: vscode.Position,
 ): EvalOptions {
-  const uri = editor.document.uri;
+  return docSourceParams(editor.document, position);
+}
+
+function docSourceParams(
+  doc: vscode.TextDocument,
+  position: vscode.Position,
+): EvalOptions {
   return {
-    file: uri.scheme === "file" ? uri.fsPath : undefined,
+    file: doc.uri.scheme === "file" ? doc.uri.fsPath : undefined,
     line: position.line + 1,
     column: position.character + 1,
   };

@@ -34,6 +34,13 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   deftests are skipped, and `:once` fixtures run once per test rather than
   once per namespace, since each test runs on its own — or not at all on a
   let-go without `run-test-var`, whose fallback runner bypasses fixtures.
+- **Run Last Test Command**: repeats whatever test command ran last — a single
+  `deftest` or a whole namespace — without switching to the test file, so the
+  edit-eval-retest loop never leaves the business-logic buffer. The test is
+  found again by namespace and name in the file's current content, and the run
+  reports exactly as the original command did: gutter marks on the test file
+  and the verdict in the status bar. A test that was renamed or deleted since
+  is reported in the status bar rather than guessed at.
 - **REPL configuration form**: **Add REPL Configuration** and **Edit REPL
   Configuration** both open a form in an editor tab instead of prompting, so
   the entry's fields are all on one page — including the long `create`
