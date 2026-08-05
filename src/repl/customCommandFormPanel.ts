@@ -69,6 +69,10 @@ export interface CustomCommandFormPanelDeps {
 export class CustomCommandFormPanel {
   private panel: CustomCommandFormPanelHost | undefined;
   private pending: CustomCommandFormState | undefined;
+  /** Settings writes queue up behind this, so an overlapping save derives
+   *  from the previous write's result rather than the same snapshot — the
+   *  later write must not silently drop the earlier one's change. */
+  private writes: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: CustomCommandFormPanelDeps) {}
 
@@ -125,11 +129,20 @@ export class CustomCommandFormPanel {
       return;
     }
 
-    const original =
-      originalName === undefined ? undefined : findCommandEntry(entries, originalName);
-    const entry = toCommandEntry(values, original);
     try {
-      await this.deps.writeEntries(upsertCommandEntry(entries, entry, originalName));
+      // The entries are re-read inside the queued section: an earlier save
+      // still in flight lands first, and this one builds on its result.
+      await this.updateEntries((current) => {
+        const original =
+          originalName === undefined
+            ? undefined
+            : findCommandEntry(current, originalName);
+        return upsertCommandEntry(
+          current,
+          toCommandEntry(values, original),
+          originalName,
+        );
+      });
     } catch (err: unknown) {
       // A form that has moved on is not this save's to report into, so a
       // failure that lands too late is dropped rather than shown to the
@@ -159,7 +172,7 @@ export class CustomCommandFormPanel {
       return;
     }
     try {
-      await this.deps.writeEntries(removeCommandEntry(this.deps.readEntries(), name));
+      await this.updateEntries((current) => removeCommandEntry(current, name));
     } catch (err: unknown) {
       if (this.owns(pending)) {
         this.post({ form: reasonOf(err) });
@@ -176,6 +189,17 @@ export class CustomCommandFormPanel {
    *  successor. */
   private owns(state: CustomCommandFormState): boolean {
     return this.pending === state;
+  }
+
+  /** One read-modify-write of the settings array, serialized behind every
+   *  earlier one. A failed predecessor does not block the queue — its error
+   *  belongs to its own caller. */
+  private updateEntries(modify: (entries: unknown[]) => unknown[]): Promise<void> {
+    const run = this.writes.then(() =>
+      this.deps.writeEntries(modify(this.deps.readEntries())),
+    );
+    this.writes = run.catch(() => {});
+    return run;
   }
 
   cancel(): void {

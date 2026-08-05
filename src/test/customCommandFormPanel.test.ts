@@ -334,6 +334,28 @@ suite("CustomCommandFormPanel", () => {
     assert.deepStrictEqual(h.form.state?.mode, { kind: "edit", name: "a" });
   });
 
+  test("overlapping saves both land, the second building on the first", async () => {
+    const h = harness([{ name: "a", code: "(a)" }]);
+    const write = gate();
+    h.writeGate = write.promise;
+    h.form.open({ kind: "add" });
+    const first = h.form.submit({ name: "one", code: "(one)" });
+    // A second save goes out before the first write has landed.
+    h.form.open({ kind: "add" });
+    const second = h.form.submit({ name: "two", code: "(two)" });
+    write.release();
+    await Promise.all([first, second]);
+
+    assert.deepStrictEqual(h.written, [
+      [{ name: "a", code: "(a)" }, { name: "one", code: "(one)" }],
+      [
+        { name: "a", code: "(a)" },
+        { name: "one", code: "(one)" },
+        { name: "two", code: "(two)" },
+      ],
+    ]);
+  });
+
   test("the user closing the tab clears the pending form", () => {
     const h = harness([]);
     h.form.open({ kind: "add" });
