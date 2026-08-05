@@ -16,7 +16,7 @@ TEST_CMD := xvfb-run -a npm test
 endif
 
 .PHONY: help setup install compile watch lint test check package \
-	install-extension uninstall-extension clean icon
+	install-extension uninstall-extension clean icon tag
 
 help: ## List available tasks
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -48,6 +48,10 @@ icon: ## Regenerate images/icon.png (256x256) from docs/images/icon.png
 
 package: ## Build the installable .vsix
 	npm run package
+
+tag: ## Tag the current commit with package.json's version and push the tag
+	git tag v$(VERSION)
+	git push origin v$(VERSION)
 
 install-extension: package ## Build the .vsix and install it into VS Code
 	code --install-extension $(VSIX) --force

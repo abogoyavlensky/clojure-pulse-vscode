@@ -63,6 +63,25 @@ do not need any other Clojure extension.
 The available language features track whatever your installed `clj-pulse`
 version supports — see the [clj-pulse README](https://github.com/abogoyavlensky/clj-pulse#features).
 
+## Installation
+
+Until the extension reaches the VS Code Marketplace, install it from
+[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest):
+
+1. Download `clojure-pulse-<version>.vsix` from the latest release.
+2. Install it from the command line (requires the `code` command on your `PATH`):
+
+   ```sh
+   code --install-extension clojure-pulse-<version>.vsix
+   ```
+
+   Or from the UI: Extensions view → **⋯** → **Install from VSIX…**.
+
+3. Reload VS Code.
+
+Then install the `clj-pulse` server (next section) to get the language
+features.
+
 ## Requirements
 
 Install the `clj-pulse` server and make sure it is on your `PATH`.
