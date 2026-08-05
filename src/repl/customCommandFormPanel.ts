@@ -121,27 +121,26 @@ export class CustomCommandFormPanel {
     const submitted: CustomCommandFormState = { mode: pending.mode, values };
     this.pending = submitted;
     const originalName = pending.mode.kind === "edit" ? pending.mode.name : undefined;
-    const entries = this.deps.readEntries();
 
-    const errors = validateCommandFormValues(values, entries, originalName);
-    if (Object.keys(errors).length > 0) {
-      this.post(errors);
-      return;
-    }
-
+    let errors: CommandFormErrors;
     try {
-      // The entries are re-read inside the queued section: an earlier save
-      // still in flight lands first, and this one builds on its result.
-      await this.updateEntries((current) => {
+      // Validation and the read both happen inside the queued section: an
+      // earlier save still in flight lands first, and this one is judged
+      // against its result — a name it just took must conflict here.
+      errors = await this.enqueue(async () => {
+        const current = this.deps.readEntries();
+        const found = validateCommandFormValues(values, current, originalName);
+        if (Object.keys(found).length > 0) {
+          return found;
+        }
         const original =
           originalName === undefined
             ? undefined
             : findCommandEntry(current, originalName);
-        return upsertCommandEntry(
-          current,
-          toCommandEntry(values, original),
-          originalName,
+        await this.deps.writeEntries(
+          upsertCommandEntry(current, toCommandEntry(values, original), originalName),
         );
+        return {};
       });
     } catch (err: unknown) {
       // A form that has moved on is not this save's to report into, so a
@@ -152,9 +151,14 @@ export class CustomCommandFormPanel {
       }
       return;
     }
-    if (this.owns(submitted)) {
-      this.close();
+    if (!this.owns(submitted)) {
+      return;
     }
+    if (Object.keys(errors).length > 0) {
+      this.post(errors);
+      return;
+    }
+    this.close();
   }
 
   /** Delete, from the button the edit form carries. */
@@ -172,7 +176,9 @@ export class CustomCommandFormPanel {
       return;
     }
     try {
-      await this.updateEntries((current) => removeCommandEntry(current, name));
+      await this.enqueue(() =>
+        this.deps.writeEntries(removeCommandEntry(this.deps.readEntries(), name)),
+      );
     } catch (err: unknown) {
       if (this.owns(pending)) {
         this.post({ form: reasonOf(err) });
@@ -191,14 +197,15 @@ export class CustomCommandFormPanel {
     return this.pending === state;
   }
 
-  /** One read-modify-write of the settings array, serialized behind every
-   *  earlier one. A failed predecessor does not block the queue — its error
-   *  belongs to its own caller. */
-  private updateEntries(modify: (entries: unknown[]) => unknown[]): Promise<void> {
-    const run = this.writes.then(() =>
-      this.deps.writeEntries(modify(this.deps.readEntries())),
+  /** Runs one validate-read-write operation, serialized behind every earlier
+   *  one. A failed predecessor does not block the queue — its error belongs
+   *  to its own caller. */
+  private enqueue<T>(op: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(op);
+    this.writes = run.then(
+      () => undefined,
+      () => undefined,
     );
-    this.writes = run.catch(() => {});
     return run;
   }
 

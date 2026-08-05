@@ -356,6 +356,25 @@ suite("CustomCommandFormPanel", () => {
     ]);
   });
 
+  test("an overlapping save that lost its name to the first reports the conflict", async () => {
+    const h = harness([]);
+    const write = gate();
+    h.writeGate = write.promise;
+    h.form.open({ kind: "add" });
+    const first = h.form.submit({ name: "reset", code: "(one)" });
+    // A second add claims the same name before the first write has landed.
+    h.form.open({ kind: "add" });
+    const second = h.form.submit({ name: "reset", code: "(two)" });
+    write.release();
+    await Promise.all([first, second]);
+
+    assert.strictEqual(h.written.length, 1, "only the first save writes");
+    assert.deepStrictEqual(h.written[0], [{ name: "reset", code: "(one)" }]);
+    const message = loaded(h.panel());
+    assert.ok(message.errors.name, "the second save reports the taken name");
+    assert.strictEqual(h.panel().disposes, 0, "the second form stays open");
+  });
+
   test("the user closing the tab clears the pending form", () => {
     const h = harness([]);
     h.form.open({ kind: "add" });
