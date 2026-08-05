@@ -432,6 +432,11 @@
           "group": "inline@1"
         },
         {
+          "command": "clojurePulse.editCustomReplCommand",
+          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
+          "group": "inline@2"
+        },
+        {
           "command": "clojurePulse.runCustomReplCommand",
           "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
           "group": "1_run@1"
