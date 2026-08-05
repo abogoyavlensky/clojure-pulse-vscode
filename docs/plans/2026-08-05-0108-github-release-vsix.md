@@ -38,7 +38,7 @@ No source or test changes; verification is by YAML review, a local dry-run of th
 **Files:**
 - Create: `.github/workflows/release.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
   Model it on `ci.yml` (checkout@v4, setup-node@v4 with node 20 + npm cache) plus the release pieces from the design. Structure:
   - `on: push: tags: ["*"]`, `permissions: contents: write`, single `release` job on `ubuntu-latest`.
   - Version-guard step (the tag/manifest comparison must agree exactly with the local dry-run in Step 2):
@@ -56,17 +56,17 @@ No source or test changes; verification is by YAML review, a local dry-run of th
   - Then: `npm ci`, `npm run lint`, `npm run compile`, `xvfb-run -a npm test`, `npm run package`, `sha256sum clojure-pulse-*.vsix > checksums.txt`.
   - Final step: `softprops/action-gh-release@v2` with `generate_release_notes: true` and `files:` listing `clojure-pulse-*.vsix` and `checksums.txt`.
 
-- [ ] **Step 2: Dry-run the guard and packaging locally**
+- [x] **Step 2: Dry-run the guard and packaging locally**
   Run: `TAG=v0.0.1; version=$(node -p "require('./package.json').version"); [ "${TAG#v}" = "$version" ] && echo MATCH || echo MISMATCH`
   Expected: `MATCH`
   Run: `npm run package`
   Expected: exits 0 and produces `clojure-pulse-0.0.1.vsix` (gitignored).
 
-- [ ] **Step 3: Lint the workflow file**
+- [x] **Step 3: Lint the workflow file**
   Run: `actionlint .github/workflows/release.yml` if `actionlint` is available; otherwise validate the YAML parses: `node -e "require('js-yaml').load(require('fs').readFileSync('.github/workflows/release.yml','utf8'))"` (js-yaml is in `node_modules` via devDependencies; fall back to `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"` if not)
   Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "Add release workflow publishing the .vsix to GitHub Releases"`
 
 ### Task 2: README install instructions
@@ -74,10 +74,10 @@ No source or test changes; verification is by YAML review, a local dry-run of th
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Add an "Install from GitHub Releases" section**
+- [x] **Step 1: Add an "Install from GitHub Releases" section**
   Read `README.md` first and place the section where installation naturally belongs (near the top, before or within any existing install/setup section, matching the README's existing heading style). Content: download `clojure-pulse-<version>.vsix` from https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest, then install with `code --install-extension clojure-pulse-<version>.vsix`, or in VS Code via the Extensions panel → "…" menu → "Install from VSIX…". Note this is the install path until the extension is on the VS Code Marketplace. Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Document installing the extension from GitHub Releases"`
 
 ### Task 3: Cut the first release
