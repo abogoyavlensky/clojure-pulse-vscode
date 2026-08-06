@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { CommandStatusBar } from "../repl/commandStatusBar";
 import { ReplRegistry } from "../repl/replRegistry";
 import { ReplSessionLike } from "../repl/replSession";
+import { TestStatusBar } from "../repl/testStatusBar";
 import { startFakeNrepl, FakeNrepl } from "./fakeNreplServer";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
@@ -12,6 +13,7 @@ const REPL_NAME = "commands";
 interface ExtensionApi {
   repls: ReplRegistry;
   commandStatusBar: CommandStatusBar;
+  testStatusBar: TestStatusBar;
 }
 
 async function waitUntil(
@@ -155,6 +157,40 @@ suite("Custom REPL commands", () => {
       assert.ok(
         !server.received.some((m) => m.op === "eval"),
         "an unknown command must not evaluate anything",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("test and command verdicts share one status slot, last run wins", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      await setCustomCommands([{ name: "reset", code: "(user/reset)" }]);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // The slot shows the test verdict first…
+      assert.strictEqual(
+        api.testStatusBar.current()?.text,
+        "$(testing-passed-icon) my-test",
+      );
+
+      await vscode.commands.executeCommand("clojurePulse.runCustomReplCommand", "reset");
+
+      // …and the newer command run replaces it: one slot, read by both bars.
+      assert.strictEqual(api.commandStatusBar.current()?.text, "$(check) reset");
+      assert.deepStrictEqual(
+        api.testStatusBar.current(),
+        api.commandStatusBar.current(),
       );
     } finally {
       await server?.close();

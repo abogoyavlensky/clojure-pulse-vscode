@@ -257,10 +257,12 @@ rather than land somewhere you did not intend.
   pass or a red cross circle on fail — hover the deftest's first line for the
   failure report — and the status bar shows the verdict at a glance: the test
   name in green when it passed, on a red background with fail/error counts
-  when it didn't; click it to open the REPL output. Marks and the status item
-  always show the result of the **last test command** only: a new run wipes
-  the previous report, and an edit to a marked deftest removes its (now
-  stale) gutter verdict. Works against JVM Clojure (1.11+) and
+  when it didn't; click it to open the REPL output. Marks always show the
+  result of the **last test command** only: a new run wipes the previous
+  report, and an edit to a marked deftest removes its (now stale) gutter
+  verdict. The status bar's verdict spot is shared with custom REPL commands —
+  it shows the last run of either kind, so a newer run replaces what is on
+  display (the gutter marks keep the test report either way). Works against JVM Clojure (1.11+) and
   let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
   single-test run there calls the test function directly, skipping
   `use-fixtures` fixtures.
@@ -340,7 +342,9 @@ A run is silent: no output panel stealing space, no notifications. The status
 bar shows a spinner while the code runs, then the verdict — the command name
 in green (hover for the result value) or on a red background when the
 evaluation failed. Click the item to open the REPL output; the transcript
-always carries the full exchange.
+always carries the full exchange. The verdict spot is shared with test
+commands: the status bar shows the last run of either kind, and a newer run
+replaces it.
 
 The commands live in the `clojurePulse.customReplCommands` setting, saved to
 workspace settings when a folder is open:
