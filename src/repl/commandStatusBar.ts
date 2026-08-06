@@ -1,29 +1,19 @@
-import * as vscode from "vscode";
+import { createStatusSlot, StatusSlot, StatusSlotView } from "./statusSlot";
 
 // The last custom REPL command's verdict in the status bar: a spinner while
 // the eval is in flight, then a green check or a red-background failure,
 // clickable to open the REPL output. Runs are silent by design — no output
-// panel reveal — so this item is the run's only immediate feedback. It shows
-// the most recent command only, persisting until the next one, and the token
-// guard means a superseded run's late finish/clear can never overwrite or
-// hide a newer run's status. A deliberate sibling of `testStatusBar.ts`: the
-// presentations differ (a result value here, fail/error counts there).
+// panel reveal — so this verdict is the run's only immediate feedback. A
+// deliberate sibling of `testStatusBar.ts`: the presentations differ (a
+// result value here, fail/error counts there), while the item itself and its
+// token guard live in the slot — shared with the test bar in the extension,
+// so whichever ran last owns the display.
 
 export type CommandStatusBarRun =
   | { phase: "running"; name: string }
   | { phase: "done"; name: string; status: "ok" | "err"; value?: string };
 
-export interface CommandStatusBarView {
-  text: string;
-  tooltip: string;
-  /** Theme color id for `item.color` (e.g. "testing.iconPassed"). */
-  color?: string;
-  /** Theme color id for `item.backgroundColor`. Failures use the sanctioned
-   *  "statusBarItem.errorBackground", which brings its own foreground —
-   *  never combined with `color`. */
-  backgroundColor?: string;
-  command: string;
-}
+export type CommandStatusBarView = StatusSlotView;
 
 const SHOW_OUTPUT = "clojurePulse.showReplOutput";
 
@@ -84,53 +74,26 @@ export interface CommandStatusBar {
   dispose(): void;
 }
 
-/** Sits just right of the test item (priority 98; higher is further left). */
-export function createCommandStatusBar(): CommandStatusBar {
-  const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 97);
-  item.name = "Clojure Pulse Command";
-  let currentToken: string | undefined;
-  let view: CommandStatusBarView | undefined;
-  let nextToken = 1;
-
-  const render = (next: CommandStatusBarView | undefined): void => {
-    view = next;
-    if (!next) {
-      item.hide();
-      return;
-    }
-    item.text = next.text;
-    item.tooltip = next.tooltip;
-    item.command = next.command;
-    item.color = next.color ? new vscode.ThemeColor(next.color) : undefined;
-    item.backgroundColor = next.backgroundColor
-      ? new vscode.ThemeColor(next.backgroundColor)
-      : undefined;
-    item.show();
-  };
-
+/** A presenter over the given slot — the shared one in the extension, or a
+ *  private item when created standalone. */
+export function createCommandStatusBar(
+  slot: StatusSlot = createStatusSlot({ name: "Clojure Pulse Command", priority: 97 }),
+): CommandStatusBar {
   return {
     running(name) {
-      currentToken = `command-bar-${nextToken++}`;
-      render(commandStatusBarPresentation({ phase: "running", name }));
-      return currentToken;
+      return slot.show(commandStatusBarPresentation({ phase: "running", name }));
     },
     finish(token, run) {
-      if (token !== currentToken) {
-        return;
-      }
-      render(commandStatusBarPresentation(run));
+      slot.update(token, commandStatusBarPresentation(run));
     },
     clear(token) {
-      if (token !== currentToken) {
-        return;
-      }
-      render(undefined);
+      slot.clear(token);
     },
     current() {
-      return view;
+      return slot.current();
     },
     dispose() {
-      item.dispose();
+      slot.dispose();
     },
   };
 }

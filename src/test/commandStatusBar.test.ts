@@ -4,6 +4,8 @@ import {
   commandStatusBarPresentation,
   createCommandStatusBar,
 } from "../repl/commandStatusBar";
+import { createStatusSlot } from "../repl/statusSlot";
+import { createTestStatusBar } from "../repl/testStatusBar";
 
 suite("commandStatusBarPresentation", () => {
   test("running shows a spinner, no colors", () => {
@@ -114,5 +116,58 @@ suite("CommandStatusBar tokens", () => {
     const token = bar.running("t");
     bar.clear(token);
     assert.strictEqual(bar.current(), undefined);
+  });
+});
+
+suite("shared slot across test and command bars", () => {
+  test("a command run supersedes a test verdict, and its late finish is a no-op", () => {
+    const slot = createStatusSlot({ name: "t", priority: 98 });
+    const tests = createTestStatusBar(slot);
+    const commands = createCommandStatusBar(slot);
+    try {
+      const testToken = tests.running("my-test");
+      const commandToken = commands.running("reset");
+      // The slower test's verdict lands after the command took the slot.
+      tests.finish(testToken, {
+        phase: "done",
+        name: "my-test",
+        status: "pass",
+        fail: 0,
+        error: 0,
+      });
+      assert.strictEqual(slot.current()?.text, "$(loading~spin) reset");
+
+      commands.finish(commandToken, { phase: "done", name: "reset", status: "ok" });
+      assert.strictEqual(slot.current()?.text, "$(check) reset");
+      // Both bars read the one slot: the same view through either.
+      assert.deepStrictEqual(tests.current(), commands.current());
+    } finally {
+      slot.dispose();
+    }
+  });
+
+  test("a test run supersedes a command verdict the same way", () => {
+    const slot = createStatusSlot({ name: "t", priority: 98 });
+    const tests = createTestStatusBar(slot);
+    const commands = createCommandStatusBar(slot);
+    try {
+      const commandToken = commands.running("reset");
+      commands.finish(commandToken, { phase: "done", name: "reset", status: "ok" });
+      assert.strictEqual(slot.current()?.text, "$(check) reset");
+
+      const testToken = tests.running("my-test");
+      commands.clear(commandToken); // stale: must not hide the test spinner
+      assert.strictEqual(slot.current()?.text, "$(loading~spin) my-test");
+      tests.finish(testToken, {
+        phase: "done",
+        name: "my-test",
+        status: "pass",
+        fail: 0,
+        error: 0,
+      });
+      assert.strictEqual(slot.current()?.text, "$(testing-passed-icon) my-test");
+    } finally {
+      slot.dispose();
+    }
   });
 });
