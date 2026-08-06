@@ -40,6 +40,7 @@ import {
   CommandStatusBar,
   createCommandStatusBar,
 } from "./repl/commandStatusBar";
+import { createStatusSlot } from "./repl/statusSlot";
 import { ReplRegistry } from "./repl/replRegistry";
 import { ReplSession, ReplSessionLike } from "./repl/replSession";
 import { ReplTreeNode, ReplTreeProvider } from "./repl/replTree";
@@ -273,7 +274,10 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
     failIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-fail.svg"),
   });
-  const testStatusBar = createTestStatusBar();
+  // One verdict slot for test runs and custom commands alike: whichever ran
+  // last owns the display. The REPL connection item (99) stays separate.
+  const runSlot = createStatusSlot({ name: "Clojure Pulse Run", priority: 98 });
+  const testStatusBar = createTestStatusBar(runSlot);
   const registry = new ReplRegistry({
     // A channel per REPL, with the `clojure` language id: syntax highlighting,
     // search, and cursor navigation over the transcript come for free.
@@ -340,7 +344,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
   const commandsTree = new CustomCommandsTreeProvider({
     readCommands: customReplCommands,
   });
-  const commandBar = createCommandStatusBar();
+  const commandBar = createCommandStatusBar(runSlot);
   logCustomCommandWarnings();
 
   const tree = new ReplTreeProvider(registry);
