@@ -104,27 +104,27 @@ Test command throughout: `make test`. Full gate: `make check`.
 - Create: `src/repl/statusSlot.ts`
 - Test: `src/test/statusSlot.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Cover: `show` renders the view and returns a token; `update` with the current token
   re-renders; `update`/`clear` with a superseded token are no-ops; `clear` with the current
   token hides (`current()` → undefined); a second `show` supersedes the first regardless of
   which caller issued it; `dispose` is idempotent. Views with and without `color` /
   `backgroundColor` map onto the item (assert via `current()`, as the existing bar tests do).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `make test`
   Expected: FAIL — module doesn't exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Move the render + token logic that `createTestStatusBar` holds today
   (`testStatusBar.ts:101-149`) into `createStatusSlot(options)` with the interface pinned in
   the Design section. Token prefix `slot-`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: shared status-bar slot"`
 
 ### Task 2: Bars render into the slot
@@ -133,18 +133,18 @@ Test command throughout: `make test`. Full gate: `make check`.
 - Modify: `src/repl/testStatusBar.ts`, `src/repl/commandStatusBar.ts`
 - Test: `src/test/commandStatusBar.test.ts` (cross-supersession), existing suites
 
-- [ ] **Step 1: Write the failing cross-supersession test**
+- [x] **Step 1: Write the failing cross-supersession test**
   In `commandStatusBar.test.ts`: create one `createStatusSlot({name: "t", priority: 98})`,
   build `createTestStatusBar(slot)` and `createCommandStatusBar(slot)`; a test verdict is
   replaced by a command `running()`; the test bar's late `finish` with its stale token is a
   no-op; both bars' `current()` return the same view. Also assert the reverse direction
   (command verdict superseded by a test run).
 
-- [ ] **Step 2: Run tests to verify the new test fails**
+- [x] **Step 2: Run tests to verify the new test fails**
   Run: `make test`
   Expected: FAIL — factories take no slot argument yet.
 
-- [ ] **Step 3: Refactor both bars**
+- [x] **Step 3: Refactor both bars**
   Each factory becomes `create…StatusBar(slot?: StatusSlot)`, defaulting to a private
   `createStatusSlot` with its current name/priority ("Clojure Pulse Test" 98 /
   "Clojure Pulse Command" 97 — standalone behavior unchanged). `running` → `slot.show`,
@@ -152,11 +152,11 @@ Test command throughout: `make test`. Full gate: `make check`.
   `dispose` → `slot.dispose`. Presentation functions and view types stay put (view types
   may alias `StatusSlotView`). Drop the now-moved item code and stale placement comments.
 
-- [ ] **Step 4: Run tests to verify everything passes**
+- [x] **Step 4: Run tests to verify everything passes**
   Run: `make test`
   Expected: PASS, existing bar suites included (mechanical updates only if needed).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "refactor: render both verdict bars through the status slot"`
 
 ### Task 3: Wire the shared slot and integrate
@@ -165,7 +165,7 @@ Test command throughout: `make test`. Full gate: `make check`.
 - Modify: `src/extension.ts`
 - Test: `src/test/customCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
   Run a deftest (borrow the minimal flow from `replCommands.integration.test.ts`: open a
   buffer with a passing deftest, `runTestAtCursor`), and first assert the slot shows the
   test verdict; then run a custom command by name and
@@ -173,21 +173,21 @@ Test command throughout: `make test`. Full gate: `make check`.
   `api.testStatusBar.current()` returns the very same view (shared slot). Keep the existing
   teardown (settings restored, sessions dropped).
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
   Run: `make test`
   Expected: FAIL — two separate items still exist.
 
-- [ ] **Step 3: Wire it**
+- [x] **Step 3: Wire it**
   In the REPL section of `activate`: `const runSlot = createStatusSlot({ name: "Clojure
   Pulse Run", priority: 98 })`, pass it to `createTestStatusBar(runSlot)` and
   `createCommandStatusBar(runSlot)`. Both bars stay in `context.subscriptions` (double
   dispose is idempotent). No other call-site changes — the bars' interfaces are unchanged.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `make test`
   Expected: PASS, all suites.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: one status-bar slot for test and command verdicts"`
 
 ### Task 4: Docs and final check
@@ -195,14 +195,34 @@ Test command throughout: `make test`. Full gate: `make check`.
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Document the shared slot**
+- [x] **Step 1: Document the shared slot**
   In the **Run Test at Cursor** bullet and the **Custom commands** section, say the verdict
   spot is shared: the status bar shows the last run of either kind, and a newer run replaces
   the verdict on display. Use /writing-clearly.
 
-- [ ] **Step 2: Full gate**
+- [x] **Step 2: Full gate**
   Run: `make check`
   Expected: lint, compile, and tests all pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "docs: shared status-bar slot"`
+
+---
+
+## Completion Summary (2026-08-06)
+
+**Status: completed.** All 4 tasks done; `make check` passes (lint, compile, 568 tests).
+Every task commit passed a codex second-opinion review with no findings.
+
+What was built: `statusSlot.ts` (one `StatusBarItem` + globally ordered token guard),
+`testStatusBar.ts` and `commandStatusBar.ts` reduced to presenters over an injected slot
+(standalone defaults preserve their old behavior for tests), one shared "Clojure Pulse Run"
+slot (priority 98) wired in `extension.ts` — the priority-97 command item is gone — plus
+cross-supersession unit tests, a cross-kind integration test (test verdict shown first,
+then replaced by a command verdict through the same slot), and README notes in both the
+test bullet and the Custom commands section.
+
+Deviations: none — the plan was executed as written.
+
+What the plan could have specified better: nothing — the pinned slot interface made the
+two refactor tasks mechanical.
