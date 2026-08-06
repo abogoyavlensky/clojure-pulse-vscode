@@ -2,7 +2,7 @@
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
   "description": "Lightweight, powerful Clojure and let-go support, powered by the clj-pulse language server.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "abogoyavlensky",
   "license": "MIT",
   "author": "Andrey Bogoyavlenskiy",
@@ -29,8 +29,18 @@
     "languages": [
       {
         "id": "clojure",
-        "aliases": ["Clojure", "clojure"],
-        "extensions": [".clj", ".cljs", ".cljc", ".edn", ".bb", ".lg"],
+        "aliases": [
+          "Clojure",
+          "clojure"
+        ],
+        "extensions": [
+          ".clj",
+          ".cljs",
+          ".cljc",
+          ".edn",
+          ".bb",
+          ".lg"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -59,7 +69,11 @@
         },
         "clojurePulse.trace.server": {
           "type": "string",
-          "enum": ["off", "messages", "verbose"],
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
           "default": "off",
           "description": "Traces the communication between VS Code and the clj-pulse language server."
         },
@@ -92,7 +106,10 @@
           "markdownDescription": "Named REPLs shown in the **REPL** view. Each entry either starts a server (`\"type\": \"create\"`) or attaches to a running one (`\"type\": \"connect\"`).\n\n```json\n[\n  { \"name\": \"dev\", \"type\": \"create\",\n    \"command\": \"clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \\\"1.7.0\\\"}} :main-opts [\\\"-m\\\" \\\"nrepl.cmdline\\\"]}}}' -M:clojure-pulse/nrepl\" },\n  { \"name\": \"local\", \"type\": \"connect\", \"port\": \".nrepl-port\" }\n]\n```\n\nAdd your own aliases by editing the command — `-M:dev:test:clojure-pulse/nrepl` merges their `:extra-deps` and still starts nREPL.",
           "items": {
             "type": "object",
-            "required": ["name", "type"],
+            "required": [
+              "name",
+              "type"
+            ],
             "properties": {
               "name": {
                 "type": "string",
@@ -100,7 +117,10 @@
               },
               "type": {
                 "type": "string",
-                "enum": ["create", "connect"],
+                "enum": [
+                  "create",
+                  "connect"
+                ],
                 "enumDescriptions": [
                   "Start an nREPL server with the given command, then connect to it.",
                   "Connect to an nREPL server that is already running."
@@ -121,7 +141,10 @@
                 "markdownDescription": "`connect` only — host of the running server."
               },
               "port": {
-                "type": ["number", "string"],
+                "type": [
+                  "number",
+                  "string"
+                ],
                 "markdownDescription": "`connect` only — a port number, or a path to a file holding one (e.g. `\".nrepl-port\"`), relative to the workspace root. Required for `connect`."
               }
             },
@@ -153,7 +176,10 @@
           "markdownDescription": "Named snippets of Clojure code shown in the **REPL Commands** view and run against the active REPL. Use fully-qualified symbols (e.g. `(user/reset)`). Bind one to a key by name:\n\n```json\n{ \"key\": \"ctrl+alt+r\", \"command\": \"clojurePulse.runCustomReplCommand\", \"args\": \"reset\" }\n```",
           "items": {
             "type": "object",
-            "required": ["name", "code"],
+            "required": [
+              "name",
+              "code"
+            ],
             "properties": {
               "name": {
                 "type": "string",

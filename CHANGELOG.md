@@ -2,8 +2,27 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
-## [Unreleased]
+## [0.1.0]
 
+- **Custom REPL commands**: save the snippets you send to the REPL all day —
+  `(user/reset)`, `(user/stop)` — as named commands in the new
+  `clojurePulse.customReplCommands` workspace setting, and run them against
+  the active REPL from wherever is closest: the new **REPL Commands** view in
+  the sidebar (play button on a row; clicking the row or its pencil opens the
+  editor-tab form to edit), the Command Palette (**Run Custom REPL Command**
+  picks one by name), or a keybinding passing the command's name as `"args"`.
+  The code is sent verbatim in the session's current namespace, so
+  fully-qualified symbols are the way to write them. Runs are silent — no
+  output panel reveal, no notifications; the status bar shows a spinner while
+  the code runs, then the verdict: the command name in green (result value on
+  hover) or on a red background when the evaluation failed, clickable to open
+  the REPL output. Added **Add / Edit / Delete Custom REPL Command** commands,
+  with the same raw-settings-preserving edit semantics as REPL configurations.
+- **One status-bar verdict slot**: test runs and custom REPL commands now
+  share a single status bar item showing the last run of either kind — a
+  newer run replaces the verdict on display instead of two items sitting side
+  by side. Nothing is lost to the replacement: test verdicts stay in the
+  gutter marks and their hovers, command results in the REPL's output channel.
 - **Run Test at Cursor**: a command that runs the top-level `deftest` under
   (or right after) the cursor in the active REPL. It re-evaluates the test
   first so the buffer's current version runs, and shows the clojure.test
