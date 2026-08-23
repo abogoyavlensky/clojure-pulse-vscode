@@ -152,9 +152,11 @@ status, with the resolved libraries underneath. While any project's
 classpath is resolving, a progress bar runs across the view (and the server
 reports the same work in the status bar). The refresh button asks the server
 to rescan: it re-detects projects and re-resolves every enabled classpath —
-the way to retry after an error, or to pick up a subproject that appeared in
-a gitignored directory. (Against an older clj-pulse without rescan support,
-the button just repaints the view.)
+the way to retry after an error, or to pick up a newly created subproject.
+(Detection honors `.gitignore`, so a subproject in a gitignored directory
+still needs a `clojurePulse.projects` entry; rescan then picks it up. Against
+an older clj-pulse without rescan support, the button just repaints the
+view.)
 
 Resolving a project's *full* classpath — aliases included — runs its
 classpath command (`clojure -A:dev:test -Spath` for deps.edn projects,
