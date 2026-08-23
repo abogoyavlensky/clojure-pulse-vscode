@@ -201,6 +201,42 @@
               }
             }
           ]
+        },
+        "clojurePulse.projects": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Per-project overrides for monorepo workspaces, shown in the **External Libraries** view. Paths are workspace-root-relative (`\".\"` is the root). Each entry overrides what the server auto-detected for that project — or adds a project detection missed (e.g. a subproject under a gitignored directory).\n\n```json\n[\n  { \"path\": \"apps/backend\",\n    \"classpathEnabled\": true,\n    \"classpathCommand\": \"clojure -A:dev:test -Spath\" }\n]\n```",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "markdownDescription": "Project directory, relative to the workspace root. `\".\"` is the root project."
+              },
+              "classpathEnabled": {
+                "type": "boolean",
+                "markdownDescription": "Whether the server resolves this project's full JVM classpath (running its classpath command) to index libraries."
+              },
+              "classpathCommand": {
+                "type": "string",
+                "markdownDescription": "Command that prints the project's classpath (e.g. `clojure -A:dev:test -Spath`), run in the project directory. Omit to use the server's default for the project's build tool."
+              }
+            },
+            "additionalProperties": false
+          },
+          "defaultSnippets": [
+            {
+              "label": "project override",
+              "body": {
+                "path": "$1apps/backend",
+                "classpathEnabled": true
+              }
+            }
+          ]
         }
       }
     },
