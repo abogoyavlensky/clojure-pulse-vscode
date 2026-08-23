@@ -2,6 +2,49 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
+## [0.2.0]
+
+Requires clj-pulse 0.2.0 for the new multi-project features; against an older
+server the External Libraries panel falls back to the previous flat list and
+the refresh button to a plain repaint.
+
+- **Monorepo support**: a workspace holding several Clojure projects — a root
+  plus `apps/backend`, `libs/common`, and so on — works without
+  configuration. The **External Libraries** panel groups its tree by project:
+  one row per project showing its build tool and classpath status (with the
+  root project labeled by the workspace folder's name and expanded by
+  default), and the resolved libraries underneath, browsable exactly as
+  before. Project source directories no longer appear in the list as fake
+  "libraries".
+- **Per-project classpath resolution**: resolving a project's full classpath
+  (aliases included) runs its classpath command, which can download
+  dependencies — so only the root project does it by default. A play/stop
+  button on each project row enables or disables it per project; the toggle
+  writes the new `clojurePulse.projects` workspace setting, the server
+  re-resolves live, and the tree follows — no restart.
+- **Project edit form**: the pencil on a project row (or **+** on the view
+  title, for adding a project detection missed — e.g. one inside a gitignored
+  directory) opens an editor-tab form for the full override: enable/disable,
+  a custom classpath command (the effective command shows as the
+  placeholder), and **Remove from settings**, which drops the override — a
+  detected project reverts to defaults, a settings-added one disappears.
+  Entries are workspace-settings overrides layered over the server's
+  detection and a project's `.clj-pulse/config.edn`; removing the
+  `clojurePulse.projects` setting resets everything to auto-detected
+  defaults, live.
+- **Refresh rescans**: the panel's refresh button now asks the server to
+  re-detect projects and re-resolve every enabled classpath — the way to
+  retry after a classpath error or pick up a newly created subproject. A
+  progress bar runs across the view from click until resolution settles
+  (it also appears for startup and settings-change resolutions), and the
+  server reports the same work in the status bar via standard LSP progress.
+- **`clojurePulse.projects` setting**: per-project overrides as
+  `{ "path", "classpathEnabled", "classpathCommand" }` entries, forwarded to
+  the server at startup and pushed live on every settings change. Invalid
+  entries are skipped with a note in the output channel, and hand-written
+  keys the extension doesn't know survive edits untouched — the same
+  raw-settings-preserving semantics as REPL configurations.
+
 ## [0.1.0]
 
 - **Custom REPL commands**: save the snippets you send to the REPL all day —

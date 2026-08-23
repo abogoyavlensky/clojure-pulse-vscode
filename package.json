@@ -2,7 +2,7 @@
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
   "description": "Lightweight, powerful Clojure and let-go support, powered by the clj-pulse language server.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "abogoyavlensky",
   "license": "MIT",
   "author": "Andrey Bogoyavlenskiy",
