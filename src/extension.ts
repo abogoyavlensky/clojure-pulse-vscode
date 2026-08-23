@@ -286,22 +286,29 @@ function rawProjects(): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
-/** Whether a view-progress session is (logically) open. Flipped
- *  synchronously, before `withProgress`'s async callback runs — a `false`
- *  arriving in that gap must still close the session, not be lost. */
-let classpathProgressOpen = false;
-/** Resolves the open session's promise, once the callback has installed it. */
-let classpathProgressDone: (() => void) | undefined;
+/** One `withProgress` session on the view. `closed` is flipped synchronously
+ *  when the session ends; `done` appears once the async callback has run.
+ *  Each callback closes over *its own* session, so however open/close/reopen
+ *  interleave with the callbacks, a stale callback resolves itself instead
+ *  of hijacking (or stranding) a newer session's resolver. */
+interface ClasspathProgressSession {
+  closed: boolean;
+  done?: () => void;
+}
+
+/** The open session, if any — single-flight. */
+let classpathProgress: ClasspathProgressSession | undefined;
 
 /**
  * A progress bar on the External Libraries view while any project's
  * classpath is resolving — driven by the tree's own root loads, so startup,
- * config-change, and rescan resolutions all show it. Single-flight: the bar
- * opens on the first `true` and closes on the next `false`.
+ * config-change, and rescan resolutions all show it. The bar opens on the
+ * first `true` and closes on the next `false`.
  */
 function updateClasspathProgress(anyResolving: boolean): void {
-  if (anyResolving && !classpathProgressOpen) {
-    classpathProgressOpen = true;
+  if (anyResolving && !classpathProgress) {
+    const session: ClasspathProgressSession = { closed: false };
+    classpathProgress = session;
     void vscode.window.withProgress(
       {
         location: { viewId: "clojurePulse.externalLibraries" },
@@ -309,18 +316,19 @@ function updateClasspathProgress(anyResolving: boolean): void {
       },
       () =>
         new Promise<void>((resolve) => {
-          if (!classpathProgressOpen) {
-            // Closed before this callback ran: end the session immediately.
+          if (session.closed) {
+            // This session ended before its callback ran.
             resolve();
             return;
           }
-          classpathProgressDone = resolve;
+          session.done = resolve;
         }),
     );
-  } else if (!anyResolving && classpathProgressOpen) {
-    classpathProgressOpen = false;
-    classpathProgressDone?.();
-    classpathProgressDone = undefined;
+  } else if (!anyResolving && classpathProgress) {
+    const session = classpathProgress;
+    classpathProgress = undefined;
+    session.closed = true;
+    session.done?.();
   }
 }
 
