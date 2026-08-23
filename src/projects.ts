@@ -58,41 +58,26 @@ export function parseProjects(raw: unknown): ParsedProjects {
       warnings.push(`Skipped project entry ${describe(item, index)}: ${reason}`);
     };
 
-    if (typeof item !== "object" || item === null || Array.isArray(item)) {
-      skip("expected an object.");
+    const invalid = entryProblem(item);
+    if (invalid) {
+      skip(invalid);
       return;
     }
     const entry = item as Record<string, unknown>;
-
-    if (typeof entry.path !== "string" || entry.path.trim().length === 0) {
-      skip('"path" is required and must be a non-empty string.');
-      return;
-    }
-    const path = normalizeProjectPath(entry.path);
-    if (!isWorkspaceRelative(path)) {
-      skip('"path" must stay inside the workspace (relative, no "..").');
-      return;
-    }
+    const path = normalizeProjectPath(entry.path as string);
     if (seen.has(path)) {
       skip(`duplicate path "${path}".`);
-      return;
-    }
-    if (entry.classpathEnabled !== undefined && typeof entry.classpathEnabled !== "boolean") {
-      skip('"classpathEnabled" must be a boolean.');
-      return;
-    }
-    if (entry.classpathCommand !== undefined && typeof entry.classpathCommand !== "string") {
-      skip('"classpathCommand" must be a string.');
       return;
     }
 
     seen.add(path);
     const parsed: ProjectSetting = { path };
+    // Types guaranteed by entryProblem above.
     if (entry.classpathEnabled !== undefined) {
-      parsed.classpathEnabled = entry.classpathEnabled;
+      parsed.classpathEnabled = entry.classpathEnabled as boolean;
     }
     if (entry.classpathCommand !== undefined) {
-      parsed.classpathCommand = entry.classpathCommand;
+      parsed.classpathCommand = entry.classpathCommand as string;
     }
     entries.push(parsed);
   });
@@ -133,8 +118,10 @@ export function toServerConfig(entries: ProjectSetting[]): {
 
 /**
  * The raw settings value with classpath resolution for `path` toggled: the
- * first entry naming that project (paths compared normalized) gets an
- * explicit `classpathEnabled`, or a minimal entry is appended. Everything
+ * first *valid* entry naming that project (paths compared normalized) gets an
+ * explicit `classpathEnabled`, or a minimal entry is appended. Only valid
+ * entries can match — `parseProjects` skips invalid ones, so updating an
+ * invalid same-path entry would change nothing the server sees. Everything
  * else — invalid entries, unknown keys, the matched entry's other keys — is
  * preserved verbatim, so a toggle never destroys a hand-edit. Never mutates
  * the input.
@@ -147,10 +134,7 @@ export function withToggled(
   const target = normalizeProjectPath(path);
   const index = raw.findIndex(
     (item) =>
-      typeof item === "object" &&
-      item !== null &&
-      !Array.isArray(item) &&
-      typeof (item as Record<string, unknown>).path === "string" &&
+      entryProblem(item) === undefined &&
       normalizeProjectPath((item as Record<string, unknown>).path as string) === target,
   );
   if (index === -1) {
@@ -161,6 +145,32 @@ export function withToggled(
       ? { ...(item as Record<string, unknown>), classpathEnabled: enabled }
       : item,
   );
+}
+
+/**
+ * Why a raw entry is invalid on its own (duplicates are a list-level rule),
+ * or undefined for a valid one. The single validity definition, shared by
+ * `parseProjects` (which skips and warns) and `withToggled` (which must match
+ * exactly the entries the parser keeps).
+ */
+function entryProblem(item: unknown): string | undefined {
+  if (typeof item !== "object" || item === null || Array.isArray(item)) {
+    return "expected an object.";
+  }
+  const entry = item as Record<string, unknown>;
+  if (typeof entry.path !== "string" || entry.path.trim().length === 0) {
+    return '"path" is required and must be a non-empty string.';
+  }
+  if (!isWorkspaceRelative(normalizeProjectPath(entry.path))) {
+    return '"path" must stay inside the workspace (relative, no "..").';
+  }
+  if (entry.classpathEnabled !== undefined && typeof entry.classpathEnabled !== "boolean") {
+    return '"classpathEnabled" must be a boolean.';
+  }
+  if (entry.classpathCommand !== undefined && typeof entry.classpathCommand !== "string") {
+    return '"classpathCommand" must be a string.';
+  }
+  return undefined;
 }
 
 /**

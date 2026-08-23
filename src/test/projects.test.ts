@@ -215,6 +215,29 @@ suite("withToggled", () => {
     ]);
   });
 
+  test("an invalid entry with the same path never matches — the valid one the server uses does", () => {
+    const raw = [
+      { path: "apps/x", classpathCommand: 42 },
+      { path: "apps/x", classpathCommand: "clj -Spath" },
+    ];
+    assert.deepStrictEqual(withToggled(raw, "apps/x", true), [
+      { path: "apps/x", classpathCommand: 42 },
+      { path: "apps/x", classpathCommand: "clj -Spath", classpathEnabled: true },
+    ]);
+  });
+
+  test("only an invalid match present: a fresh valid entry is appended", () => {
+    const raw = [{ path: "apps/x", classpathEnabled: "yes" }];
+    const toggled = withToggled(raw, "apps/x", true);
+    assert.deepStrictEqual(toggled, [
+      { path: "apps/x", classpathEnabled: "yes" },
+      { path: "apps/x", classpathEnabled: true },
+    ]);
+    // The parser skips the invalid one and uses the appended entry.
+    const { entries } = parseProjects(toggled);
+    assert.deepStrictEqual(entries, [{ path: "apps/x", classpathEnabled: true }]);
+  });
+
   test("a duplicate path updates only the first match", () => {
     const raw = [{ path: "apps/x" }, { path: "./apps/x" }];
     assert.deepStrictEqual(withToggled(raw, "apps/x", true), [

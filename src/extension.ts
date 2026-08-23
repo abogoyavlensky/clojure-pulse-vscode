@@ -204,20 +204,29 @@ function rawProjects(): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
+/** Serializes toggle writes: each one reads the setting only after the
+ *  previous write landed, so two quick clicks can't clobber each other. */
+let projectsWriteChain: Promise<void> = Promise.resolve();
+
 /** Flips classpath resolution for a project node by rewriting the setting.
  *  Workspace settings when a folder is open (they travel with the project),
  *  user settings otherwise — the same target logic as REPL configurations. */
-async function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
+function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
   const path = projectPathOf(arg);
   if (path === undefined) {
-    return;
+    return Promise.resolve();
   }
-  const target = vscode.workspace.workspaceFolders?.length
-    ? vscode.ConfigurationTarget.Workspace
-    : vscode.ConfigurationTarget.Global;
-  await vscode.workspace
-    .getConfiguration("clojurePulse")
-    .update("projects", withToggled(rawProjects(), path, enabled), target);
+  const write = projectsWriteChain.then(async () => {
+    const target = vscode.workspace.workspaceFolders?.length
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("projects", withToggled(rawProjects(), path, enabled), target);
+  });
+  // The chain must survive a failed write; the caller still sees the failure.
+  projectsWriteChain = write.catch(() => undefined);
+  return write;
 }
 
 /**
