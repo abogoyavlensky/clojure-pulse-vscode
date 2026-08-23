@@ -20,11 +20,13 @@ export interface ParsedProjects {
 }
 
 /**
- * Canonical form of a project path, so `./foo`, `foo/`, and ` foo ` all name
- * the same project — both against the server's `rel_path` and between entries.
+ * Canonical form of a project path, so `./foo`, `foo/`, `foo\bar`, and ` foo `
+ * all name the same project — both against the server's `rel_path` and
+ * between entries. Mirrors the server's own normalization (separators become
+ * `/`, `./` and trailing slashes drop, empty means root).
  */
 export function normalizeProjectPath(path: string): string {
-  let p = path.trim();
+  let p = path.trim().replace(/\\/g, "/");
   while (p.startsWith("./")) {
     p = p.slice(2);
   }
@@ -67,6 +69,10 @@ export function parseProjects(raw: unknown): ParsedProjects {
       return;
     }
     const path = normalizeProjectPath(entry.path);
+    if (!isWorkspaceRelative(path)) {
+      skip('"path" must stay inside the workspace (relative, no "..").');
+      return;
+    }
     if (seen.has(path)) {
       skip(`duplicate path "${path}".`);
       return;
@@ -155,6 +161,19 @@ export function withToggled(
       ? { ...(item as Record<string, unknown>), classpathEnabled: enabled }
       : item,
   );
+}
+
+/**
+ * Whether a normalized path stays inside the workspace: relative, with no
+ * `..` components — the same rule the server enforces, checked here so the
+ * user gets a warning in the output channel instead of a silently ignored
+ * entry. (`"."` is the root and always fine.)
+ */
+function isWorkspaceRelative(path: string): boolean {
+  if (path.startsWith("/") || /^[A-Za-z]:/.test(path)) {
+    return false;
+  }
+  return !path.split("/").includes("..");
 }
 
 /** Identifies an entry in a warning: by path when it has one, else by index. */

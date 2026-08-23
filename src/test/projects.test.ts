@@ -14,6 +14,11 @@ suite("normalizeProjectPath", () => {
     assert.strictEqual(normalizeProjectPath("./apps/backend/"), "apps/backend");
   });
 
+  test("backslash separators normalize to forward slashes", () => {
+    assert.strictEqual(normalizeProjectPath("apps\\backend"), "apps/backend");
+    assert.strictEqual(normalizeProjectPath(".\\apps\\backend\\"), "apps/backend");
+  });
+
   test("root spellings all normalize to '.'", () => {
     assert.strictEqual(normalizeProjectPath("."), ".");
     assert.strictEqual(normalizeProjectPath("./"), ".");
@@ -94,6 +99,30 @@ suite("parseProjects", () => {
       ["c"],
     );
     assert.strictEqual(warnings.length, 2);
+  });
+
+  test("skips paths that escape the workspace", () => {
+    const { entries, warnings } = parseProjects([
+      { path: "/tmp/project" },
+      { path: "../sibling" },
+      { path: "apps/../.." },
+      { path: "C:\\projects\\x" },
+      { path: "apps/ok" },
+    ]);
+    assert.deepStrictEqual(
+      entries.map((entry) => entry.path),
+      ["apps/ok"],
+    );
+    assert.strictEqual(warnings.length, 4);
+  });
+
+  test("a backslash-spelled duplicate is detected", () => {
+    const { entries, warnings } = parseProjects([
+      { path: "apps/x" },
+      { path: "apps\\x" },
+    ]);
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(warnings.length, 1);
   });
 
   test("skips a duplicate path (after normalization) with a warning", () => {
