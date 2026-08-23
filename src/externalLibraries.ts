@@ -233,11 +233,13 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
       const projects = (await this.sendRequest(PROJECTS, {})) as ProjectInfo[];
       return projects.map((project) => ({ type: "project", project }));
     } catch (e) {
+      if ((e as { code?: unknown })?.code === METHOD_NOT_FOUND) {
+        // A successful fallback stays cached like a grouped result would;
+        // only retryable failures below evict.
+        return this.rootLibraries();
+      }
       if (generation === this.generation) {
         this.rootNodes = undefined;
-      }
-      if ((e as { code?: unknown })?.code === METHOD_NOT_FOUND) {
-        return this.rootLibraries();
       }
       this.log(`External Libraries: failed to load projects: ${errMessage(e)}`);
       return [];

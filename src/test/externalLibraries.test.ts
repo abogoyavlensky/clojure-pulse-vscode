@@ -285,6 +285,29 @@ suite("ExternalLibrariesProvider — grouped by project", () => {
     assert.deepStrictEqual(labelsOf(provider, roots), ["aero 1.1.6"]);
   });
 
+  test("the fallback is cached per refresh like a grouped result", async () => {
+    let projectCalls = 0;
+    let flatCalls = 0;
+    const provider = new ExternalLibrariesProvider((method) => {
+      if (method === "clojurePulse/projects") {
+        projectCalls += 1;
+        return methodNotFound();
+      }
+      flatCalls += 1;
+      return Promise.resolve([JAR_LIB]);
+    });
+
+    await provider.getChildren();
+    await provider.getChildren();
+    assert.strictEqual(projectCalls, 1);
+    assert.strictEqual(flatCalls, 1);
+
+    provider.refresh();
+    await provider.getChildren();
+    assert.strictEqual(projectCalls, 2);
+    assert.strictEqual(flatCalls, 2);
+  });
+
   test("any other rejection renders an empty tree and logs, never the flat list", async () => {
     const log: string[] = [];
     let flatRequested = false;
