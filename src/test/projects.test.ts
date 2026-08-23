@@ -230,6 +230,19 @@ suite("withToggled", () => {
     ]);
   });
 
+  test("insert then flip — the command's read-modify-write flow", () => {
+    const inserted = withToggled([], "apps/backend", true);
+    assert.deepStrictEqual(inserted, [{ path: "apps/backend", classpathEnabled: true }]);
+    const flipped = withToggled(inserted, "./apps/backend", false);
+    assert.deepStrictEqual(flipped, [{ path: "apps/backend", classpathEnabled: false }]);
+    // The round-tripped entry still parses and maps.
+    const { entries, warnings } = parseProjects(flipped);
+    assert.deepStrictEqual(warnings, []);
+    assert.deepStrictEqual(toServerConfig(entries), {
+      projects: [{ path: "apps/backend", classpath: { enabled: false } }],
+    });
+  });
+
   test("does not mutate the input", () => {
     const raw = [{ path: "apps/x", classpathCommand: "clj -Spath" }];
     const copy = JSON.parse(JSON.stringify(raw));

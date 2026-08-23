@@ -6,7 +6,7 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
-import { parseProjects, toServerConfig } from "./projects";
+import { parseProjects, toServerConfig, withToggled } from "./projects";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
@@ -140,6 +140,18 @@ export async function activate(
     vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", () =>
       externalLibraries?.refresh(),
     ),
+    // Per-project classpath toggle. Writing the setting is the whole action:
+    // the config listener pushes it to the server, the server re-resolves and
+    // fires `librariesChanged`, and that refreshes the tree — the panel never
+    // mutates its own state.
+    vscode.commands.registerCommand(
+      "clojurePulse.enableProjectClasspath",
+      (node?: unknown) => toggleProjectClasspath(node, true),
+    ),
+    vscode.commands.registerCommand(
+      "clojurePulse.disableProjectClasspath",
+      (node?: unknown) => toggleProjectClasspath(node, false),
+    ),
   );
 
   setupIgnoredFormDimming(context);
@@ -171,6 +183,41 @@ function readConfig(): ServerConfig {
     path: config.get<string>("server.path", "clj-pulse"),
     args: config.get<string[]>("server.args", []),
   };
+}
+
+/** The project path a toggle command acts on — its tree node's project. */
+function projectPathOf(arg: unknown): string | undefined {
+  const node = arg as { type?: unknown; project?: { path?: unknown } } | undefined;
+  return node?.type === "project" && typeof node.project?.path === "string"
+    ? node.project.path
+    : undefined;
+}
+
+/**
+ * The configured entries exactly as settings hold them — unfiltered, so an
+ * entry the parser only warns about survives a toggle untouched.
+ */
+function rawProjects(): unknown[] {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("projects");
+  return Array.isArray(raw) ? raw : [];
+}
+
+/** Flips classpath resolution for a project node by rewriting the setting.
+ *  Workspace settings when a folder is open (they travel with the project),
+ *  user settings otherwise — the same target logic as REPL configurations. */
+async function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
+  const path = projectPathOf(arg);
+  if (path === undefined) {
+    return;
+  }
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+  await vscode.workspace
+    .getConfiguration("clojurePulse")
+    .update("projects", withToggled(rawProjects(), path, enabled), target);
 }
 
 /**
