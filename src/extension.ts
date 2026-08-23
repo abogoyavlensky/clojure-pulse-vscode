@@ -1,11 +1,22 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { LanguageClient, State } from "vscode-languageclient/node";
+import {
+  DidChangeConfigurationNotification,
+  LanguageClient,
+  State,
+} from "vscode-languageclient/node";
 import { createClient } from "./client";
+import {
+  parseProjects,
+  ProjectNodeInfo,
+  toServerConfig,
+  withToggled,
+} from "./projects";
+import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
-import { ExternalLibrariesProvider } from "./externalLibraries";
+import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
 import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
@@ -126,15 +137,93 @@ export async function activate(
         : Promise.reject(new Error("clj-pulse language server is not running")),
     undefined,
     (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+    (anyResolving) => updateClasspathProgress(anyResolving),
   );
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider(
       "clojurePulse.externalLibraries",
       externalLibraries,
     ),
-    vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", () =>
-      externalLibraries?.refresh(),
+    // Refresh asks the server to re-detect and re-resolve; the resulting
+    // librariesChanged notifications repaint the tree. Older servers (no
+    // rescan method) get the plain repaint this button always did.
+    vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", async () => {
+      if (!client) {
+        externalLibraries?.refresh();
+        return;
+      }
+      const rescanning = await rescanOrRefresh(
+        (method, param) => client!.sendRequest(method, param),
+        () => externalLibraries?.refresh(),
+        (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+      );
+      // Immediate feedback: the server acknowledged the rescan before doing
+      // the work, so open the view's progress bar now instead of waiting for
+      // the first status flip to round-trip. The rescan's final (and
+      // unconditional) librariesChanged repaints the tree, whose root load
+      // then reports whether anything is still resolving — closing the bar
+      // even when the rescan found nothing to do. A dead server can't send
+      // it, so the client's Stopped transition closes the bar too.
+      if (rescanning) {
+        updateClasspathProgress(true);
+      }
+    }),
+    // Per-project classpath toggle. Writing the setting is the whole action:
+    // the config listener pushes it to the server, the server re-resolves and
+    // fires `librariesChanged`, and that refreshes the tree — the panel never
+    // mutates its own state.
+    vscode.commands.registerCommand(
+      "clojurePulse.enableProjectClasspath",
+      (node?: unknown) => toggleProjectClasspath(node, true),
     ),
+    vscode.commands.registerCommand(
+      "clojurePulse.disableProjectClasspath",
+      (node?: unknown) => toggleProjectClasspath(node, false),
+    ),
+  );
+
+  // The project override form: adding a project (view title +) and editing
+  // one (the row's pencil). Writes route through updateProjects, the same
+  // serialized chain the toggle uses.
+  const projectForm = new ProjectFormPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.projectForm",
+        "Add Project",
+        vscode.ViewColumn.Active,
+        // Worth a little memory: an in-progress edit survives tabbing away.
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "activity-icon.svg",
+      );
+      return panel;
+    },
+    readEntries: rawProjects,
+    updateEntries: updateProjects,
+    confirmRemove: async (path) => {
+      const confirmed = await vscode.window.showWarningMessage(
+        `Remove the settings entry for "${path}"? A detected project reverts to defaults; a settings-added one disappears.`,
+        { modal: true },
+        "Remove",
+      );
+      return confirmed === "Remove";
+    },
+  });
+  context.subscriptions.push(
+    // So a form left open closes with the extension.
+    projectForm,
+    vscode.commands.registerCommand("clojurePulse.addProject", () =>
+      projectForm.open({ kind: "add" }),
+    ),
+    vscode.commands.registerCommand("clojurePulse.editProject", (node?: unknown) => {
+      const project = projectNodeInfoOf(node);
+      if (project) {
+        projectForm.open({ kind: "edit", project });
+      }
+    }),
   );
 
   setupIgnoredFormDimming(context);
@@ -168,6 +257,142 @@ function readConfig(): ServerConfig {
   };
 }
 
+/** The project path a toggle command acts on — its tree node's project. */
+function projectPathOf(arg: unknown): string | undefined {
+  return projectNodeInfoOf(arg)?.path;
+}
+
+/** The slice of a project tree node the edit form needs, or undefined for
+ *  anything that is not a project node. */
+function projectNodeInfoOf(arg: unknown): ProjectNodeInfo | undefined {
+  const node = arg as
+    | {
+        type?: unknown;
+        project?: {
+          path?: unknown;
+          kind?: unknown;
+          classpath?: { enabled?: unknown; cmd?: unknown };
+        };
+      }
+    | undefined;
+  if (node?.type !== "project" || typeof node.project?.path !== "string") {
+    return undefined;
+  }
+  const { path, kind, classpath } = node.project;
+  return {
+    path,
+    kind: typeof kind === "string" ? kind : "deps",
+    enabled: classpath?.enabled === true,
+    cmd: typeof classpath?.cmd === "string" ? classpath.cmd : undefined,
+  };
+}
+
+/**
+ * The configured entries exactly as settings hold them — unfiltered, so an
+ * entry the parser only warns about survives a toggle untouched.
+ */
+function rawProjects(): unknown[] {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("projects");
+  return Array.isArray(raw) ? raw : [];
+}
+
+/** One `withProgress` session on the view. `closed` is flipped synchronously
+ *  when the session ends; `done` appears once the async callback has run.
+ *  Each callback closes over *its own* session, so however open/close/reopen
+ *  interleave with the callbacks, a stale callback resolves itself instead
+ *  of hijacking (or stranding) a newer session's resolver. */
+interface ClasspathProgressSession {
+  closed: boolean;
+  done?: () => void;
+}
+
+/** The open session, if any — single-flight. */
+let classpathProgress: ClasspathProgressSession | undefined;
+
+/**
+ * A progress bar on the External Libraries view while any project's
+ * classpath is resolving — driven by the tree's own root loads, so startup,
+ * config-change, and rescan resolutions all show it. The bar opens on the
+ * first `true` and closes on the next `false`.
+ */
+function updateClasspathProgress(anyResolving: boolean): void {
+  if (anyResolving && !classpathProgress) {
+    const session: ClasspathProgressSession = { closed: false };
+    classpathProgress = session;
+    void vscode.window.withProgress(
+      {
+        location: { viewId: "clojurePulse.externalLibraries" },
+        title: "Resolving classpath…",
+      },
+      () =>
+        new Promise<void>((resolve) => {
+          if (session.closed) {
+            // This session ended before its callback ran.
+            resolve();
+            return;
+          }
+          session.done = resolve;
+        }),
+    );
+  } else if (!anyResolving && classpathProgress) {
+    const session = classpathProgress;
+    classpathProgress = undefined;
+    session.closed = true;
+    session.done?.();
+  }
+}
+
+/** Serializes settings writes: each one reads the setting only after the
+ *  previous write landed, so the toggle and the form can't clobber each
+ *  other however they interleave. */
+let projectsWriteChain: Promise<void> = Promise.resolve();
+
+/** The one write path for `clojurePulse.projects`: applies `update` to the
+ *  raw value read *inside* the chain, then writes it — workspace settings
+ *  when a folder is open (they travel with the project), user settings
+ *  otherwise, the same target logic as REPL configurations. */
+function updateProjects(update: (raw: unknown[]) => unknown[]): Promise<void> {
+  const write = projectsWriteChain.then(async () => {
+    const target = vscode.workspace.workspaceFolders?.length
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("projects", update(rawProjects()), target);
+  });
+  // The chain must survive a failed write; the caller still sees the failure.
+  projectsWriteChain = write.catch(() => undefined);
+  return write;
+}
+
+/** Flips classpath resolution for a project node by rewriting the setting. */
+function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
+  const path = projectPathOf(arg);
+  if (path === undefined) {
+    return Promise.resolve();
+  }
+  return updateProjects((raw) => withToggled(raw, path, enabled));
+}
+
+/**
+ * The `clojurePulse.projects` setting mapped to the shape the server reads,
+ * with invalid entries logged and skipped. Read at server start (for
+ * `initializationOptions`) and on every settings change (for the
+ * `didChangeConfiguration` push).
+ */
+function projectsServerConfig(): ReturnType<typeof toServerConfig> {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("projects");
+  const { entries, warnings } = parseProjects(raw);
+  for (const warning of warnings) {
+    outputChannel?.appendLine(`[clojure-pulse] ${warning}`);
+  }
+  return toServerConfig(entries);
+}
+
 async function start(): Promise<void> {
   const resolution = resolveServerPath(readConfig());
 
@@ -180,7 +405,7 @@ async function start(): Promise<void> {
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
   statusBar?.update("starting");
-  const newClient = createClient(resolution, outputChannel!);
+  const newClient = createClient(resolution, outputChannel!, projectsServerConfig());
   client = newClient;
 
   stateListener = newClient.onDidChangeState((event) => {
@@ -188,6 +413,11 @@ async function start(): Promise<void> {
       serverInfo: newClient.initializeResult?.serverInfo,
       command: resolution.command,
     });
+    // A crashed server can never report "no longer resolving": a stop of any
+    // kind closes the view's classpath progress bar.
+    if (event.newState === State.Stopped) {
+      updateClasspathProgress(false);
+    }
   });
 
   // Refresh the panel whenever the server (re)indexes libraries. Registered per
@@ -243,6 +473,8 @@ async function stop(): Promise<void> {
   librariesChangedListener = undefined;
   const current = client;
   client = undefined;
+  // No client, no resolution to wait for: close the view progress bar.
+  updateClasspathProgress(false);
   // Drop the previous client's libraries so the panel doesn't show stale rows
   // while the next client (if any) starts up.
   externalLibraries?.refresh();
@@ -379,6 +611,15 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       if (event.affectsConfiguration("clojurePulse.customReplCommands")) {
         logCustomCommandWarnings();
         commandsTree.refresh();
+      }
+      if (event.affectsConfiguration("clojurePulse.projects")) {
+        // Pushed explicitly (no `synchronize` section) so the payload is
+        // exactly the `{clojurePulse: {projects: [...]}}` envelope the server
+        // parses. The server re-resolves projects and re-indexes on its own —
+        // no restart, and the tree refreshes via `librariesChanged`.
+        void client?.sendNotification(DidChangeConfigurationNotification.type, {
+          settings: { clojurePulse: projectsServerConfig() },
+        });
       }
     }),
     vscode.commands.registerCommand("clojurePulse.startRepl", (arg?: unknown) =>

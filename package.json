@@ -201,6 +201,42 @@
               }
             }
           ]
+        },
+        "clojurePulse.projects": {
+          "type": "array",
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Per-project overrides for monorepo workspaces, shown in the **External Libraries** view. Paths are workspace-root-relative (`\".\"` is the root). Each entry overrides what the server auto-detected for that project — or adds a project detection missed (e.g. a subproject under a gitignored directory).\n\n```json\n[\n  { \"path\": \"apps/backend\",\n    \"classpathEnabled\": true,\n    \"classpathCommand\": \"clojure -A:dev:test -Spath\" }\n]\n```",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "markdownDescription": "Project directory, relative to the workspace root. `\".\"` is the root project."
+              },
+              "classpathEnabled": {
+                "type": "boolean",
+                "markdownDescription": "Whether the server resolves this project's full JVM classpath (running its classpath command) to index libraries."
+              },
+              "classpathCommand": {
+                "type": "string",
+                "markdownDescription": "Command that prints the project's classpath (e.g. `clojure -A:dev:test -Spath`), run in the project directory. Omit to use the server's default for the project's build tool."
+              }
+            },
+            "additionalProperties": false
+          },
+          "defaultSnippets": [
+            {
+              "label": "project override",
+              "body": {
+                "path": "$1apps/backend",
+                "classpathEnabled": true
+              }
+            }
+          ]
         }
       }
     },
@@ -391,6 +427,30 @@
         "title": "Refresh External Libraries",
         "category": "Clojure Pulse",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "clojurePulse.enableProjectClasspath",
+        "title": "Enable Classpath Resolution",
+        "category": "Clojure Pulse",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "clojurePulse.disableProjectClasspath",
+        "title": "Disable Classpath Resolution",
+        "category": "Clojure Pulse",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "clojurePulse.addProject",
+        "title": "Add Project",
+        "category": "Clojure Pulse",
+        "icon": "$(add)"
+      },
+      {
+        "command": "clojurePulse.editProject",
+        "title": "Edit Project",
+        "category": "Clojure Pulse",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -407,6 +467,11 @@
         },
         {
           "command": "clojurePulse.refreshExternalLibraries",
+          "when": "view == clojurePulse.externalLibraries",
+          "group": "navigation"
+        },
+        {
+          "command": "clojurePulse.addProject",
           "when": "view == clojurePulse.externalLibraries",
           "group": "navigation"
         }
@@ -476,6 +541,50 @@
           "command": "clojurePulse.deleteCustomReplCommand",
           "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
           "group": "2_config@2"
+        },
+        {
+          "command": "clojurePulse.enableProjectClasspath",
+          "when": "view == clojurePulse.externalLibraries && viewItem == clojurePulseProjectDisabled",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.disableProjectClasspath",
+          "when": "view == clojurePulse.externalLibraries && viewItem == clojurePulseProjectEnabled",
+          "group": "inline@1"
+        },
+        {
+          "command": "clojurePulse.enableProjectClasspath",
+          "when": "view == clojurePulse.externalLibraries && viewItem == clojurePulseProjectDisabled",
+          "group": "1_classpath@1"
+        },
+        {
+          "command": "clojurePulse.disableProjectClasspath",
+          "when": "view == clojurePulse.externalLibraries && viewItem == clojurePulseProjectEnabled",
+          "group": "1_classpath@1"
+        },
+        {
+          "command": "clojurePulse.editProject",
+          "when": "view == clojurePulse.externalLibraries && viewItem =~ /^clojurePulseProject(Enabled|Disabled)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "clojurePulse.editProject",
+          "when": "view == clojurePulse.externalLibraries && viewItem =~ /^clojurePulseProject(Enabled|Disabled)$/",
+          "group": "2_config@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "clojurePulse.enableProjectClasspath",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.disableProjectClasspath",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.editProject",
+          "when": "false"
         }
       ]
     },

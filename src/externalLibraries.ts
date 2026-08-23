@@ -11,10 +11,15 @@ export type SendRequest = (method: string, param: unknown) => Thenable<unknown>;
 /** Reads a directory's entries; defaults to `vscode.workspace.fs.readDirectory`. */
 export type ReadDirectory = (uri: vscode.Uri) => Thenable<[string, vscode.FileType][]>;
 
+/** Grouped per-project view: kind, classpath config + status, libraries. */
+const PROJECTS = "clojurePulse/projects";
 /** Resolved library list — computed by the server, re-derived per request. */
 const EXTERNAL_LIBRARIES = "clojurePulse/externalLibraries";
 /** A single jar's flat file-entry list. */
 const LIBRARY_ENTRIES = "clojurePulse/libraryEntries";
+
+/** JSON-RPC method-not-found — how an older server answers `PROJECTS`. */
+const METHOD_NOT_FOUND = -32601;
 
 type LibraryKind = "jar" | "dir";
 
@@ -26,8 +31,32 @@ interface Library {
   kind: LibraryKind;
 }
 
+type ClasspathStatus =
+  | "disabled"
+  | "cached"
+  | "resolving"
+  | "resolved"
+  | "unresolved"
+  | "error";
+
+/** One project of the workspace, mirroring the server's `PROJECTS` shape. */
+interface ProjectInfo {
+  /** Workspace-root-relative; `"."` is the root. */
+  path: string;
+  kind: string;
+  classpath: {
+    enabled: boolean;
+    cmd?: string;
+    status: ClasspathStatus;
+    /** Present only when `status` is `"error"`. */
+    message?: string;
+  };
+  libraries: Library[];
+}
+
 /** A node in the External Libraries tree. */
 export type LibNode =
+  | { type: "project"; project: ProjectInfo }
   | { type: "library"; library: Library }
   | { type: "jarFolder"; jarPath: string; prefix: string; name: string }
   | { type: "jarFile"; jarPath: string; entry: string; name: string }
@@ -51,6 +80,12 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
    */
   private readonly jarEntries = new Map<string, Promise<string[]>>();
   /**
+   * In-flight or resolved root nodes — `PROJECTS` is asked once per refresh,
+   * however many times the view repaints. Evicted on failure (generation-
+   * guarded, like a jar's entry list) so the next paint can retry.
+   */
+  private rootNodes: Promise<LibNode[]> | undefined;
+  /**
    * Bumped by `refresh()` so a request that resolves *after* a refresh can't
    * repopulate (or evict from) the freshly-cleared cache.
    */
@@ -61,17 +96,59 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
     private readonly readDirectory: ReadDirectory = (uri) =>
       vscode.workspace.fs.readDirectory(uri),
     private readonly log: (message: string) => void = () => {},
+    /**
+     * Told, on every root-load settle, whether any project is still
+     * resolving its classpath — what drives the view's progress bar. `false`
+     * on the flat fallback and on failures (progress must close, never
+     * strand); a load superseded by `refresh()` reports nothing.
+     */
+    private readonly onRootStatuses: (anyResolving: boolean) => void = () => {},
   ) {}
 
   /** Clears caches and repaints the tree (refresh triggers call this). */
   refresh(): void {
     this.generation += 1;
     this.jarEntries.clear();
+    this.rootNodes = undefined;
     this._onDidChangeTreeData.fire();
   }
 
   getTreeItem(node: LibNode): vscode.TreeItem {
     switch (node.type) {
+      case "project": {
+        const { path, kind, classpath } = node.project;
+        const isRoot = path === ".";
+        const item = new vscode.TreeItem(
+          isRoot ? workspaceName() : path,
+          // The root project open by default — a single-project workspace
+          // reads exactly like the ungrouped panel did.
+          isRoot
+            ? vscode.TreeItemCollapsibleState.Expanded
+            : vscode.TreeItemCollapsibleState.Collapsed,
+        );
+        // Stable across refreshes, so a status change (resolving → resolved)
+        // does not collapse what the user expanded.
+        item.id = `clojurePulseProject:${path}`;
+        item.description = `${kind} · ${
+          classpath.status === "resolving" ? "resolving…" : classpath.status
+        }`;
+        item.iconPath = new vscode.ThemeIcon(
+          classpath.status === "resolving"
+            ? "loading~spin"
+            : isRoot
+              ? "root-folder"
+              : "folder",
+        );
+        // The toggle commands are gated on these in package.json; contributed
+        // icons are static, so each direction needs its own context value.
+        item.contextValue = classpath.enabled
+          ? "clojurePulseProjectEnabled"
+          : "clojurePulseProjectDisabled";
+        if (classpath.status === "error" && classpath.message) {
+          item.tooltip = classpath.message;
+        }
+        return item;
+      }
       case "library": {
         const { name, version, path } = node.library;
         const item = new vscode.TreeItem(
@@ -122,9 +199,14 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
 
   async getChildren(node?: LibNode): Promise<LibNode[]> {
     if (!node) {
-      return this.rootLibraries();
+      return this.rootChildren();
     }
     switch (node.type) {
+      case "project":
+        return node.project.libraries.map((library) => ({
+          type: "library",
+          library,
+        }));
       case "library":
         return node.library.kind === "jar"
           ? this.jarChildren(node.library.path, "")
@@ -135,6 +217,54 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
         return node.isDirectory ? this.dirChildren(node.uri) : [];
       case "jarFile":
         return [];
+    }
+  }
+
+  /** The cached root of the tree, requested at most once per refresh. */
+  private rootChildren(): Promise<LibNode[]> {
+    if (!this.rootNodes) {
+      this.rootNodes = this.requestRoot(this.generation);
+    }
+    return this.rootNodes;
+  }
+
+  /**
+   * One node per project, from `PROJECTS`. A server too old for that method
+   * (and only that — method-not-found) gets today's flat library list; any
+   * other failure renders an empty tree, never stale flat data from a server
+   * that does support grouping. Failures evict the cache (unless a refresh
+   * already replaced it) so the next paint retries.
+   */
+  private async requestRoot(generation: number): Promise<LibNode[]> {
+    try {
+      const projects = (await this.sendRequest(PROJECTS, {})) as ProjectInfo[];
+      this.reportStatuses(
+        generation,
+        projects.some((project) => project.classpath?.status === "resolving"),
+      );
+      return projects.map((project) => ({ type: "project", project }));
+    } catch (e) {
+      if ((e as { code?: unknown })?.code === METHOD_NOT_FOUND) {
+        // A successful fallback stays cached like a grouped result would;
+        // only retryable failures below evict.
+        const nodes = await this.rootLibraries();
+        this.reportStatuses(generation, false);
+        return nodes;
+      }
+      if (generation === this.generation) {
+        this.rootNodes = undefined;
+      }
+      this.log(`External Libraries: failed to load projects: ${errMessage(e)}`);
+      this.reportStatuses(generation, false);
+      return [];
+    }
+  }
+
+  /** Reports root statuses unless a refresh() superseded this load — a stale
+   *  response must not re-open (or wrongly close) the progress bar. */
+  private reportStatuses(generation: number, anyResolving: boolean): void {
+    if (generation === this.generation) {
+      this.onRootStatuses(anyResolving);
     }
   }
 
@@ -230,6 +360,42 @@ function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNo
     .sort(byName)
     .map((name) => ({ type: "jarFile", jarPath, entry: `${prefix}${name}`, name }));
   return [...folderNodes, ...fileNodes];
+}
+
+/** What the root (`"."`) project node is labeled: the workspace folder. */
+function workspaceName(): string {
+  return vscode.workspace.workspaceFolders?.[0]?.name ?? ".";
+}
+
+/** Forces server-side re-detection and re-resolution. */
+const RESCAN = "clojurePulse/rescan";
+
+/**
+ * The refresh button's action: ask the server to rescan (re-detect projects,
+ * re-resolve classpaths — completion arrives as `librariesChanged`, so no
+ * local repaint is needed on success). A server too old for the method gets
+ * today's plain repaint; any other failure logs and also repaints, so a
+ * broken rescan never leaves a dead button.
+ *
+ * Resolves `true` when the server accepted a rescan (its response arrives
+ * before the work, so this is the caller's cue to show progress right away);
+ * `false` on either fallback path.
+ */
+export async function rescanOrRefresh(
+  sendRequest: SendRequest,
+  refresh: () => void,
+  log: (message: string) => void = () => {},
+): Promise<boolean> {
+  try {
+    await sendRequest(RESCAN, {});
+    return true;
+  } catch (e) {
+    if ((e as { code?: unknown })?.code !== METHOD_NOT_FOUND) {
+      log(`External Libraries: rescan failed: ${errMessage(e)}`);
+    }
+    refresh();
+    return false;
+  }
 }
 
 /**

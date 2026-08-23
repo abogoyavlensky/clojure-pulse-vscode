@@ -36,7 +36,9 @@ do not need any other Clojure extension.
   deps are browsed straight from disk. The panel refreshes itself whenever the
   classpath is re-indexed, and a refresh button is on the view title. If
   nothing is resolved yet, the empty state tells you how to generate a
-  classpath for your project type (e.g. `clojure -Spath` for deps.edn).
+  classpath for your project type (e.g. `clojure -Spath` for deps.edn). In a
+  multi-project workspace the tree is grouped by project, with a per-project
+  classpath toggle — see [Monorepos](#monorepos).
 - **Indent on Enter** — pressing Enter indents the new line to the
   structurally correct column (vectors/maps align to the first element,
   symbol-headed lists get a 2-space body). Handled client-side: the extension
@@ -126,6 +128,7 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
 | `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
 | `clojurePulse.replConfigurations` | `[]` | The REPLs listed in the sidebar — see [REPL](#repl). |
+| `clojurePulse.projects` | `[]` | Per-project classpath overrides for multi-project workspaces — see [Monorepos](#monorepos). |
 
 **Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
 both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
@@ -133,6 +136,69 @@ both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
 Clojure Pulse indents and shifts, Parinfer places brackets. If you prefer
 Parinfer (or anything else) to drive the Enter key, remove or rebind the
 `clojurePulse.newline` keybinding in your Keyboard Shortcuts.
+
+## Monorepos
+
+A workspace holding several Clojure projects — a root plus `apps/backend`,
+`libs/common`, and so on — needs no configuration. clj-pulse detects every
+directory with a `deps.edn`, `project.clj`, or `lgx.edn` (up to four levels
+deep, honoring `.gitignore`), indexes each project's sources, and picks up
+whatever classpath its `.cpcache` already holds. Navigation and rename work
+across the whole workspace.
+
+In a multi-project workspace the External Libraries panel groups its tree by
+project: each row names the project, its build tool, and its classpath
+status, with the resolved libraries underneath. While any project's
+classpath is resolving, a progress bar runs across the view (and the server
+reports the same work in the status bar). The refresh button asks the server
+to rescan: it re-detects projects and re-resolves every enabled classpath —
+the way to retry after an error, or to pick up a newly created subproject.
+(Detection honors `.gitignore`, so a subproject in a gitignored directory
+still needs a `clojurePulse.projects` entry; rescan then picks it up. Against
+an older clj-pulse without rescan support, the button just repaints the
+view.)
+
+Resolving a project's *full* classpath — aliases included — runs its
+classpath command (`clojure -A:dev:test -Spath` for deps.edn projects,
+`lein classpath` for Leiningen; lgx projects resolve internally, without a
+command). The first run may download dependencies, so only the root project
+runs it by default. To enable it for a subproject, click the play button on
+the project's row (the stop button disables it again). The button writes the
+`clojurePulse.projects` setting in workspace settings; the panel follows the
+setting, so editing `settings.json` by hand works too. For the full edit —
+the classpath command, or adding a project clj-pulse didn't detect — use the
+pencil on a project's row, or the `+` on the view title. Both open a form
+that writes the same setting; its "Remove from settings" button drops the
+entry, which removes an added project and resets a detected one to defaults:
+
+```json
+{
+  "clojurePulse.projects": [
+    {
+      "path": "apps/backend",
+      "classpathEnabled": true,
+      "classpathCommand": "clojure -A:dev:test -Spath"
+    }
+  ]
+}
+```
+
+Entries override the server's per-project defaults and change only the keys
+they name. `path` is relative to the workspace root; `"."` is the root
+project. Listing a path detection skipped — say, a gitignored checkout with
+its own `deps.edn` — adds it as a project. Changes apply live; the server
+re-resolves without a restart.
+
+The same overrides can live in `.clj-pulse/config.edn` at the workspace root
+(see
+[clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse#configuration)),
+which works in every editor; where both name the same key, the VS Code
+setting wins. To reset everything to the auto-detected defaults, remove the
+`clojurePulse.projects` setting — it applies live, no restart needed (a
+`.clj-pulse/config.edn` keeps its own say).
+
+To run a REPL inside a subproject, point a `create` configuration's `cwd` at
+the subproject's directory — see [REPL](#repl).
 
 ## REPL
 
