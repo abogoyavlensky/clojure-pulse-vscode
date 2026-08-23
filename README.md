@@ -148,7 +148,13 @@ across the whole workspace.
 
 In a multi-project workspace the External Libraries panel groups its tree by
 project: each row names the project, its build tool, and its classpath
-status, with the resolved libraries underneath.
+status, with the resolved libraries underneath. While any project's
+classpath is resolving, a progress bar runs across the view (and the server
+reports the same work in the status bar). The refresh button asks the server
+to rescan: it re-detects projects and re-resolves every enabled classpath —
+the way to retry after an error, or to pick up a subproject that appeared in
+a gitignored directory. (Against an older clj-pulse without rescan support,
+the button just repaints the view.)
 
 Resolving a project's *full* classpath — aliases included — runs its
 classpath command (`clojure -A:dev:test -Spath` for deps.edn projects,
@@ -157,7 +163,11 @@ command). The first run may download dependencies, so only the root project
 runs it by default. To enable it for a subproject, click the play button on
 the project's row (the stop button disables it again). The button writes the
 `clojurePulse.projects` setting in workspace settings; the panel follows the
-setting, so editing `settings.json` by hand works too:
+setting, so editing `settings.json` by hand works too. For the full edit —
+the classpath command, or adding a project clj-pulse didn't detect — use the
+pencil on a project's row, or the `+` on the view title. Both open a form
+that writes the same setting; its "Remove from settings" button drops the
+entry, which removes an added project and resets a detected one to defaults:
 
 ```json
 {
@@ -181,7 +191,9 @@ The same overrides can live in `.clj-pulse/config.edn` at the workspace root
 (see
 [clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse#configuration)),
 which works in every editor; where both name the same key, the VS Code
-setting wins.
+setting wins. To reset everything to the auto-detected defaults, remove the
+`clojurePulse.projects` setting — it applies live, no restart needed (a
+`.clj-pulse/config.edn` keeps its own say).
 
 To run a REPL inside a subproject, point a `create` configuration's `cwd` at
 the subproject's directory — see [REPL](#repl).
