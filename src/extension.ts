@@ -1,7 +1,12 @@
 import * as fs from "fs";
 import * as vscode from "vscode";
-import { LanguageClient, State } from "vscode-languageclient/node";
+import {
+  DidChangeConfigurationNotification,
+  LanguageClient,
+  State,
+} from "vscode-languageclient/node";
 import { createClient } from "./client";
+import { parseProjects, toServerConfig } from "./projects";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
@@ -168,6 +173,23 @@ function readConfig(): ServerConfig {
   };
 }
 
+/**
+ * The `clojurePulse.projects` setting mapped to the shape the server reads,
+ * with invalid entries logged and skipped. Read at server start (for
+ * `initializationOptions`) and on every settings change (for the
+ * `didChangeConfiguration` push).
+ */
+function projectsServerConfig(): ReturnType<typeof toServerConfig> {
+  const raw = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<unknown>("projects");
+  const { entries, warnings } = parseProjects(raw);
+  for (const warning of warnings) {
+    outputChannel?.appendLine(`[clojure-pulse] ${warning}`);
+  }
+  return toServerConfig(entries);
+}
+
 async function start(): Promise<void> {
   const resolution = resolveServerPath(readConfig());
 
@@ -180,7 +202,7 @@ async function start(): Promise<void> {
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
   statusBar?.update("starting");
-  const newClient = createClient(resolution, outputChannel!);
+  const newClient = createClient(resolution, outputChannel!, projectsServerConfig());
   client = newClient;
 
   stateListener = newClient.onDidChangeState((event) => {
@@ -379,6 +401,15 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       if (event.affectsConfiguration("clojurePulse.customReplCommands")) {
         logCustomCommandWarnings();
         commandsTree.refresh();
+      }
+      if (event.affectsConfiguration("clojurePulse.projects")) {
+        // Pushed explicitly (no `synchronize` section) so the payload is
+        // exactly the `{clojurePulse: {projects: [...]}}` envelope the server
+        // parses. The server re-resolves projects and re-indexes on its own —
+        // no restart, and the tree refreshes via `librariesChanged`.
+        void client?.sendNotification(DidChangeConfigurationNotification.type, {
+          settings: { clojurePulse: projectsServerConfig() },
+        });
       }
     }),
     vscode.commands.registerCommand("clojurePulse.startRepl", (arg?: unknown) =>
