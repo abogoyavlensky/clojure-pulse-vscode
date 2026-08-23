@@ -413,10 +413,10 @@ suite("ExternalLibrariesProvider — root status callback", () => {
 });
 
 suite("rescanOrRefresh", () => {
-  test("a supported server rescans; no local refresh", async () => {
+  test("a supported server rescans; no local refresh; reports the rescan", async () => {
     const calls: string[] = [];
     let refreshed = 0;
-    await rescanOrRefresh(
+    const rescanning = await rescanOrRefresh(
       (method) => {
         calls.push(method);
         return Promise.resolve(null);
@@ -425,26 +425,31 @@ suite("rescanOrRefresh", () => {
     );
     assert.deepStrictEqual(calls, ["clojurePulse/rescan"]);
     assert.strictEqual(refreshed, 0);
+    // True = the server accepted a rescan — the caller's cue for immediate
+    // progress feedback.
+    assert.strictEqual(rescanning, true);
   });
 
   test("method-not-found falls back to a plain repaint", async () => {
     let refreshed = 0;
-    await rescanOrRefresh(
+    const rescanning = await rescanOrRefresh(
       () => Promise.reject(Object.assign(new Error("method not found"), { code: -32601 })),
       () => refreshed++,
     );
     assert.strictEqual(refreshed, 1);
+    assert.strictEqual(rescanning, false);
   });
 
   test("any other failure logs and still repaints", async () => {
     let refreshed = 0;
     const log: string[] = [];
-    await rescanOrRefresh(
+    const rescanning = await rescanOrRefresh(
       () => Promise.reject(new Error("server busy")),
       () => refreshed++,
       (message) => log.push(message),
     );
     assert.strictEqual(refreshed, 1);
+    assert.strictEqual(rescanning, false);
     assert.ok(log.some((line) => line.includes("server busy")));
   });
 });

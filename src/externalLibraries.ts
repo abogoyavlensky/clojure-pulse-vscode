@@ -376,19 +376,25 @@ const RESCAN = "clojurePulse/rescan";
  * local repaint is needed on success). A server too old for the method gets
  * today's plain repaint; any other failure logs and also repaints, so a
  * broken rescan never leaves a dead button.
+ *
+ * Resolves `true` when the server accepted a rescan (its response arrives
+ * before the work, so this is the caller's cue to show progress right away);
+ * `false` on either fallback path.
  */
 export async function rescanOrRefresh(
   sendRequest: SendRequest,
   refresh: () => void,
   log: (message: string) => void = () => {},
-): Promise<void> {
+): Promise<boolean> {
   try {
     await sendRequest(RESCAN, {});
+    return true;
   } catch (e) {
     if ((e as { code?: unknown })?.code !== METHOD_NOT_FOUND) {
       log(`External Libraries: rescan failed: ${errMessage(e)}`);
     }
     refresh();
+    return false;
   }
 }
 

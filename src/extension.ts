@@ -147,15 +147,27 @@ export async function activate(
     // Refresh asks the server to re-detect and re-resolve; the resulting
     // librariesChanged notifications repaint the tree. Older servers (no
     // rescan method) get the plain repaint this button always did.
-    vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", () =>
-      client
-        ? rescanOrRefresh(
-            (method, param) => client!.sendRequest(method, param),
-            () => externalLibraries?.refresh(),
-            (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
-          )
-        : externalLibraries?.refresh(),
-    ),
+    vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", async () => {
+      if (!client) {
+        externalLibraries?.refresh();
+        return;
+      }
+      const rescanning = await rescanOrRefresh(
+        (method, param) => client!.sendRequest(method, param),
+        () => externalLibraries?.refresh(),
+        (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+      );
+      // Immediate feedback: the server acknowledged the rescan before doing
+      // the work, so open the view's progress bar now instead of waiting for
+      // the first status flip to round-trip. The rescan's final (and
+      // unconditional) librariesChanged repaints the tree, whose root load
+      // then reports whether anything is still resolving — closing the bar
+      // even when the rescan found nothing to do. A dead server can't send
+      // it, so the client's Stopped transition closes the bar too.
+      if (rescanning) {
+        updateClasspathProgress(true);
+      }
+    }),
     // Per-project classpath toggle. Writing the setting is the whole action:
     // the config listener pushes it to the server, the server re-resolves and
     // fires `librariesChanged`, and that refreshes the tree — the panel never
