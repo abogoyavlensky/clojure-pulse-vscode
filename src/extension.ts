@@ -6,7 +6,13 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
-import { parseProjects, toServerConfig, withToggled } from "./projects";
+import {
+  parseProjects,
+  ProjectNodeInfo,
+  toServerConfig,
+  withToggled,
+} from "./projects";
+import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
@@ -154,6 +160,50 @@ export async function activate(
     ),
   );
 
+  // The project override form: adding a project (view title +) and editing
+  // one (the row's pencil). Writes route through updateProjects, the same
+  // serialized chain the toggle uses.
+  const projectForm = new ProjectFormPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.projectForm",
+        "Add Project",
+        vscode.ViewColumn.Active,
+        // Worth a little memory: an in-progress edit survives tabbing away.
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "activity-icon.svg",
+      );
+      return panel;
+    },
+    readEntries: rawProjects,
+    updateEntries: updateProjects,
+    confirmRemove: async (path) => {
+      const confirmed = await vscode.window.showWarningMessage(
+        `Remove the settings entry for "${path}"? A detected project reverts to defaults; a settings-added one disappears.`,
+        { modal: true },
+        "Remove",
+      );
+      return confirmed === "Remove";
+    },
+  });
+  context.subscriptions.push(
+    // So a form left open closes with the extension.
+    projectForm,
+    vscode.commands.registerCommand("clojurePulse.addProject", () =>
+      projectForm.open({ kind: "add" }),
+    ),
+    vscode.commands.registerCommand("clojurePulse.editProject", (node?: unknown) => {
+      const project = projectNodeInfoOf(node);
+      if (project) {
+        projectForm.open({ kind: "edit", project });
+      }
+    }),
+  );
+
   setupIgnoredFormDimming(context);
   setupMaintainIndentation(context);
   const repl = setupRepl(context);
@@ -187,10 +237,32 @@ function readConfig(): ServerConfig {
 
 /** The project path a toggle command acts on — its tree node's project. */
 function projectPathOf(arg: unknown): string | undefined {
-  const node = arg as { type?: unknown; project?: { path?: unknown } } | undefined;
-  return node?.type === "project" && typeof node.project?.path === "string"
-    ? node.project.path
-    : undefined;
+  return projectNodeInfoOf(arg)?.path;
+}
+
+/** The slice of a project tree node the edit form needs, or undefined for
+ *  anything that is not a project node. */
+function projectNodeInfoOf(arg: unknown): ProjectNodeInfo | undefined {
+  const node = arg as
+    | {
+        type?: unknown;
+        project?: {
+          path?: unknown;
+          kind?: unknown;
+          classpath?: { enabled?: unknown; cmd?: unknown };
+        };
+      }
+    | undefined;
+  if (node?.type !== "project" || typeof node.project?.path !== "string") {
+    return undefined;
+  }
+  const { path, kind, classpath } = node.project;
+  return {
+    path,
+    kind: typeof kind === "string" ? kind : "deps",
+    enabled: classpath?.enabled === true,
+    cmd: typeof classpath?.cmd === "string" ? classpath.cmd : undefined,
+  };
 }
 
 /**
@@ -204,29 +276,36 @@ function rawProjects(): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
-/** Serializes toggle writes: each one reads the setting only after the
- *  previous write landed, so two quick clicks can't clobber each other. */
+/** Serializes settings writes: each one reads the setting only after the
+ *  previous write landed, so the toggle and the form can't clobber each
+ *  other however they interleave. */
 let projectsWriteChain: Promise<void> = Promise.resolve();
 
-/** Flips classpath resolution for a project node by rewriting the setting.
- *  Workspace settings when a folder is open (they travel with the project),
- *  user settings otherwise — the same target logic as REPL configurations. */
-function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
-  const path = projectPathOf(arg);
-  if (path === undefined) {
-    return Promise.resolve();
-  }
+/** The one write path for `clojurePulse.projects`: applies `update` to the
+ *  raw value read *inside* the chain, then writes it — workspace settings
+ *  when a folder is open (they travel with the project), user settings
+ *  otherwise, the same target logic as REPL configurations. */
+function updateProjects(update: (raw: unknown[]) => unknown[]): Promise<void> {
   const write = projectsWriteChain.then(async () => {
     const target = vscode.workspace.workspaceFolders?.length
       ? vscode.ConfigurationTarget.Workspace
       : vscode.ConfigurationTarget.Global;
     await vscode.workspace
       .getConfiguration("clojurePulse")
-      .update("projects", withToggled(rawProjects(), path, enabled), target);
+      .update("projects", update(rawProjects()), target);
   });
   // The chain must survive a failed write; the caller still sees the failure.
   projectsWriteChain = write.catch(() => undefined);
   return write;
+}
+
+/** Flips classpath resolution for a project node by rewriting the setting. */
+function toggleProjectClasspath(arg: unknown, enabled: boolean): Promise<void> {
+  const path = projectPathOf(arg);
+  if (path === undefined) {
+    return Promise.resolve();
+  }
+  return updateProjects((raw) => withToggled(raw, path, enabled));
 }
 
 /**

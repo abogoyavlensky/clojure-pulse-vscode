@@ -439,6 +439,18 @@
         "title": "Disable Classpath Resolution",
         "category": "Clojure Pulse",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "clojurePulse.addProject",
+        "title": "Add Project",
+        "category": "Clojure Pulse",
+        "icon": "$(add)"
+      },
+      {
+        "command": "clojurePulse.editProject",
+        "title": "Edit Project",
+        "category": "Clojure Pulse",
+        "icon": "$(edit)"
       }
     ],
     "menus": {
@@ -455,6 +467,11 @@
         },
         {
           "command": "clojurePulse.refreshExternalLibraries",
+          "when": "view == clojurePulse.externalLibraries",
+          "group": "navigation"
+        },
+        {
+          "command": "clojurePulse.addProject",
           "when": "view == clojurePulse.externalLibraries",
           "group": "navigation"
         }
@@ -544,6 +561,16 @@
           "command": "clojurePulse.disableProjectClasspath",
           "when": "view == clojurePulse.externalLibraries && viewItem == clojurePulseProjectEnabled",
           "group": "1_classpath@1"
+        },
+        {
+          "command": "clojurePulse.editProject",
+          "when": "view == clojurePulse.externalLibraries && viewItem =~ /^clojurePulseProject(Enabled|Disabled)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "clojurePulse.editProject",
+          "when": "view == clojurePulse.externalLibraries && viewItem =~ /^clojurePulseProject(Enabled|Disabled)$/",
+          "group": "2_config@1"
         }
       ],
       "commandPalette": [
@@ -553,6 +580,10 @@
         },
         {
           "command": "clojurePulse.disableProjectClasspath",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.editProject",
           "when": "false"
         }
       ]
