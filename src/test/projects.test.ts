@@ -2,7 +2,11 @@ import * as assert from "assert";
 import {
   normalizeProjectPath,
   parseProjects,
+  projectFormValuesFor,
+  removeProjectEntry,
   toServerConfig,
+  upsertProjectEntry,
+  validateProjectForm,
   withToggled,
 } from "../projects";
 
@@ -272,5 +276,153 @@ suite("withToggled", () => {
     withToggled(raw, "apps/x", true);
     withToggled(raw, "new/one", false);
     assert.deepStrictEqual(raw, copy);
+  });
+});
+
+suite("upsertProjectEntry", () => {
+  test("merges changes into the first valid matching entry", () => {
+    const raw = [{ path: "./apps/x/", classpathCommand: "clj -Spath", note: "keep" }];
+    assert.deepStrictEqual(
+      upsertProjectEntry(raw, "apps/x", {
+        classpathEnabled: true,
+        classpathCommand: "lein classpath",
+      }),
+      [
+        {
+          path: "./apps/x/",
+          classpathCommand: "lein classpath",
+          note: "keep",
+          classpathEnabled: true,
+        },
+      ],
+    );
+  });
+
+  test("appends a normalized entry when nothing matches", () => {
+    assert.deepStrictEqual(
+      upsertProjectEntry([{ path: "libs/y" }], "./apps/x/", { classpathEnabled: false }),
+      [{ path: "libs/y" }, { path: "apps/x", classpathEnabled: false }],
+    );
+  });
+
+  test("an explicitly-undefined classpathCommand removes the key", () => {
+    const raw = [{ path: "apps/x", classpathEnabled: true, classpathCommand: "clj -Spath" }];
+    assert.deepStrictEqual(
+      upsertProjectEntry(raw, "apps/x", {
+        classpathEnabled: true,
+        classpathCommand: undefined,
+      }),
+      [{ path: "apps/x", classpathEnabled: true }],
+    );
+  });
+
+  test("keys absent from changes stay untouched", () => {
+    const raw = [{ path: "apps/x", classpathCommand: "clj -Spath" }];
+    assert.deepStrictEqual(upsertProjectEntry(raw, "apps/x", {}), [
+      { path: "apps/x", classpathCommand: "clj -Spath" },
+    ]);
+  });
+
+  test("skips invalid same-path entries, like the toggle", () => {
+    const raw = [{ path: "apps/x", classpathEnabled: "yes" }, { path: "apps/x" }];
+    assert.deepStrictEqual(upsertProjectEntry(raw, "apps/x", { classpathEnabled: true }), [
+      { path: "apps/x", classpathEnabled: "yes" },
+      { path: "apps/x", classpathEnabled: true },
+    ]);
+  });
+
+  test("does not mutate the input", () => {
+    const raw = [{ path: "apps/x", classpathCommand: "clj -Spath" }];
+    const copy = JSON.parse(JSON.stringify(raw));
+    upsertProjectEntry(raw, "apps/x", { classpathEnabled: true, classpathCommand: undefined });
+    upsertProjectEntry(raw, "new/one", { classpathEnabled: false });
+    assert.deepStrictEqual(raw, copy);
+  });
+});
+
+suite("removeProjectEntry", () => {
+  test("removes the first valid matching entry, preserving everything else", () => {
+    const raw = ["oops", { path: "./apps/x" }, { path: "apps/x" }, { path: "libs/y" }];
+    assert.deepStrictEqual(removeProjectEntry(raw, "apps/x"), [
+      "oops",
+      { path: "apps/x" },
+      { path: "libs/y" },
+    ]);
+  });
+
+  test("invalid same-path entries never match", () => {
+    const raw = [{ path: "apps/x", classpathEnabled: "yes" }];
+    assert.deepStrictEqual(removeProjectEntry(raw, "apps/x"), [
+      { path: "apps/x", classpathEnabled: "yes" },
+    ]);
+  });
+
+  test("returns a copy when nothing matches, never mutating", () => {
+    const raw = [{ path: "libs/y" }];
+    const copy = JSON.parse(JSON.stringify(raw));
+    const result = removeProjectEntry(raw, "apps/x");
+    assert.deepStrictEqual(result, copy);
+    assert.notStrictEqual(result, raw);
+    assert.deepStrictEqual(raw, copy);
+  });
+});
+
+suite("projectFormValuesFor", () => {
+  const node = { path: "apps/x", kind: "deps", enabled: true, cmd: "clojure -A:dev -Spath" };
+
+  test("raw-entry override fills the field; node cmd is only the placeholder", () => {
+    const values = projectFormValuesFor(node, [
+      { path: "./apps/x", classpathCommand: "make cp" },
+    ]);
+    assert.strictEqual(values.classpathCommand, "make cp");
+    assert.strictEqual(values.commandPlaceholder, "clojure -A:dev -Spath");
+    assert.strictEqual(values.hasEntry, true);
+  });
+
+  test("no raw entry: empty field, node cmd placeholder, hasEntry false", () => {
+    const values = projectFormValuesFor(node, []);
+    assert.strictEqual(values.classpathCommand, "");
+    assert.strictEqual(values.commandPlaceholder, "clojure -A:dev -Spath");
+    assert.strictEqual(values.hasEntry, false);
+    assert.strictEqual(values.classpathEnabled, true);
+    assert.strictEqual(values.path, "apps/x");
+  });
+
+  test("placeholder falls back to the per-kind default when the node has no cmd", () => {
+    assert.strictEqual(
+      projectFormValuesFor({ path: ".", kind: "deps", enabled: true }, []).commandPlaceholder,
+      "clojure -A:dev:test -Spath",
+    );
+    assert.strictEqual(
+      projectFormValuesFor({ path: ".", kind: "lein", enabled: false }, []).commandPlaceholder,
+      "lein classpath",
+    );
+    assert.strictEqual(
+      projectFormValuesFor({ path: ".", kind: "lgx", enabled: true }, []).commandPlaceholder,
+      "",
+    );
+  });
+
+  test("an invalid raw entry for the path is ignored (matches the write rule)", () => {
+    const values = projectFormValuesFor(node, [{ path: "apps/x", classpathCommand: 42 }]);
+    assert.strictEqual(values.classpathCommand, "");
+    assert.strictEqual(values.hasEntry, false);
+  });
+});
+
+suite("validateProjectForm", () => {
+  test("add mode rejects empty, absolute, escaping, and duplicate paths", () => {
+    assert.ok(validateProjectForm({ path: "  " }, [], "add").path);
+    assert.ok(validateProjectForm({ path: "/tmp/x" }, [], "add").path);
+    assert.ok(validateProjectForm({ path: "../x" }, [], "add").path);
+    assert.ok(validateProjectForm({ path: "./apps/x/" }, ["apps/x"], "add").path);
+  });
+
+  test("add mode accepts a fresh workspace-relative path", () => {
+    assert.deepStrictEqual(validateProjectForm({ path: "apps/new" }, ["apps/x"], "add"), {});
+  });
+
+  test("edit mode skips path validation", () => {
+    assert.deepStrictEqual(validateProjectForm({ path: "" }, [], "edit"), {});
   });
 });

@@ -131,20 +131,170 @@ export function withToggled(
   path: string,
   enabled: boolean,
 ): unknown[] {
+  return upsertProjectEntry(raw, path, { classpathEnabled: enabled });
+}
+
+/**
+ * The form's edit to one entry. A key absent from the object is left alone;
+ * a key explicitly set to `undefined` is removed from the entry (how the
+ * form clears a command override — possible in this settings layer, unlike
+ * `.clj-pulse/config.edn` keys, which can only be overridden).
+ */
+export interface ProjectEntryChanges {
+  classpathEnabled?: boolean;
+  classpathCommand?: string;
+}
+
+/**
+ * The raw settings value with `changes` merged into the first *valid* entry
+ * naming `path` (paths compared normalized; invalid entries never match —
+ * `parseProjects` skips them, so editing one would change nothing the server
+ * sees), or a normalized entry appended. Everything else is preserved
+ * verbatim. Never mutates the input.
+ */
+export function upsertProjectEntry(
+  raw: unknown[],
+  path: string,
+  changes: ProjectEntryChanges,
+): unknown[] {
+  const index = findValidEntryIndex(raw, path);
+  if (index === -1) {
+    const entry: Record<string, unknown> = { path: normalizeProjectPath(path) };
+    applyChanges(entry, changes);
+    return [...raw, entry];
+  }
+  return raw.map((item, i) => {
+    if (i !== index) {
+      return item;
+    }
+    const entry = { ...(item as Record<string, unknown>) };
+    applyChanges(entry, changes);
+    return entry;
+  });
+}
+
+/**
+ * The raw settings value without the first valid entry naming `path`
+ * (matching exactly as `upsertProjectEntry` does). For a settings-added
+ * project this removes the project; for a detected one it reverts the
+ * overrides and the project stays — the server's layering decides, not this
+ * function. Always returns a copy; never mutates.
+ */
+export function removeProjectEntry(raw: unknown[], path: string): unknown[] {
+  const index = findValidEntryIndex(raw, path);
+  return raw.filter((_, i) => i !== index);
+}
+
+/** First entry `parseProjects` would keep for `path`, or -1. */
+function findValidEntryIndex(raw: unknown[], path: string): number {
   const target = normalizeProjectPath(path);
-  const index = raw.findIndex(
+  return raw.findIndex(
     (item) =>
       entryProblem(item) === undefined &&
       normalizeProjectPath((item as Record<string, unknown>).path as string) === target,
   );
-  if (index === -1) {
-    return [...raw, { path: target, classpathEnabled: enabled }];
+}
+
+function applyChanges(entry: Record<string, unknown>, changes: ProjectEntryChanges): void {
+  if ("classpathEnabled" in changes) {
+    if (changes.classpathEnabled === undefined) {
+      delete entry.classpathEnabled;
+    } else {
+      entry.classpathEnabled = changes.classpathEnabled;
+    }
   }
-  return raw.map((item, i) =>
-    i === index
-      ? { ...(item as Record<string, unknown>), classpathEnabled: enabled }
-      : item,
-  );
+  if ("classpathCommand" in changes) {
+    if (changes.classpathCommand === undefined) {
+      delete entry.classpathCommand;
+    } else {
+      entry.classpathCommand = changes.classpathCommand;
+    }
+  }
+}
+
+/** The server's default classpath command per project kind; lgx resolves
+ *  internally and never runs one. */
+export function defaultClasspathCommand(kind: string): string {
+  switch (kind) {
+    case "lein":
+      return "lein classpath";
+    case "lgx":
+      return "";
+    default:
+      return "clojure -A:dev:test -Spath";
+  }
+}
+
+/** What the edit form renders for one project. */
+export interface ProjectFormValues {
+  path: string;
+  classpathEnabled: boolean;
+  /** The settings-layer override, or "" — never the inherited value. */
+  classpathCommand: string;
+  /** The effective command, shown as the field's placeholder: the node's
+   *  server-reported cmd, else the per-kind default ("" for lgx). */
+  commandPlaceholder: string;
+  /** Whether a valid settings entry exists — gates "Remove from settings". */
+  hasEntry: boolean;
+}
+
+/** The project node slice the edit form needs. */
+export interface ProjectNodeInfo {
+  path: string;
+  kind: string;
+  enabled: boolean;
+  cmd?: string;
+}
+
+/**
+ * Pre-fill values for the edit form: effective state from the tree node, the
+ * command *override* (only) from the raw settings entry — the effective
+ * command appears as the placeholder, so an inherited value is visible but
+ * saving without typing never turns it into an explicit override.
+ */
+export function projectFormValuesFor(
+  node: ProjectNodeInfo,
+  raw: unknown[],
+): ProjectFormValues {
+  const index = findValidEntryIndex(raw, node.path);
+  const entry =
+    index === -1 ? undefined : (raw[index] as Record<string, unknown>);
+  return {
+    path: node.path,
+    classpathEnabled: node.enabled,
+    classpathCommand:
+      typeof entry?.classpathCommand === "string" ? entry.classpathCommand : "",
+    commandPlaceholder: node.cmd ?? defaultClasspathCommand(node.kind),
+    hasEntry: entry !== undefined,
+  };
+}
+
+export type ProjectFormErrors = Partial<Record<"path", string>>;
+
+/**
+ * Validation for the form's save. Only the path needs rules, and only in add
+ * mode (edit mode's path is read-only, taken from the server): same rules as
+ * `parseProjects`, plus no duplicate of an existing project.
+ */
+export function validateProjectForm(
+  values: { path: string },
+  existingPaths: string[],
+  mode: "add" | "edit",
+): ProjectFormErrors {
+  if (mode === "edit") {
+    return {};
+  }
+  if (values.path.trim().length === 0) {
+    return { path: "Enter a project path, relative to the workspace root" };
+  }
+  const path = normalizeProjectPath(values.path);
+  if (!isWorkspaceRelative(path)) {
+    return { path: 'The path must stay inside the workspace (relative, no "..")' };
+  }
+  if (existingPaths.some((existing) => normalizeProjectPath(existing) === path)) {
+    return { path: `"${path}" is already a project` };
+  }
+  return {};
 }
 
 /**
