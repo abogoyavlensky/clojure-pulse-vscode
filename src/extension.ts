@@ -286,7 +286,11 @@ function rawProjects(): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
-/** Resolves the open view-progress session; set only while one is showing. */
+/** Whether a view-progress session is (logically) open. Flipped
+ *  synchronously, before `withProgress`'s async callback runs — a `false`
+ *  arriving in that gap must still close the session, not be lost. */
+let classpathProgressOpen = false;
+/** Resolves the open session's promise, once the callback has installed it. */
 let classpathProgressDone: (() => void) | undefined;
 
 /**
@@ -296,7 +300,8 @@ let classpathProgressDone: (() => void) | undefined;
  * opens on the first `true` and closes on the next `false`.
  */
 function updateClasspathProgress(anyResolving: boolean): void {
-  if (anyResolving && !classpathProgressDone) {
+  if (anyResolving && !classpathProgressOpen) {
+    classpathProgressOpen = true;
     void vscode.window.withProgress(
       {
         location: { viewId: "clojurePulse.externalLibraries" },
@@ -304,11 +309,17 @@ function updateClasspathProgress(anyResolving: boolean): void {
       },
       () =>
         new Promise<void>((resolve) => {
+          if (!classpathProgressOpen) {
+            // Closed before this callback ran: end the session immediately.
+            resolve();
+            return;
+          }
           classpathProgressDone = resolve;
         }),
     );
-  } else if (!anyResolving && classpathProgressDone) {
-    classpathProgressDone();
+  } else if (!anyResolving && classpathProgressOpen) {
+    classpathProgressOpen = false;
+    classpathProgressDone?.();
     classpathProgressDone = undefined;
   }
 }
@@ -382,6 +393,11 @@ async function start(): Promise<void> {
       serverInfo: newClient.initializeResult?.serverInfo,
       command: resolution.command,
     });
+    // A crashed server can never report "no longer resolving": a stop of any
+    // kind closes the view's classpath progress bar.
+    if (event.newState === State.Stopped) {
+      updateClasspathProgress(false);
+    }
   });
 
   // Refresh the panel whenever the server (re)indexes libraries. Registered per
