@@ -1,6 +1,10 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import { ExternalLibrariesProvider, SendRequest } from "../externalLibraries";
+import {
+  ExternalLibrariesProvider,
+  rescanOrRefresh,
+  SendRequest,
+} from "../externalLibraries";
 
 const JAR_LIB = { name: "aero", version: "1.1.6", path: "/abs/to.jar", kind: "jar" };
 
@@ -340,5 +344,107 @@ suite("ExternalLibrariesProvider — grouped by project", () => {
     assert.deepStrictEqual(await provider.getChildren(), []);
     const roots = await provider.getChildren();
     assert.strictEqual(roots.length, 1);
+  });
+});
+
+suite("ExternalLibrariesProvider — root status callback", () => {
+  function withCallback(sendRequest: SendRequest): {
+    provider: ExternalLibrariesProvider;
+    reports: boolean[];
+  } {
+    const reports: boolean[] = [];
+    const provider = new ExternalLibrariesProvider(
+      sendRequest,
+      undefined,
+      undefined,
+      (anyResolving) => reports.push(anyResolving),
+    );
+    return { provider, reports };
+  }
+
+  test("reports true when any project is resolving", async () => {
+    const { provider, reports } = withCallback(() =>
+      Promise.resolve([
+        project({ path: "." }),
+        project({ path: "apps/x", classpath: { enabled: true, status: "resolving" } }),
+      ]),
+    );
+    await provider.getChildren();
+    assert.deepStrictEqual(reports, [true]);
+  });
+
+  test("reports false for settled projects, the flat fallback, and failures", async () => {
+    const settled = withCallback(() => Promise.resolve([project()]));
+    await settled.provider.getChildren();
+    assert.deepStrictEqual(settled.reports, [false]);
+
+    const flat = withCallback(flatServer(() => Promise.resolve([JAR_LIB])));
+    await flat.provider.getChildren();
+    assert.deepStrictEqual(flat.reports, [false]);
+
+    const failed = withCallback(() => Promise.reject(new Error("timed out")));
+    await failed.provider.getChildren();
+    assert.deepStrictEqual(failed.reports, [false]);
+  });
+
+  test("a request superseded by refresh() reports nothing", async () => {
+    let resolveFirst: (value: unknown) => void = () => undefined;
+    let call = 0;
+    const { provider, reports } = withCallback(() => {
+      call += 1;
+      if (call === 1) {
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      }
+      return Promise.resolve([project()]);
+    });
+
+    const first = provider.getChildren();
+    provider.refresh();
+    await provider.getChildren(); // second request settles, reports false
+    resolveFirst([
+      project({ classpath: { enabled: true, status: "resolving" } }),
+    ]);
+    await first;
+    // The stale true must not arrive after the fresh false.
+    assert.deepStrictEqual(reports, [false]);
+  });
+});
+
+suite("rescanOrRefresh", () => {
+  test("a supported server rescans; no local refresh", async () => {
+    const calls: string[] = [];
+    let refreshed = 0;
+    await rescanOrRefresh(
+      (method) => {
+        calls.push(method);
+        return Promise.resolve(null);
+      },
+      () => refreshed++,
+    );
+    assert.deepStrictEqual(calls, ["clojurePulse/rescan"]);
+    assert.strictEqual(refreshed, 0);
+  });
+
+  test("method-not-found falls back to a plain repaint", async () => {
+    let refreshed = 0;
+    await rescanOrRefresh(
+      () => Promise.reject(Object.assign(new Error("method not found"), { code: -32601 })),
+      () => refreshed++,
+    );
+    assert.strictEqual(refreshed, 1);
+  });
+
+  test("any other failure logs and still repaints", async () => {
+    let refreshed = 0;
+    const log: string[] = [];
+    await rescanOrRefresh(
+      () => Promise.reject(new Error("server busy")),
+      () => refreshed++,
+      (message) => log.push(message),
+    );
+    assert.strictEqual(refreshed, 1);
+    assert.ok(log.some((line) => line.includes("server busy")));
   });
 });

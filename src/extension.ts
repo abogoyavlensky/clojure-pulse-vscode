@@ -16,7 +16,7 @@ import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
-import { ExternalLibrariesProvider } from "./externalLibraries";
+import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
 import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
@@ -137,14 +137,24 @@ export async function activate(
         : Promise.reject(new Error("clj-pulse language server is not running")),
     undefined,
     (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+    (anyResolving) => updateClasspathProgress(anyResolving),
   );
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider(
       "clojurePulse.externalLibraries",
       externalLibraries,
     ),
+    // Refresh asks the server to re-detect and re-resolve; the resulting
+    // librariesChanged notifications repaint the tree. Older servers (no
+    // rescan method) get the plain repaint this button always did.
     vscode.commands.registerCommand("clojurePulse.refreshExternalLibraries", () =>
-      externalLibraries?.refresh(),
+      client
+        ? rescanOrRefresh(
+            (method, param) => client!.sendRequest(method, param),
+            () => externalLibraries?.refresh(),
+            (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
+          )
+        : externalLibraries?.refresh(),
     ),
     // Per-project classpath toggle. Writing the setting is the whole action:
     // the config listener pushes it to the server, the server re-resolves and
@@ -276,6 +286,33 @@ function rawProjects(): unknown[] {
   return Array.isArray(raw) ? raw : [];
 }
 
+/** Resolves the open view-progress session; set only while one is showing. */
+let classpathProgressDone: (() => void) | undefined;
+
+/**
+ * A progress bar on the External Libraries view while any project's
+ * classpath is resolving — driven by the tree's own root loads, so startup,
+ * config-change, and rescan resolutions all show it. Single-flight: the bar
+ * opens on the first `true` and closes on the next `false`.
+ */
+function updateClasspathProgress(anyResolving: boolean): void {
+  if (anyResolving && !classpathProgressDone) {
+    void vscode.window.withProgress(
+      {
+        location: { viewId: "clojurePulse.externalLibraries" },
+        title: "Resolving classpath…",
+      },
+      () =>
+        new Promise<void>((resolve) => {
+          classpathProgressDone = resolve;
+        }),
+    );
+  } else if (!anyResolving && classpathProgressDone) {
+    classpathProgressDone();
+    classpathProgressDone = undefined;
+  }
+}
+
 /** Serializes settings writes: each one reads the setting only after the
  *  previous write landed, so the toggle and the form can't clobber each
  *  other however they interleave. */
@@ -400,6 +437,8 @@ async function stop(): Promise<void> {
   librariesChangedListener = undefined;
   const current = client;
   client = undefined;
+  // No client, no resolution to wait for: close the view progress bar.
+  updateClasspathProgress(false);
   // Drop the previous client's libraries so the panel doesn't show stale rows
   // while the next client (if any) starts up.
   externalLibraries?.refresh();

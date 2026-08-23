@@ -96,6 +96,13 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
     private readonly readDirectory: ReadDirectory = (uri) =>
       vscode.workspace.fs.readDirectory(uri),
     private readonly log: (message: string) => void = () => {},
+    /**
+     * Told, on every root-load settle, whether any project is still
+     * resolving its classpath — what drives the view's progress bar. `false`
+     * on the flat fallback and on failures (progress must close, never
+     * strand); a load superseded by `refresh()` reports nothing.
+     */
+    private readonly onRootStatuses: (anyResolving: boolean) => void = () => {},
   ) {}
 
   /** Clears caches and repaints the tree (refresh triggers call this). */
@@ -231,18 +238,33 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
   private async requestRoot(generation: number): Promise<LibNode[]> {
     try {
       const projects = (await this.sendRequest(PROJECTS, {})) as ProjectInfo[];
+      this.reportStatuses(
+        generation,
+        projects.some((project) => project.classpath?.status === "resolving"),
+      );
       return projects.map((project) => ({ type: "project", project }));
     } catch (e) {
       if ((e as { code?: unknown })?.code === METHOD_NOT_FOUND) {
         // A successful fallback stays cached like a grouped result would;
         // only retryable failures below evict.
-        return this.rootLibraries();
+        const nodes = await this.rootLibraries();
+        this.reportStatuses(generation, false);
+        return nodes;
       }
       if (generation === this.generation) {
         this.rootNodes = undefined;
       }
       this.log(`External Libraries: failed to load projects: ${errMessage(e)}`);
+      this.reportStatuses(generation, false);
       return [];
+    }
+  }
+
+  /** Reports root statuses unless a refresh() superseded this load — a stale
+   *  response must not re-open (or wrongly close) the progress bar. */
+  private reportStatuses(generation: number, anyResolving: boolean): void {
+    if (generation === this.generation) {
+      this.onRootStatuses(anyResolving);
     }
   }
 
@@ -343,6 +365,31 @@ function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNo
 /** What the root (`"."`) project node is labeled: the workspace folder. */
 function workspaceName(): string {
   return vscode.workspace.workspaceFolders?.[0]?.name ?? ".";
+}
+
+/** Forces server-side re-detection and re-resolution. */
+const RESCAN = "clojurePulse/rescan";
+
+/**
+ * The refresh button's action: ask the server to rescan (re-detect projects,
+ * re-resolve classpaths — completion arrives as `librariesChanged`, so no
+ * local repaint is needed on success). A server too old for the method gets
+ * today's plain repaint; any other failure logs and also repaints, so a
+ * broken rescan never leaves a dead button.
+ */
+export async function rescanOrRefresh(
+  sendRequest: SendRequest,
+  refresh: () => void,
+  log: (message: string) => void = () => {},
+): Promise<void> {
+  try {
+    await sendRequest(RESCAN, {});
+  } catch (e) {
+    if ((e as { code?: unknown })?.code !== METHOD_NOT_FOUND) {
+      log(`External Libraries: rescan failed: ${errMessage(e)}`);
+    }
+    refresh();
+  }
 }
 
 /**
