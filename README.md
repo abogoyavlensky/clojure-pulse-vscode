@@ -177,7 +177,8 @@ project. Listing a path detection skipped — say, a gitignored checkout with
 its own `deps.edn` — adds it as a project. Changes apply live; the server
 re-resolves without a restart.
 
-The same overrides can live in the project's `.clj-pulse/config.edn` (see
+The same overrides can live in `.clj-pulse/config.edn` at the workspace root
+(see
 [clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse#configuration)),
 which works in every editor; where both name the same key, the VS Code
 setting wins.
