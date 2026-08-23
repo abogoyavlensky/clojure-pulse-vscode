@@ -185,6 +185,16 @@ export function removeProjectEntry(raw: unknown[], path: string): unknown[] {
   return raw.filter((_, i) => i !== index);
 }
 
+/** Normalized paths of the entries `parseProjects` would keep — what the
+ *  form's duplicate check and Remove gating are judged against. */
+export function validSettingsPaths(raw: unknown[]): string[] {
+  return raw
+    .filter((item) => entryProblem(item) === undefined)
+    .map((item) =>
+      normalizeProjectPath((item as Record<string, unknown>).path as string),
+    );
+}
+
 /** First entry `parseProjects` would keep for `path`, or -1. */
 function findValidEntryIndex(raw: unknown[], path: string): number {
   const target = normalizeProjectPath(path);
