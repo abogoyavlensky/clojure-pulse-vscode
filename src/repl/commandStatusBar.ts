@@ -69,7 +69,9 @@ function truncate(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
   }
-  const line = value.split("\n", 1)[0];
+  // First *nonblank* line, like `reportRunError`: an nREPL `err` chunk often
+  // opens with a newline, and a tooltip of "…" explains nothing.
+  const line = value.split("\n").find((candidate) => candidate.trim().length > 0) ?? value;
   const clipped = line.length > MAX_TOOLTIP_VALUE || line !== value;
   return clipped ? `${line.slice(0, MAX_TOOLTIP_VALUE)}…` : line;
 }

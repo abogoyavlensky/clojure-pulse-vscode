@@ -84,6 +84,19 @@ suite("commandStatusBarPresentation", () => {
     assert.ok(!view.tooltip.includes("EOF while reading"), view.tooltip);
   });
 
+  test("a reason opening with a newline still shows its first real line", () => {
+    // nREPL err chunks routinely start with a newline; the tooltip is the only
+    // immediate explanation a silent run gets.
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "\n\nSyntax error reading source\nat line 12",
+    });
+    assert.ok(view.tooltip.includes("Syntax error reading source"), view.tooltip);
+    assert.ok(!view.tooltip.includes("at line 12"), view.tooltip);
+  });
+
   test("a long failure reason is truncated to 100 chars with an ellipsis", () => {
     const view = commandStatusBarPresentation({
       phase: "done",
