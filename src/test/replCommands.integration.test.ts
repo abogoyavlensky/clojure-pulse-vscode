@@ -1,5 +1,9 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
+import { CommandStatusBar } from "../repl/commandStatusBar";
 import { InlineResultsManager } from "../repl/inlineResults";
 import { ReplRegistry } from "../repl/replRegistry";
 import { ReplSessionLike } from "../repl/replSession";
@@ -16,6 +20,7 @@ interface ExtensionApi {
   inlineResults: InlineResultsManager;
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
+  commandStatusBar: CommandStatusBar;
 }
 
 async function waitUntil(
@@ -231,6 +236,64 @@ suite("REPL commands", () => {
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(loadMsg, "expected a load-file op");
       assert.ok(String(loadMsg.file).includes("(+ 1 2)"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  // Evaluate File never reveals the output panel, so the shared status slot is
+  // its only immediate feedback. The slot is shared with test runs and custom
+  // commands — within a test, the last run of any kind is this command's.
+  test("evalFile reports a successful load in the status bar", async () => {
+    let server: FakeNrepl | undefined;
+    const file = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "pulse-evalfile-")),
+      "verdict.clj",
+    );
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      fs.writeFileSync(file, "(ns verdict)\n(+ 1 2)");
+
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      await vscode.window.showTextDocument(doc);
+      await vscode.commands.executeCommand("clojurePulse.evalFile");
+
+      const view = api.commandStatusBar.current();
+      assert.ok(view, "expected a status bar verdict for the load");
+      assert.strictEqual(view.text, "$(check) verdict.clj");
+      assert.strictEqual(view.backgroundColor, undefined);
+    } finally {
+      await server?.close();
+      fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    }
+  });
+
+  test("evalFile reports a failed load in the status bar", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      // Only load-file matters now; the handshake is already done.
+      server.respond((msg, reply) => {
+        if (msg.op === "load-file") {
+          reply({ session: msg.session, err: "Syntax error: EOF while reading" });
+        }
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns broken)\n(+ 1",
+      });
+      await vscode.window.showTextDocument(doc);
+      await vscode.commands.executeCommand("clojurePulse.evalFile");
+
+      const view = api.commandStatusBar.current();
+      assert.ok(view, "expected a status bar verdict for the failed load");
+      assert.ok(view.text.endsWith("— failed"), view.text);
+      assert.strictEqual(view.backgroundColor, "statusBarItem.errorBackground");
+      assert.ok(view.tooltip.includes("Syntax error"), view.tooltip);
     } finally {
       await server?.close();
     }
