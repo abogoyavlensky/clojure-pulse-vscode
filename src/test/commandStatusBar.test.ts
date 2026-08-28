@@ -97,6 +97,19 @@ suite("commandStatusBarPresentation", () => {
     assert.ok(!view.tooltip.includes("at line 12"), view.tooltip);
   });
 
+  test("a whitespace-only reason falls back to the generic failure tooltip", () => {
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "\n  \n",
+    });
+    assert.strictEqual(
+      view.tooltip,
+      "Clojure Pulse: core.clj failed — click to show REPL output",
+    );
+  });
+
   test("a long failure reason is truncated to 100 chars with an ellipsis", () => {
     const view = commandStatusBarPresentation({
       phase: "done",

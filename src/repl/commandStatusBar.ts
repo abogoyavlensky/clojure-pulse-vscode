@@ -69,10 +69,18 @@ function truncate(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
   }
-  // First *nonblank* line, like `reportRunError`: an nREPL `err` chunk often
-  // opens with a newline, and a tooltip of "…" explains nothing.
-  const line = value.split("\n").find((candidate) => candidate.trim().length > 0) ?? value;
-  const clipped = line.length > MAX_TOOLTIP_VALUE || line !== value;
+  // First *nonblank* line, trimmed, like `reportRunError`: an nREPL `err` chunk
+  // often opens with a newline, and a tooltip of "…" explains nothing. Nothing
+  // but whitespace reads as no value at all, so the caller's generic wording
+  // wins over a tooltip full of blank lines.
+  const line = value
+    .split("\n")
+    .find((candidate) => candidate.trim().length > 0)
+    ?.trim();
+  if (line === undefined) {
+    return undefined;
+  }
+  const clipped = line.length > MAX_TOOLTIP_VALUE || value.trim() !== line;
   return clipped ? `${line.slice(0, MAX_TOOLTIP_VALUE)}…` : line;
 }
 
