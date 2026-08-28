@@ -1264,7 +1264,11 @@ async function evalSelection(
     vscode.window.showWarningMessage("Select an expression to evaluate.");
     return;
   }
-  session.showOutput();
+  // Inline results make the value visible in place; reveal the REPL's output
+  // channel only when they are off, and never take focus from the editor.
+  if (!inlineEnabled()) {
+    session.showOutput(true);
+  }
   await runEval(session, inlineResults, {
     editor,
     range: editor.selection,
@@ -1309,9 +1313,9 @@ async function evalCurrentForm(
   const code = editor.document.getText(range);
   const nsName = nsBefore(editor.document.getText(), editor.document.offsetAt(range.start));
   // Inline results make the value visible in place; reveal the REPL's output
-  // channel only when they are off.
+  // channel only when they are off, and never take focus from the editor.
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
   await runEval(session, inlineResults, {
     editor,
@@ -1399,7 +1403,7 @@ async function runSingleTest(
   const nsName = nsBefore(text, found.range.start);
   lastTestCommand = { kind: "single", uri: doc.uri, ns: nsName, testName: found.name };
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
   const editor = visibleEditorFor(doc);
   const id =
@@ -1604,7 +1608,7 @@ async function runTestsInDocument(
   const runName = nsBefore(text, tests[0].range.start) ?? "tests";
   const barToken = statusBar.running(runName);
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
 
   try {
