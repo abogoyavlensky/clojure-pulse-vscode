@@ -83,25 +83,30 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 - Modify: `src/repl/replSession.ts`
 - Test: `src/test/replSession.test.ts`, `src/test/replRegistry.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   In `src/test/replSession.test.ts`, extend `fakeChannel` (line 11) to record each `show` call's argument — e.g. alongside `shown()`, expose `preserveFocusCalls: () => Array<boolean | undefined>`. Extend the existing `showOutput reveals the channel` test, or add a sibling, asserting that `session.showOutput(true)` forwards `true` to the channel and a bare `session.showOutput()` forwards `undefined`/`false`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
   Run: `make test`
   Expected: FAIL — `showOutput` takes no argument, so the recorded value is never `true` (and TypeScript rejects the call).
 
-- [ ] **Step 3: Widen the signatures**
+- [x] **Step 3: Widen the signatures**
   In `src/repl/replSession.ts`: `ReplChannel.show(preserveFocus?: boolean): void`, `ReplSessionLike.showOutput(preserveFocus?: boolean): void`, and `ReplSession.showOutput(preserveFocus = false)` forwarding to `this.ensureChannel().show(preserveFocus)`. Update the doc comment to say it reveals the channel and, with `preserveFocus`, leaves the cursor where it is. `vscode.OutputChannel` already matches this shape, so `createChannel` in `src/extension.ts:516` needs no change.
   Update the fake session in `src/test/replRegistry.test.ts:57` to accept the optional argument.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: let showOutput reveal the REPL channel without taking focus"`
 
 ---
+
+> Deviation: this checkout had no `node_modules` and the VS Code test host could not launch
+> (18 missing system libraries, no X server). `npm install` + `mise install` fixed the
+> toolchain; the OS packages (`xvfb`, `libnss3`, `libgtk-3-0t64`, …) were installed by the
+> user on request. No plan step changed.
 
 ### Task 2: Failure tooltips carry the error
 
@@ -109,21 +114,21 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 - Modify: `src/repl/commandStatusBar.ts`
 - Test: `src/test/commandStatusBar.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   In `src/test/commandStatusBar.test.ts`, next to `failure uses the error background` (line 64), assert that `commandStatusBarPresentation({ phase: "done", name: "core.clj", status: "err", error: "Syntax error ...\nat line 12" })` puts the error's **first line** in the tooltip, that a >100-char error is truncated with an ellipsis (reuse the existing `truncate` behaviour asserted at lines 31 and 42), and that omitting `error` still produces the current sensible failure tooltip.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
   Run: `make test`
   Expected: FAIL — `error` is not part of `CommandStatusBarRun`, and the failure tooltip is a fixed string.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `error?: string` to the `done` variant of `CommandStatusBarRun`. In the failure branch of `commandStatusBarPresentation`, pass `run.error` through the existing `truncate` and include it in the tooltip when present, keeping the "click to show REPL output" tail. `text` stays `$(error) ${name} — failed`; do not put the error in the status bar item's label.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
   Run: `make test`
   Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: show the failure reason in the command status bar tooltip"`
 
 ---
@@ -134,18 +139,18 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   In `src/test/replCommands.integration.test.ts`, add `commandStatusBar: CommandStatusBar` to the suite's `ExtensionApi` interface (line 14) — `activate()` already returns it — and add two tests next to `evalFile sends the buffer through the load-file op` (line 217):
   - **success:** connect to the fake nREPL, open a Clojure document, run `clojurePulse.evalFile`, then assert `api.commandStatusBar.current()` shows the document's name with a `$(check)` and no `backgroundColor`.
   - **failure:** override the fake with `server.respond(...)` so `load-file` replies with an `err` chunk (plus a `done` status), run the command, and assert the view uses `statusBarItem.errorBackground` and carries the error's first line in its tooltip.
 
   Note in a comment that the slot is shared with test runs and custom commands, so these assertions read the *last* run of any kind — which, within a test, is this command's.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `make test`
   Expected: FAIL — `evalFile` never touches the status bar, so `current()` is `undefined` (and TypeScript rejects `api.commandStatusBar` until the interface gains the field).
 
-- [ ] **Step 3: Rewrite `evalFile`**
+- [x] **Step 3: Rewrite `evalFile`**
   `evalFile` (line 1727) takes the `CommandStatusBar` as a second parameter and no longer calls `session.showOutput()` at all. The run's display name is `basename(doc.uri.path) || "file"` — one rule for every scheme. It opens the spinner with `bar.running(name)` **after** `activeSession()` and the active-editor guard — so a run that never happens cannot flash a spinner, matching the ordering comment in `runCustomReplCommand` (line 1165) — and finishes with:
 
   ```ts
@@ -160,18 +165,24 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 
   A thrown `loadFile` finishes the token as `status: "err"` with the thrown reason as `error`, and still calls `reportEvalError(err)` — a dropped connection stays loud.
 
-- [ ] **Step 4: Wire the registration**
+- [x] **Step 4: Wire the registration**
   Update the `clojurePulse.evalFile` registration (line 667) to pass `commandBar`.
 
-- [ ] **Step 5: Pass the error through for custom commands**
+- [x] **Step 5: Pass the error through for custom commands**
   In `runCustomReplCommand` (line 1173), include `error: outcome.err` in the successful-await `bar.finish` call so a failed custom command gets the same tooltip detail.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
   Run: `make check`
   Expected: PASS — lint, compile, and the whole suite, including the pre-existing `evalFile sends the buffer through the load-file op`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
   `git commit -m "feat: report Evaluate File in the status bar instead of opening the output panel"`
+
+> Deviation: the success test opens a real temp `.clj` file rather than an untitled buffer, so
+> it can assert the exact verdict text (`$(check) verdict.clj`) instead of a host-assigned
+> `Untitled-N` name; the failure test keeps an untitled buffer, which also exercises the
+> non-file-scheme name fallback.
+
 
 ---
 
@@ -180,20 +191,20 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 **Files:**
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Make `evalSelection` conditional**
+- [x] **Step 1: Make `evalSelection` conditional**
   Replace the unconditional `session.showOutput()` at line 1266 with the `evalCurrentForm` pattern: reveal only when `!inlineEnabled()`, and pass `preserveFocus: true`. With inline results on, `runEval` already paints the value on the selection — the channel must not open.
 
-- [ ] **Step 2: Preserve focus at the other three sites**
+- [x] **Step 2: Preserve focus at the other three sites**
   Pass `true` to `showOutput` in `evalCurrentForm` (line 1313), `runSingleTest` (line 1401), and `runTestsInDocument` (line 1606). Leave `showReplOutput` (line 970) and the start-failure notification action (line 856) focusing, and update the comment above `evalCurrentForm`'s reveal so it says the channel opens without taking focus.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
   Run: `make check`
   Expected: PASS
 
-- [ ] **Step 4: Manual smoke check**
+- [x] **Step 4: Manual smoke check**
   In the Extension Development Host: with inline results on, **Evaluate File** leaves the cursor in the editor and the panel closed, and the status bar shows the file name (green on success; red with the reason in its tooltip for a file with a syntax error). **Evaluate Selection** shows its result inline with the panel still closed. With `clojurePulse.inlineEvalResults` off, selection/form/test commands open the channel but the cursor stays in the editor.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: keep editor focus when eval and test commands reveal REPL output"`
 
 ---
@@ -203,18 +214,69 @@ Focus itself is deliberately **not** asserted in the integration tests: `activeT
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: Update the README**
+- [x] **Step 1: Update the README**
   - **Evaluate File** (line 310): it runs silently — no output panel — with the verdict in the status bar, clickable to open the REPL output.
   - **Evaluate Selection** (line 313): the result appears inline; the channel opens only when inline results are off.
   - The test-run paragraph (line ~320): "without moving focus there" is now true; note that the channel, when it opens, does not take focus.
   - The status-bar sharing note (line ~407) and the command list (lines 455-456): the verdict spot now carries test runs, custom commands, **and** file loads — the last run of any kind wins.
 
-- [ ] **Step 2: Update the CHANGELOG**
+- [x] **Step 2: Update the CHANGELOG**
   Add an `## [Unreleased]` section above `## [0.2.0]` describing the behaviour change: Evaluate File no longer opens the output panel and reports through the status bar, and eval/test commands no longer move focus out of the editor.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
   Run: `make check`
   Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "docs: describe silent Evaluate File and focus-preserving output reveals"`
+
+---
+
+## Completion Summary
+
+**Status: complete.** All five tasks implemented, `make check` green — lint, compile, and 648
+passing tests (up from 643 at the start).
+
+**What shipped**
+
+- **Evaluate File is silent.** It never reveals the REPL output channel. The shared status slot
+  carries the run: `$(loading~spin) core.clj`, then `$(check) core.clj` in green or
+  `$(error) core.clj — failed` on a red background whose tooltip holds the compile error's first
+  line. Clicking it opens the REPL output, which still has the full report. A *thrown* load (the
+  connection dropped) additionally keeps its notification.
+- **Nothing steals editor focus.** `ReplChannel.show` / `showOutput` take an optional
+  `preserveFocus`; the four run-feedback reveals pass `true`, while the explicit **Show REPL
+  Output** command and the start-failure notification action still focus deliberately.
+  Evaluate Selection now reveals only when inline results are off, matching Evaluate Current Form.
+- **Failure tooltips explain themselves.** `CommandStatusBarRun` gained an `error` field, so a
+  failed custom REPL command names its reason too.
+
+**Deviations**
+
+> Environment: this checkout had no `node_modules`, and the VS Code test host could not launch
+> (18 missing system libraries, no X server). `npm install` + `mise install` fixed the toolchain;
+> the OS packages were installed by the user on request. No plan step changed.
+
+> Task 3's success test opens a real temp `.clj` file rather than an untitled buffer, so it can
+> assert the exact verdict text (`$(check) verdict.clj`) instead of a host-assigned `Untitled-N`
+> name. The failure test keeps an untitled buffer, which also exercises the non-file-scheme
+> name fallback.
+
+> Two fixups came out of the codex review checkpoints, both in `truncate`: pick the first
+> *nonblank* line (an nREPL `err` chunk routinely opens with a newline, which would have made the
+> tooltip a bare "…"), and fall back to the generic wording when the reason is only whitespace.
+
+> Task 4's manual smoke check in the Extension Development Host was replaced by an automated
+> integration test — it spies on the live session's `showOutput` in the real VS Code host and
+> asserts Evaluate File never reveals, Evaluate Current Form does not reveal with inline results
+> on, and reveals with `preserveFocus: true` when they are off. Stronger evidence than a manual
+> pass, and it stays as coverage.
+
+**What the plan could have specified better**
+
+Two things. First, it should have opened with an environment check — "confirm `make check` runs
+green before touching code" — because the suite could not run at all here and that surfaced only
+at Task 1's verify step. Second, it dismissed asserting "`showOutput` is not called" as
+impractical in the real host; monkey-patching the session the registry hands the commands turned
+out to be easy, and that assertion is the one that actually pins the feature's central promise.
+The plan should have specified it instead of leaving the behavior to a manual check.
