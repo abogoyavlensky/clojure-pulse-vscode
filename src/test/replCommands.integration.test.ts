@@ -299,6 +299,50 @@ suite("REPL commands", () => {
     }
   });
 
+  test("evalFile never reveals the output channel, and evalCurrentForm keeps focus", async () => {
+    let server: FakeNrepl | undefined;
+    const inline = vscode.workspace.getConfiguration("clojurePulse");
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      // Spy on the live session the commands resolve through, so this sees
+      // exactly what the extension does at runtime.
+      const reveals: Array<boolean | undefined> = [];
+      const original = session.showOutput.bind(session);
+      session.showOutput = (preserveFocus?: boolean) => {
+        reveals.push(preserveFocus);
+        original(preserveFocus);
+      };
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns quiet)\n(+ 1 2)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+
+      await vscode.commands.executeCommand("clojurePulse.evalFile");
+      assert.deepStrictEqual(reveals, [], "Evaluate File must stay silent");
+
+      // Inline results carry the value, so the panel stays shut here too.
+      editor.selection = new vscode.Selection(1, 0, 1, 0);
+      await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
+      assert.deepStrictEqual(reveals, [], "inline results mean no reveal");
+
+      // With them off the channel is the only place a value lands — revealed,
+      // but never taking focus from the editor.
+      await inline.update("inlineEvalResults", false, vscode.ConfigurationTarget.Global);
+      await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
+      assert.deepStrictEqual(reveals, [true], "reveal without stealing focus");
+    } finally {
+      await inline.update(
+        "inlineEvalResults",
+        undefined,
+        vscode.ConfigurationTarget.Global,
+      );
+      await server?.close();
+    }
+  });
+
   test("showReplOutput reveals a session's channel without throwing", async () => {
     let server: FakeNrepl | undefined;
     try {
