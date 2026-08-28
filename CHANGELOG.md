@@ -2,6 +2,23 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
+## [Unreleased]
+
+- **Evaluate File runs silently**: it no longer opens the REPL output panel on
+  top of your code. The verdict lands in the status bar instead — the file name
+  with a spinner while it loads, then green on success or a red background
+  whose tooltip carries the compile error's first line — and clicking it opens
+  the REPL output, which still has the full report. The verdict spot is the one
+  already shared by test runs and custom REPL commands: the last run of any
+  kind owns it.
+- **Eval and test commands keep your cursor where it is**: when they do reveal
+  a REPL's output channel — which now happens only with inline results turned
+  off — the channel comes forward without taking focus from the editor.
+  Evaluate Selection follows the same rule as Evaluate Current Form: with
+  inline results on, the value appears in place and the panel stays shut.
+- A failed custom REPL command now names the reason in its status-bar tooltip
+  instead of only reporting that it failed.
+
 ## [0.2.0]
 
 Requires clj-pulse 0.2.0 for the new multi-project features; against an older
