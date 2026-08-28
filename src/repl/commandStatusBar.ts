@@ -1,9 +1,10 @@
 import { createStatusSlot, StatusSlot, StatusSlotView } from "./statusSlot";
 
-// The last custom REPL command's verdict in the status bar: a spinner while
-// the eval is in flight, then a green check or a red-background failure,
-// clickable to open the REPL output. Runs are silent by design — no output
-// panel reveal — so this verdict is the run's only immediate feedback. A
+// The last silent run's verdict in the status bar — a custom REPL command or
+// an Evaluate File: a spinner while the eval is in flight, then a green check
+// or a red-background failure, clickable to open the REPL output. Those runs
+// never reveal the output panel, so this verdict is their only immediate
+// feedback, and a failure's reason rides along in the tooltip. A
 // deliberate sibling of `testStatusBar.ts`: the presentations differ (a
 // result value here, fail/error counts there), while the item itself and its
 // token guard live in the slot — shared with the test bar in the extension,
@@ -11,13 +12,22 @@ import { createStatusSlot, StatusSlot, StatusSlotView } from "./statusSlot";
 
 export type CommandStatusBarRun =
   | { phase: "running"; name: string }
-  | { phase: "done"; name: string; status: "ok" | "err"; value?: string };
+  | {
+      phase: "done";
+      name: string;
+      status: "ok" | "err";
+      value?: string;
+      /** Why the run failed, when it did — the tooltip is the only place a
+       *  silent run's reason shows up. */
+      error?: string;
+    };
 
 export type CommandStatusBarView = StatusSlotView;
 
 const SHOW_OUTPUT = "clojurePulse.showReplOutput";
 
-/** The tooltip never becomes a scroll problem: first line, at most 100 chars. */
+/** The tooltip never becomes a scroll problem: first line, at most 100 chars.
+ *  Applies to a result value and to a failure's reason alike. */
 const MAX_TOOLTIP_VALUE = 100;
 
 /** Pure mapping from a run to what the status-bar item should render. */
@@ -43,9 +53,13 @@ export function commandStatusBarPresentation(
       command: SHOW_OUTPUT,
     };
   }
+  const reason = truncate(run.error);
   return {
     text: `$(error) ${run.name} — failed`,
-    tooltip: `Clojure Pulse: ${run.name} failed — click to show REPL output`,
+    tooltip:
+      reason === undefined
+        ? `Clojure Pulse: ${run.name} failed — click to show REPL output`
+        : `Clojure Pulse: ${run.name} failed — ${reason} — click to show REPL output`,
     backgroundColor: "statusBarItem.errorBackground",
     command: SHOW_OUTPUT,
   };
