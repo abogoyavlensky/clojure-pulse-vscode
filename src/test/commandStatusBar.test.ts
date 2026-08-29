@@ -72,6 +72,65 @@ suite("commandStatusBarPresentation", () => {
     assert.strictEqual(view.color, undefined);
   });
 
+  test("failure carries the reason's first line in the tooltip", () => {
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "Syntax error reading source at (core.clj:12:1)\nEOF while reading",
+    });
+    assert.strictEqual(view.text, "$(error) core.clj — failed");
+    assert.ok(view.tooltip.includes("Syntax error reading source"), view.tooltip);
+    assert.ok(!view.tooltip.includes("EOF while reading"), view.tooltip);
+  });
+
+  test("a reason opening with a newline still shows its first real line", () => {
+    // nREPL err chunks routinely start with a newline; the tooltip is the only
+    // immediate explanation a silent run gets.
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "\n\nSyntax error reading source\nat line 12",
+    });
+    assert.ok(view.tooltip.includes("Syntax error reading source"), view.tooltip);
+    assert.ok(!view.tooltip.includes("at line 12"), view.tooltip);
+  });
+
+  test("a whitespace-only reason falls back to the generic failure tooltip", () => {
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "\n  \n",
+    });
+    assert.strictEqual(
+      view.tooltip,
+      "Clojure Pulse: core.clj failed — click to show REPL output",
+    );
+  });
+
+  test("a long failure reason is truncated to 100 chars with an ellipsis", () => {
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "core.clj",
+      status: "err",
+      error: "y".repeat(250),
+    });
+    assert.ok(!view.tooltip.includes("y".repeat(101)), "tooltip carries at most 100 chars of the reason");
+    assert.ok(view.tooltip.includes("y".repeat(100) + "…"), view.tooltip);
+  });
+
+  test("failure with no reason still reads sensibly", () => {
+    const view = commandStatusBarPresentation({
+      phase: "done",
+      name: "reset",
+      status: "err",
+    });
+    assert.ok(/failed/i.test(view.tooltip), view.tooltip);
+    assert.ok(/click to show/i.test(view.tooltip), view.tooltip);
+  });
+
   test("click always opens the REPL output", () => {
     for (const view of [
       commandStatusBarPresentation({ phase: "running", name: "t" }),

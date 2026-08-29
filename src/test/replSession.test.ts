@@ -7,19 +7,24 @@ import { ProcessExit, ReplProcessLike } from "../repl/replProcess";
 import { ReplChannel, ReplSession, ReplSessionState } from "../repl/replSession";
 import { FakeNrepl, startFakeNrepl } from "./fakeNreplServer";
 
-/** Stands in for a VS Code output channel. */
-function fakeChannel(): ReplChannel & { text: () => string; shown: () => number } {
+/** Stands in for a VS Code output channel, recording how it was revealed. */
+function fakeChannel(): ReplChannel & {
+  text: () => string;
+  shown: () => number;
+  reveals: () => Array<boolean | undefined>;
+} {
   const parts: string[] = [];
-  let shown = 0;
+  const reveals: Array<boolean | undefined> = [];
   return {
     append: (text: string) => parts.push(text),
     clear: () => (parts.length = 0),
-    show: () => {
-      shown += 1;
+    show: (preserveFocus?: boolean) => {
+      reveals.push(preserveFocus);
     },
     dispose: () => {},
     text: () => parts.join(""),
-    shown: () => shown,
+    shown: () => reveals.length,
+    reveals: () => reveals,
   };
 }
 
@@ -383,6 +388,17 @@ suite("ReplSession", () => {
     const session = make(connectConfig(server.port));
     session.showOutput();
     assert.strictEqual(channel.shown(), 1);
+  });
+
+  test("showOutput takes focus by default and preserves it when asked", () => {
+    const session = make(connectConfig(server.port));
+
+    session.showOutput();
+    session.showOutput(true);
+
+    // The flag is `vscode.OutputChannel.show`'s own: false (or absent) moves
+    // focus into the panel, true leaves the cursor in the editor.
+    assert.deepStrictEqual(channel.reveals(), [false, true]);
   });
 });
 

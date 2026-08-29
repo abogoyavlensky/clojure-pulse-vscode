@@ -665,7 +665,7 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
       evalCurrentForm(registry, inlineResults),
     ),
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
-      evalFile(registry),
+      evalFile(registry, commandBar),
     ),
     vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
       runTestAtCursor(registry, inlineResults, testStatus, testStatusBar),
@@ -1176,6 +1176,7 @@ async function runCustomReplCommand(
       name: command.name,
       status: outcome.err === undefined ? "ok" : "err",
       value: outcome.value,
+      error: outcome.err,
     });
   } catch {
     // A thrown eval (connection dropped mid-run) is a failure like any other.
@@ -1263,7 +1264,11 @@ async function evalSelection(
     vscode.window.showWarningMessage("Select an expression to evaluate.");
     return;
   }
-  session.showOutput();
+  // Inline results make the value visible in place; reveal the REPL's output
+  // channel only when they are off, and never take focus from the editor.
+  if (!inlineEnabled()) {
+    session.showOutput(true);
+  }
   await runEval(session, inlineResults, {
     editor,
     range: editor.selection,
@@ -1308,9 +1313,9 @@ async function evalCurrentForm(
   const code = editor.document.getText(range);
   const nsName = nsBefore(editor.document.getText(), editor.document.offsetAt(range.start));
   // Inline results make the value visible in place; reveal the REPL's output
-  // channel only when they are off.
+  // channel only when they are off, and never take focus from the editor.
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
   await runEval(session, inlineResults, {
     editor,
@@ -1398,7 +1403,7 @@ async function runSingleTest(
   const nsName = nsBefore(text, found.range.start);
   lastTestCommand = { kind: "single", uri: doc.uri, ns: nsName, testName: found.name };
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
   const editor = visibleEditorFor(doc);
   const id =
@@ -1603,7 +1608,7 @@ async function runTestsInDocument(
   const runName = nsBefore(text, tests[0].range.start) ?? "tests";
   const barToken = statusBar.running(runName);
   if (!inlineEnabled()) {
-    session.showOutput();
+    session.showOutput(true);
   }
 
   try {
@@ -1724,7 +1729,16 @@ function reportRunError(message: string): void {
   void vscode.window.showErrorMessage(`Clojure Pulse: ${firstLine}`);
 }
 
-async function evalFile(registry: ReplRegistry): Promise<void> {
+/**
+ * Loads the whole buffer into the active REPL. The run is silent — no output
+ * panel reveal, so the editor keeps both the focus and the space — and the
+ * shared status slot carries the verdict: a spinner, then the file name in
+ * green or on a red background with the failure's first line in its tooltip,
+ * clickable to open the REPL output. A compile error comes back as
+ * `outcome.err`; only a *thrown* load (the connection dropped mid-run) is
+ * loud enough for a notification.
+ */
+async function evalFile(registry: ReplRegistry, bar: CommandStatusBar): Promise<void> {
   const session = activeSession(registry);
   if (!session) {
     return;
@@ -1733,15 +1747,29 @@ async function evalFile(registry: ReplRegistry): Promise<void> {
   if (!editor) {
     return;
   }
-  session.showOutput();
+  // Before running(): the guards above end runs that never happen, and the
+  // status bar must not flash a spinner for a non-run.
   const doc = editor.document;
   const onDisk = doc.uri.scheme === "file";
+  // `uri.path` covers every scheme — a file on disk, an `Untitled-1` buffer,
+  // a `jar:` entry — where `fsPath` is meaningful only for files.
+  const name = basename(doc.uri.path) || "file";
+  const token = bar.running(name);
   try {
-    await session.loadFile(doc.getText(), {
+    const outcome = await session.loadFile(doc.getText(), {
       filePath: onDisk ? doc.uri.fsPath : undefined,
       fileName: onDisk ? basename(doc.uri.fsPath) : undefined,
     });
+    bar.finish(token, {
+      phase: "done",
+      name,
+      status: outcome.err === undefined ? "ok" : "err",
+      value: outcome.value,
+      error: outcome.err,
+    });
   } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    bar.finish(token, { phase: "done", name, status: "err", error: reason });
     reportEvalError(err);
   }
 }

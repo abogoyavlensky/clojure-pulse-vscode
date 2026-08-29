@@ -309,8 +309,14 @@ rather than land somewhere you did not intend.
   evaluated as-is.
 - **Evaluate File** — compiles the whole buffer (unsaved changes included) via
   nREPL's `load-file`, so the file's own `ns` form takes effect and stack
-  traces carry real file/line locations.
-- **Evaluate Selection** — evaluate exactly the selected code.
+  traces carry real file/line locations. The run is silent — no output panel
+  opening on top of your code, no focus lost — with the verdict in the status
+  bar: the file name with a spinner while it loads, then green on success or a
+  red background carrying the compile error's first line in its tooltip. Click
+  it to open the REPL output, which has the full report either way.
+- **Evaluate Selection** — evaluate exactly the selected code. The result
+  appears inline; the REPL's output channel opens only when inline results are
+  off, and even then the cursor stays in the editor.
 - **Run Test at Cursor** — with the cursor inside a top-level `deftest` (or
   right after its closing paren), re-evaluates the test in the file's namespace
   so the buffer's current version is what runs, then executes it via
@@ -319,16 +325,17 @@ rather than land somewhere you did not intend.
   (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
   report streams to the REPL's output channel without moving focus there
   (when inline results are off, the channel is shown up front, as for every
-  eval command). The gutter marks the deftest with a green check circle on
+  eval command — revealed, never focused). The gutter marks the deftest with a green check circle on
   pass or a red cross circle on fail — hover the deftest's first line for the
   failure report — and the status bar shows the verdict at a glance: the test
   name in green when it passed, on a red background with fail/error counts
   when it didn't; click it to open the REPL output. Marks always show the
   result of the **last test command** only: a new run wipes the previous
   report, and an edit to a marked deftest removes its (now stale) gutter
-  verdict. The status bar's verdict spot is shared with custom REPL commands —
-  it shows the last run of either kind, so a newer run replaces what is on
-  display (the gutter marks keep the test report either way). Works against JVM Clojure (1.11+) and
+  verdict. The status bar's verdict spot is shared with custom REPL commands
+  and **Evaluate File** — it shows the last run of any kind, so a newer run
+  replaces what is on display (the gutter marks keep the test report either
+  way). Works against JVM Clojure (1.11+) and
   let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
   single-test run there calls the test function directly, skipping
   `use-fixtures` fixtures.
@@ -409,8 +416,8 @@ bar shows a spinner while the code runs, then the verdict — the command name
 in green (hover for the result value) or on a red background when the
 evaluation failed. Click the item to open the REPL output; the transcript
 always carries the full exchange. The verdict spot is shared with test
-commands: the status bar shows the last run of either kind, and a newer run
-replaces it.
+commands and **Evaluate File**: the status bar shows the last run of any kind,
+and a newer run replaces it.
 
 The commands live in the `clojurePulse.customReplCommands` setting, saved to
 workspace settings when a folder is open:
@@ -452,7 +459,8 @@ Run these from the Command Palette:
 - **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor
   (or the selection) in the active REPL.
-- **Clojure Pulse: Evaluate File** — load the whole current file into the REPL.
+- **Clojure Pulse: Evaluate File** — load the whole current file into the REPL,
+  reporting in the status bar rather than opening the output panel.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
   active REPL.
 - **Clojure Pulse: Run Test at Cursor** — re-evaluate and run the `deftest`

@@ -54,7 +54,7 @@ class FakeSession implements ReplSessionLike {
   async loadFile(): Promise<EvalOutcome> {
     return { namespaceNotFound: false };
   }
-  showOutput(): void {}
+  showOutput(_preserveFocus?: boolean): void {}
   onDidChangeState(listener: (state: ReplSessionState) => void): void {
     this.listeners.push(listener);
   }

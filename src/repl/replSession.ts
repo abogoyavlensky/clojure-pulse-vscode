@@ -32,9 +32,10 @@ import { Transcript } from "./transcript";
 
 export type ReplSessionState = "stopped" | "starting" | "connecting" | "connected";
 
-/** The output-channel surface a session needs; `vscode.OutputChannel` fits. */
+/** The output-channel surface a session needs; `vscode.OutputChannel` fits,
+ *  including `show`'s optional `preserveFocus`. */
 export interface ReplChannel extends OutputSink {
-  show(): void;
+  show(preserveFocus?: boolean): void;
   dispose(): void;
 }
 
@@ -50,7 +51,7 @@ export interface ReplSessionLike {
   stop(): Promise<void>;
   eval(code: string, opts?: EvalOptions): Promise<EvalOutcome>;
   loadFile(content: string, opts?: LoadFileOptions): Promise<EvalOutcome>;
-  showOutput(): void;
+  showOutput(preserveFocus?: boolean): void;
   onDidChangeState(listener: (state: ReplSessionState) => void): void;
   dispose(): Promise<void>;
 }
@@ -177,9 +178,11 @@ export class ReplSession implements ReplSessionLike {
     return this.manager.loadFile(content, opts);
   }
 
-  /** Reveals this session's channel, creating it if it has never run. */
-  showOutput(): void {
-    this.ensureChannel().show();
+  /** Reveals this session's channel, creating it if it has never run. With
+   *  `preserveFocus` the channel comes forward but the cursor stays where the
+   *  user is working — what every run-feedback reveal wants. */
+  showOutput(preserveFocus = false): void {
+    this.ensureChannel().show(preserveFocus);
   }
 
   /** Stops everything this session owns. The channel belongs to the registry
