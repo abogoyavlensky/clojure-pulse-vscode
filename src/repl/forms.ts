@@ -5,8 +5,9 @@
 // closers are skipped; unbalanced code yields no form rather than a garbage
 // range).
 //
-// `formAtCursor` resolves what "Evaluate Current Form" should send, in
-// priority order:
+// `formAtCursor` resolves what "Evaluate Current Form" should send, and
+// `bracketPairAtCursor` the bracket pair of that same form (what the editor
+// highlights, so the highlight never disagrees with eval), in priority order:
 //   1. (selections are handled by the command, not here)
 //   2. cursor inside an atom token or immediately after its last char → token
 //   3. closing bracket / string quote immediately before cursor → that form
@@ -230,15 +231,16 @@ function stripped(form: ReadForm): FormRange {
 /**
  * Walks the sibling forms of one nesting level ([contentStart, contentEnd))
  * and applies the resolution rules for a cursor at `offset`. `enclosing` is
- * this level's own form range (null at top level).
+ * this level's own form (null at top level). Returns the resolved form
+ * un-stripped; callers decide what part of it they need.
  */
 function resolveIn(
   text: string,
   contentStart: number,
   contentEnd: number,
-  enclosing: FormRange | null,
+  enclosing: ReadForm | null,
   offset: number,
-): FormRange | null {
+): ReadForm | null {
   let prev: ReadForm | null = null;
   let p = contentStart;
   for (;;) {
@@ -249,7 +251,7 @@ function resolveIn(
     if (nextStart >= contentEnd || nextStart > offset) {
       // Cursor sits in trivia: enclosing form (rule 5) or the previous
       // form at this level (rule 6).
-      return enclosing ?? (prev ? stripped(prev) : null);
+      return enclosing ?? prev;
     }
     const result = readForm(text, nextStart, contentEnd);
     if (result.kind === "closer") {
@@ -266,28 +268,28 @@ function resolveIn(
       continue;
     }
     if (form.end === offset) {
-      return stripped(form); // rules 2 (after token) and 3 (after closer)
+      return form; // rules 2 (after token) and 3 (after closer)
     }
     if (form.start >= offset) {
       if (form.start === offset) {
-        return stripped(form); // rule 4 (immediately before a token)
+        return form; // rule 4 (immediately before a token)
       }
       // Cursor in the trivia gap before this form: rules 5 / 6.
-      return enclosing ?? (prev ? stripped(prev) : null);
+      return enclosing ?? prev;
     }
     // form.start < offset < form.end — the cursor is inside this form.
     if (form.bracketOffset === null || offset <= form.bracketOffset) {
       // Atom base (rule 2), or inside the prefix run: the whole form.
-      return stripped(form);
+      return form;
     }
-    return resolveIn(
-      text,
-      form.bracketOffset + 1,
-      form.closerOffset!,
-      stripped(form),
-      offset,
-    );
+    return resolveIn(text, form.bracketOffset + 1, form.closerOffset!, form, offset);
   }
+}
+
+/** The form the resolution rules pick for a cursor at `offset`, un-stripped. */
+function readFormAtCursor(text: string, offset: number): ReadForm | null {
+  const clamped = Math.max(0, Math.min(offset, text.length));
+  return resolveIn(text, 0, text.length, null, clamped);
 }
 
 /**
@@ -296,8 +298,28 @@ function resolveIn(
  * trust).
  */
 export function formAtCursor(text: string, offset: number): FormRange | null {
-  const clamped = Math.max(0, Math.min(offset, text.length));
-  return resolveIn(text, 0, text.length, null, clamped);
+  const form = readFormAtCursor(text, offset);
+  return form === null ? null : stripped(form);
+}
+
+/** Offsets of the opening and closing bracket of the form at the cursor. */
+export interface BracketPair {
+  open: number;
+  close: number;
+}
+
+/**
+ * The bracket pair of the form `formAtCursor` resolves — always the base
+ * form's own brackets, whatever reader prefixes or `#_` markers precede it —
+ * or null when that form is an atom or a string, or nothing resolves. This is
+ * what the editor highlights, so the highlight shows what eval will send.
+ */
+export function bracketPairAtCursor(text: string, offset: number): BracketPair | null {
+  const form = readFormAtCursor(text, offset);
+  if (form === null || form.bracketOffset === null) {
+    return null;
+  }
+  return { open: form.bracketOffset, close: form.closerOffset! };
 }
 
 /**

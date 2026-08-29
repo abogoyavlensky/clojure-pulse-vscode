@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import {
+  bracketPairAtCursor,
   formAtCursor,
   nsBefore,
   testAtCursor,
@@ -19,6 +20,25 @@ function form(source: string): string | null {
   const { text, offset } = at(source);
   const range = formAtCursor(text, offset);
   return range === null ? null : text.slice(range.start, range.end);
+}
+
+/**
+ * The bracket pair `bracketPairAtCursor` resolves for the `|` cursor: the two
+ * bracket characters and their offsets in the marker-free text, or null.
+ */
+function pair(
+  source: string,
+): { open: string; close: string; openOffset: number; closeOffset: number } | null {
+  const { text, offset } = at(source);
+  const found = bracketPairAtCursor(text, offset);
+  return found === null
+    ? null
+    : {
+        open: text[found.open],
+        close: text[found.close],
+        openOffset: found.open,
+        closeOffset: found.close,
+      };
 }
 
 suite("formAtCursor: token at cursor (rule 2)", () => {
@@ -210,6 +230,131 @@ suite("formAtCursor: robustness", () => {
 
   test("CRLF line endings", () => {
     assert.strictEqual(form("(def x 1)\r\n|"), "(def x 1)");
+  });
+});
+
+suite("bracketPairAtCursor", () => {
+  test("form before the cursor (rule 3)", () => {
+    assert.deepStrictEqual(pair("(+ 1 2)|"), {
+      open: "(",
+      close: ")",
+      openOffset: 0,
+      closeOffset: 6,
+    });
+    assert.deepStrictEqual(pair("(a [b c]| d)"), {
+      open: "[",
+      close: "]",
+      openOffset: 3,
+      closeOffset: 7,
+    });
+  });
+
+  test("form right after the cursor (rule 4)", () => {
+    assert.deepStrictEqual(pair("|(+ 1 2)"), {
+      open: "(",
+      close: ")",
+      openOffset: 0,
+      closeOffset: 6,
+    });
+  });
+
+  test("sandwich: the preceding form wins", () => {
+    assert.deepStrictEqual(pair("(foo)|(bar)"), {
+      open: "(",
+      close: ")",
+      openOffset: 0,
+      closeOffset: 4,
+    });
+  });
+
+  test("atoms have no pair (rule 2)", () => {
+    assert.strictEqual(pair("(+ fo|o 2)"), null);
+    assert.strictEqual(pair("(foo|)"), null);
+    assert.strictEqual(pair("foo|"), null);
+  });
+
+  test("whitespace inside a list resolves the enclosing pair (rule 5)", () => {
+    assert.deepStrictEqual(pair("(foo |)"), {
+      open: "(",
+      close: ")",
+      openOffset: 0,
+      closeOffset: 5,
+    });
+    assert.deepStrictEqual(pair("(a (b | c) d)"), {
+      open: "(",
+      close: ")",
+      openOffset: 3,
+      closeOffset: 8,
+    });
+    assert.deepStrictEqual(pair("{:a | 1}"), {
+      open: "{",
+      close: "}",
+      openOffset: 0,
+      closeOffset: 6,
+    });
+  });
+
+  test("top-level whitespace resolves the previous form (rule 6)", () => {
+    assert.deepStrictEqual(pair("(a b)\n\n|"), {
+      open: "(",
+      close: ")",
+      openOffset: 0,
+      closeOffset: 4,
+    });
+    assert.strictEqual(pair("|"), null);
+    assert.strictEqual(pair("  \n|  "), null);
+  });
+
+  test("reader prefixes resolve to the base form's brackets", () => {
+    assert.deepStrictEqual(pair("'(a b)|"), {
+      open: "(",
+      close: ")",
+      openOffset: 1,
+      closeOffset: 5,
+    });
+    assert.deepStrictEqual(pair("#_(a b)|"), {
+      open: "(",
+      close: ")",
+      openOffset: 2,
+      closeOffset: 6,
+    });
+    assert.deepStrictEqual(pair("^:m [a b]|"), {
+      open: "[",
+      close: "]",
+      openOffset: 4,
+      closeOffset: 8,
+    });
+    assert.deepStrictEqual(pair("#{a b}|"), {
+      open: "{",
+      close: "}",
+      openOffset: 1,
+      closeOffset: 5,
+    });
+    assert.deepStrictEqual(pair("#(inc %)|"), {
+      open: "(",
+      close: ")",
+      openOffset: 1,
+      closeOffset: 7,
+    });
+  });
+
+  test("strings have no pair", () => {
+    assert.strictEqual(pair('"str"|'), null);
+    assert.strictEqual(pair('(str "a|b")'), null);
+  });
+
+  test("unbalanced code has no pair", () => {
+    assert.strictEqual(pair("(unclosed |"), null);
+    assert.strictEqual(pair("[a] (unclosed\n|"), null);
+  });
+
+  test("agrees with formAtCursor on the base form", () => {
+    const { text, offset } = at("#_(a | b)");
+    const range = formAtCursor(text, offset);
+    const found = bracketPairAtCursor(text, offset);
+    assert.ok(range && found);
+    assert.strictEqual(found.open, range.start);
+    assert.strictEqual(found.close, range.end - 1);
   });
 });
 
