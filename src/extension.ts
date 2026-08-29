@@ -21,6 +21,7 @@ import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
 } from "./ignoredForms";
+import { createFormHighlighter } from "./formHighlight";
 import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
 import {
@@ -126,6 +127,36 @@ export async function activate(
       ),
     ),
   );
+
+  // Bracket highlight that follows Evaluate Current Form's resolution, pure
+  // editor UI: repainted on every cursor move or edit, and whenever the set of
+  // visible editors or the controlling `editor.matchBrackets` setting changes.
+  const formHighlighter = createFormHighlighter();
+  context.subscriptions.push(
+    formHighlighter,
+    vscode.window.onDidChangeTextEditorSelection((e) =>
+      formHighlighter.refresh(e.textEditor),
+    ),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document === e.document) {
+          formHighlighter.refresh(editor);
+        }
+      }
+    }),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        formHighlighter.refresh(editor);
+      }
+    }),
+    vscode.window.onDidChangeVisibleTextEditors(() => formHighlighter.refreshAll()),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("editor.matchBrackets")) {
+        formHighlighter.refreshAll();
+      }
+    }),
+  );
+  formHighlighter.refreshAll();
 
   // External Libraries panel. The request closure resolves the current client
   // per call (same seam as the jar content provider) so it survives restarts;
