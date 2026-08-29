@@ -4,6 +4,18 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Bracket highlighting shows the form eval will send**: in Clojure files the
+  highlighted pair is now the brackets of the form Evaluate Current Form would
+  pick — `(foo)|(bar)` highlights `(foo)`, `(foo | bar)` the enclosing list —
+  instead of VS Code's nearest-bracket guess. The extension sets
+  `editor.matchBrackets` to `"never"` for the `clojure` language and draws its
+  own highlight in the native colours; set it back to `"always"` under
+  `"[clojure]"` to restore VS Code's matcher. Tokens and strings get no
+  highlight, and neither does anything below an unclosed bracket.
+- **Select Current Form**: a new command that selects exactly what Evaluate
+  Current Form would send, with the cursor left after the closing bracket — a
+  preview of the eval, and evaluating with the selection in place sends just
+  that.
 - **Evaluate File runs silently**: it no longer opens the REPL output panel on
   top of your code. The verdict lands in the status bar instead — the file name
   with a spinner while it loads, then green on success or a red background
