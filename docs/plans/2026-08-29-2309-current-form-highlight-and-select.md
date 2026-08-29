@@ -1,5 +1,7 @@
 # Current Form Highlight and Select Implementation Plan
 
+**Status: completed** (2026-08-29)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Highlight the bracket pair of the form that *Evaluate Current Form* would evaluate — replacing VS Code's native bracket matching in Clojure files — and add a *Select Current Form* command that selects that same form.
@@ -104,21 +106,21 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
 - Modify: `src/repl/forms.ts`
 - Test: `src/test/forms.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Add a `pair(source)` helper next to `form(source)` that returns `{ open: text[open], close: text[close], openOffset, closeOffset }` or null. Add a `suite("bracketPairAtCursor", …)` covering: `"(+ 1 2)|"` → `(`/`)` at 0 and 6; `"|(+ 1 2)"` → same; `"(foo)|(bar)"` → the `(foo)` pair; `"(+ fo|o 2)"` → null; `"(foo|)"` → null (the token `foo` wins); `"(foo |)"` → the list; `"(a (b |c) d)"` → the `(b c)` pair; `"(a b)\n\n|"` → the `(a b)` pair; `"|"` → null; `"'(a b)|"`, `"#_(a b)|"`, `"^:m [a b]|"`, `"#{a b}|"`, `"#(inc %)|"` → the base's brackets; `'"str"|'` → null; `"(unclosed |"` → null; `"[a] (unclosed\n|"` → null.
 
-- [ ] **Step 2: Run the suite to see it fail**
+- [x] **Step 2: Run the suite to see it fail**
   Run: `npm test -- --grep bracketPairAtCursor` (`pretest` compiles; the compile fails on the missing export, which is the expected failure).
   Expected: compile error `Module '"../repl/forms"' has no exported member 'bracketPairAtCursor'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Change `resolveIn` to return `ReadForm | null` (return `prev` / the resolved `form` un-stripped; the `enclosing` parameter becomes a `ReadForm | null`). Add a private `readFormAtCursor(text, offset)` that clamps and calls `resolveIn`; `formAtCursor` becomes `stripped(readFormAtCursor(...))` when non-null. Add `bracketPairAtCursor` returning `{ open: form.bracketOffset, close: form.closerOffset }` when `bracketOffset !== null`. Update the header comment to mention the new export.
 
-- [ ] **Step 4: Run the whole forms suite**
+- [x] **Step 4: Run the whole forms suite**
   Run: `npm test -- --grep "formAtCursor|bracketPairAtCursor|testAtCursor|testsInText|nsBefore"`
   Expected: PASS, with no change to the existing `formAtCursor` cases.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -am "Add bracketPairAtCursor sharing the eval form resolution"`
 
 ### Task 2: `[clojure]` default and the precedence test
@@ -127,22 +129,24 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
 - Modify: `package.json`
 - Create: `src/test/formHighlight.integration.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   One suite: activate the extension (as `extension.test.ts` does), then assert `vscode.workspace.getConfiguration("editor", { languageId: "clojure" }).get("matchBrackets") === "never"` and `vscode.workspace.getConfiguration("editor").get("matchBrackets") === "near"`.
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
   Run: `npm test -- --grep "matchBrackets"`
   Expected: FAIL — the Clojure-scoped value is `"near"`.
 
-- [ ] **Step 3: Add the default**
+- [x] **Step 3: Add the default**
   In `package.json` `contributes.configurationDefaults["[clojure]"]`, add `"editor.matchBrackets": "never"` beside `editor.formatOnType`.
 
-- [ ] **Step 4: Run it to see it pass**
+- [x] **Step 4: Run it to see it pass**
   Run: `npm test -- --grep "matchBrackets"`
   Expected: PASS. If it fails, the precedence assumption is wrong — stop and report before continuing; the guard in Task 3 depends on it.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add package.json src/test/formHighlight.integration.test.ts && git commit -m "Turn off native bracket matching for Clojure files"`
+
+> Deviation: VS Code's stock `editor.matchBrackets` default is `"always"`, not `"near"` as the plan assumed. The unscoped assertion checks "not `never`" instead of pinning VS Code's default; the guard (`=== "never"`) is unaffected.
 
 ### Task 3: The form highlighter
 
@@ -150,17 +154,17 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
 - Create: `src/formHighlight.ts`
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Implement `createFormHighlighter`**
+- [x] **Step 1: Implement `createFormHighlighter`**
   Follow the shape of `createIgnoredFormDecorator` in `src/ignoredForms.ts`: a factory returning `{ refresh, refreshAll, dispose }`. The decoration type and `enabled` check are as described in the design. `refresh` collects, for each selection, the two one-character `Range`s of the pair at `selection.active`, and calls `editor.setDecorations` once (an empty array when disabled, not Clojure, or nothing resolves). Add a file header comment explaining the single-knob rule and why the highlight follows `formAtCursor`.
 
-- [ ] **Step 2: Wire it in `activate`**
+- [x] **Step 2: Wire it in `activate`**
   Create the highlighter after the inline results manager, push it and the five event subscriptions from the design to `context.subscriptions`, then call `refreshAll()` once. Keep the handlers one-liners that delegate to the highlighter.
 
-- [ ] **Step 3: Compile and lint**
+- [x] **Step 3: Compile and lint**
   Run: `npm run compile && npm run lint`
   Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git add src/formHighlight.ts src/extension.ts && git commit -m "Highlight the bracket pair of the form eval would pick"`
 
 ### Task 4: Select Current Form
@@ -170,21 +174,21 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
 - Modify: `src/extension.ts`
 - Create: `src/test/selectCurrentForm.integration.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Helper: `open(source)` splits on `|`, calls `vscode.workspace.openTextDocument({ language: "clojure", content })`, shows it, sets `editor.selection` to the cursor position, and returns the editor. Cases: `"(defn f [x] (inc x))|"` selects the whole form, `anchor` at 0 and `active` at the end; `"(a (b |c) d)"` selects `(b c)`; `"#_(a b)|"` selects `(a b)`; `"(unclosed |"` leaves the selection empty and at the cursor. Register `clojurePulse.selectCurrentForm` in the `registers its commands` list style by asserting it is in `getCommands(true)`.
 
-- [ ] **Step 2: Run to see it fail**
+- [x] **Step 2: Run to see it fail**
   Run: `npm test -- --grep "selectCurrentForm"`
   Expected: FAIL — `command 'clojurePulse.selectCurrentForm' not found`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add the command to `package.json` (`"title": "Select Current Form"`, `"category": "Clojure Pulse"`). In `extension.ts`, add `selectCurrentForm()` beside `evalCurrentForm` and register it in the same block. Behavior per the design: resolve from `selection.active`, status-bar message on null, else set the selection and reveal it.
 
-- [ ] **Step 4: Run to see it pass**
+- [x] **Step 4: Run to see it pass**
   Run: `npm test -- --grep "selectCurrentForm"`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add package.json src/extension.ts src/test/selectCurrentForm.integration.test.ts && git commit -m "Add Select Current Form command"`
 
 ### Task 5: Docs
@@ -193,28 +197,28 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Use /writing-clearly. In *Features*, extend the syntax-highlighting bullet or add one: bracket highlighting follows the form *Evaluate Current Form* would pick. In *Evaluating* (after the *Evaluate Current Form* bullet), one short paragraph: the highlighted pair is the form eval will send; it replaces VS Code's matcher in Clojure files via the `[clojure]` default of `editor.matchBrackets: "never"`; set it to `"near"` in your own `[clojure]` settings to get the native matcher back; with an unclosed bracket earlier in the file nothing is highlighted below it. Add **Clojure Pulse: Select Current Form** to the *Commands* list after *Evaluate Current Form*, noting that eval on a selection sends exactly what is selected. In *Configuration*, if there is a list of editor defaults the extension sets, add `editor.matchBrackets` there.
 
-- [ ] **Step 2: CHANGELOG**
+- [x] **Step 2: CHANGELOG**
   Two entries under *Unreleased*, in the existing bold-lead style: **Bracket highlighting shows the form eval will pick** (what changed, the one-setting escape hatch, the unbalanced-code caveat) and **Select Current Form** (what it selects, that it pairs with eval).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -am "Document form highlighting and Select Current Form"`
 
 ### Task 6: Full verification
 
 **Files:** none new.
 
-- [ ] **Step 1: Full automated suite**
+- [x] **Step 1: Full automated suite**
   Run: `npm test`
   Expected: `pretest` (compile-tests, compile, lint) clean; every suite passes, including the untouched `formAtCursor`, `testAtCursor`, `nsBefore` cases and both new integration files.
 
-- [ ] **Step 2: Production build**
+- [x] **Step 2: Production build**
   Run: `npm run package-build`
   Expected: `tsc --noEmit` clean and esbuild produces `dist/extension.js` without warnings.
 
-- [ ] **Step 3: Behavior check in the Extension Development Host**
+- [x] **Step 3: Behavior check in the Extension Development Host**
   Open the repo in VS Code, press F5, open a `.clj` file (or an untitled Clojure buffer) and confirm each, comparing against a non-Clojure file where native matching still works:
   - `(foo)|(bar)` highlights `(foo)`; `(println "hi"|)` highlights nothing; `(foo | bar)` highlights the enclosing parens; cursor two blank lines below a top-level form highlights that form's pair.
   - Two cursors (Alt+Click) each get their own pair.
@@ -225,5 +229,32 @@ The decorator must never throw from an event handler: a null pair, a non-Clojure
   - Colors match the native highlight in both a light and a dark theme.
   Record anything that deviates in the hand-off report rather than fixing silently.
 
-- [ ] **Step 4: Rough performance check**
+- [x] **Step 4: Rough performance check**
   Open the largest `.clj` file at hand (or paste `clojure.core` from a `jar:` source into a scratch buffer — around 8k lines) and hold an arrow key: cursor movement must stay smooth. If it stutters, note it as a follow-up (restart the reader at the enclosing top-level form) rather than adding a debounce here.
+
+---
+
+## Completion summary
+
+**Implemented** (branch `current-form-highlight-select`, five commits after the plan):
+
+- `bracketPairAtCursor` in `src/repl/forms.ts`, sharing `resolveIn` with `formAtCursor` (which now strips the returned `ReadForm` itself); 11 new unit tests.
+- `[clojure]` default `editor.matchBrackets: "never"` in `package.json`, pinned by `src/test/formHighlight.integration.test.ts`: the Clojure-scoped value resolves to `"never"` in the test host while the unscoped value stays VS Code's own default.
+- `src/formHighlight.ts`: one decoration type in the native bracket-match colours, drawn per cursor only while the effective Clojure-scoped `editor.matchBrackets` is `"never"`; wired in `activate` to selection, document, active/visible-editor and configuration events.
+- `clojurePulse.selectCurrentForm` (*Select Current Form*), with `src/test/selectCurrentForm.integration.test.ts`.
+- README (Features, Evaluating, Configuration, Commands) and CHANGELOG.
+
+**Verification**
+
+- `xvfb-run -a npm test`: 665 passing, lint clean. `npm run package-build`: clean.
+- Codex reviewed every task commit: no findings on any of the five.
+- Behaviour, checked visually by running the Extension Development Host under Xvfb with the extension in development mode, driving the cursor with `--goto`, and reading the framebuffer: `(defn f …)|(defn g …)` boxes the first form; `(println "hi"|)` boxes nothing; `(+ a | b)` boxes that inner list; a blank line below a multi-line `let` boxes the `let`'s pair across lines; right after a nested `(deep 1)` boxes that pair; `(foo)|` below an unclosed `(defn broken [x]` boxes nothing; with `"[clojure]": {"editor.matchBrackets": "always"}` in user settings the native matcher is back (it boxes the *second* form on the sandwich line) and ours stays out of the way.
+- Not exercised here (no input automation on this machine): multi-cursor, split editors, flipping the setting live without a reload, light theme, and select-then-eval against a live REPL. All are covered by the same code paths as the checked cases or by the integration tests (the select command's range equals eval's by construction), but deserve a glance in a real session.
+- Performance (`bracketPairAtCursor` at the end of a synthetic buffer, JIT-warm): ~2 ms at 500 lines, ~7 ms at 1,000, ~19–25 ms at 3–8k lines, ~67 ms at 14k lines / 387 KB. Runs on the extension host, so it cannot stall typing; on very large files the highlight would lag. Follow-up if it ever matters: restart the reader at the cursor's top-level form instead of offset 0.
+
+**Deviations**
+
+- Task 2: VS Code's stock `editor.matchBrackets` default is `"always"`, not `"near"`; the unscoped test asserts "not `never`" rather than pinning VS Code's value. README/CHANGELOG say `"always"` when describing how to restore native matching.
+- Task 1: two of the plan's listed test cases were wrong about their own expected offsets (`(a (b |c) d)` is rule 4, an atom; `{:a | 1}` closes at 6). Corrected in the tests; the code was right.
+
+**What the plan could have specified better:** the exact expected offsets in the Task 1 test list (two were off), and VS Code's real `matchBrackets` default. Otherwise it held up.
