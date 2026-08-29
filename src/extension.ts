@@ -698,6 +698,9 @@ function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
       evalFile(registry, commandBar),
     ),
+    vscode.commands.registerCommand("clojurePulse.selectCurrentForm", () =>
+      selectCurrentForm(),
+    ),
     vscode.commands.registerCommand("clojurePulse.runTestAtCursor", () =>
       runTestAtCursor(registry, inlineResults, testStatus, testStatusBar),
     ),
@@ -1354,6 +1357,32 @@ async function evalCurrentForm(
     code,
     opts: { ...sourceParams(editor, range.start), ns: nsName },
   });
+}
+
+/**
+ * Selects the form "Evaluate Current Form" would send from the cursor — the
+ * same `formAtCursor` resolution, so the selection is a preview of the eval
+ * (and evaluating with it in place sends exactly what is selected). Resolved
+ * from the active cursor end even when a selection already exists; expanding
+ * an existing selection is deliberately not what this does.
+ */
+function selectCurrentForm(): void {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const document = editor.document;
+  const found = formAtCursor(document.getText(), document.offsetAt(editor.selection.active));
+  if (!found) {
+    void vscode.window.setStatusBarMessage("Clojure Pulse: no form found at cursor", 3000);
+    return;
+  }
+  // Anchor at the form start, caret right after the closing bracket.
+  editor.selection = new vscode.Selection(
+    document.positionAt(found.start),
+    document.positionAt(found.end),
+  );
+  editor.revealRange(editor.selection);
 }
 
 /**

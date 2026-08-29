@@ -370,6 +370,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.selectCurrentForm",
+        "title": "Select Current Form",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.runTestAtCursor",
         "title": "Run Test at Cursor",
         "category": "Clojure Pulse"
