@@ -242,7 +242,8 @@
     },
     "configurationDefaults": {
       "[clojure]": {
-        "editor.formatOnType": false
+        "editor.formatOnType": false,
+        "editor.matchBrackets": "never"
       }
     },
     "viewsContainers": {
