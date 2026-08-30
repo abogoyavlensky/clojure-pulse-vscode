@@ -242,7 +242,8 @@
     },
     "configurationDefaults": {
       "[clojure]": {
-        "editor.formatOnType": false
+        "editor.formatOnType": false,
+        "editor.matchBrackets": "never"
       }
     },
     "viewsContainers": {
@@ -366,6 +367,11 @@
       {
         "command": "clojurePulse.evalFile",
         "title": "Evaluate File",
+        "category": "Clojure Pulse"
+      },
+      {
+        "command": "clojurePulse.selectCurrentForm",
+        "title": "Select Current Form",
         "category": "Clojure Pulse"
       },
       {

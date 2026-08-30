@@ -16,7 +16,9 @@ do not need any other Clojure extension.
 ## Features
 
 - **Syntax highlighting** and bracket/comment editing for `.clj`, `.cljs`,
-  `.cljc`, `.edn`, `.bb`, and `.lg` files.
+  `.cljc`, `.edn`, `.bb`, and `.lg` files. Bracket highlighting follows the
+  form **Evaluate Current Form** would send, so you see what a keypress will
+  evaluate before pressing it.
 - **Language intelligence** from `clj-pulse`:
   - Go to definition — project files, JAR libraries, git/`:local/root` deps,
     and `clojure.core`.
@@ -129,6 +131,13 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
 | `clojurePulse.replConfigurations` | `[]` | The REPLs listed in the sidebar — see [REPL](#repl). |
 | `clojurePulse.projects` | `[]` | Per-project classpath overrides for multi-project workspaces — see [Monorepos](#monorepos). |
+
+The extension also sets two editor defaults for the `clojure` language:
+`editor.formatOnType: false` (Enter is handled client-side, so the server's
+on-type formatting must not fire too) and `editor.matchBrackets: "never"` (its own
+bracket highlight follows the form eval would send — see
+[Evaluating](#evaluating)). Override either under `"[clojure]"` in your
+settings.
 
 **Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
 both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
@@ -307,6 +316,18 @@ rather than land somewhere you did not intend.
   is unwrapped so the form itself runs, and the form is evaluated in the file's
   namespace (its nearest preceding `ns` form). A non-empty selection is
   evaluated as-is.
+
+  The highlighted bracket pair is that form's own brackets: Clojure Pulse
+  replaces VS Code's bracket matcher in Clojure files (it would highlight
+  `(bar)` in `(foo)|(bar)` where eval sends `(foo)`) by setting
+  `editor.matchBrackets` to `"never"` for the `clojure` language and drawing
+  its own highlight in the native colours. Tokens and strings get no highlight,
+  and neither does anything below an unclosed bracket. To get VS Code's matcher
+  back, set `"[clojure]": { "editor.matchBrackets": "always" }` in your
+  settings — the extension's highlight steps aside.
+- **Select Current Form** — selects exactly what **Evaluate Current Form**
+  would send, so it doubles as a preview: select, look, then evaluate the
+  selection.
 - **Evaluate File** — compiles the whole buffer (unsaved changes included) via
   nREPL's `load-file`, so the file's own `ns` form takes effect and stack
   traces carry real file/line locations. The run is silent — no output panel
@@ -459,6 +480,8 @@ Run these from the Command Palette:
 - **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor
   (or the selection) in the active REPL.
+- **Clojure Pulse: Select Current Form** — select the form Evaluate Current
+  Form would send, leaving the cursor right after its closing bracket.
 - **Clojure Pulse: Evaluate File** — load the whole current file into the REPL,
   reporting in the status bar rather than opening the output panel.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
