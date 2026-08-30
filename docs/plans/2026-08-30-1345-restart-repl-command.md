@@ -1,5 +1,7 @@
 # Restart REPL Command Implementation Plan
 
+**Status: completed** (2026-08-30)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a `Clojure Pulse: Restart REPL` command that stops a REPL and starts it again, applying any configuration edit made while it was running.
@@ -165,12 +167,68 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 
 ### Task 4: Final verification
 
-- [ ] **Step 1: Full test run**
+- [x] **Step 1: Full test run**
   Run: `npm test`
   Expected: PASS across the whole suite.
 
-- [ ] **Step 2: Manual check in the Extension Development Host** (only if a Clojure project with an nREPL is at hand)
+- [x] **Step 2: Manual check in the Extension Development Host** (only if a Clojure project with an nREPL is at hand)
   Start a `create` REPL, edit its command from the form while it is running, then right-click the row → *Restart REPL*. The output channel shows the process terminating, then `Running: <new command>`, and the row returns to `connected` with the filled (active) icon. The status-bar menu shows *Restart* while a REPL is active.
 
-- [ ] **Step 3: Mark the plan complete**
+- [x] **Step 3: Mark the plan complete**
   Add `**Status: completed** (YYYY-MM-DD)` under the title, as earlier plans do, and commit: `git commit -m "Mark the Restart REPL plan complete"`.
+
+---
+
+## Completion summary
+
+**Implemented** (branch `restart-repl-command`, three commits after the plan):
+
+- `restartRepl` in `src/extension.ts`: resolves its target through `sessionFor`
+  (a name argument, else the active REPL, else a quick pick over running ones),
+  stops through `stopSession`, re-fetches the session by name, and starts it
+  through `runSessionStart`. `stopSession` now returns a boolean so a failed
+  stop aborts the restart without a second error.
+- `clojurePulse.restartRepl` registered in `setupRepl`; a `$(debug-restart)
+  Restart` item in the status-bar `replMenu` when a REPL is active.
+- `package.json`: the command (title *Restart REPL*, icon `$(debug-restart)`)
+  and a `view/item/context` entry in group `0_run@1` for running rows.
+- Four integration tests in `src/test/replManager.integration.test.ts` (restart
+  the active REPL and nothing else; a pending configuration edit is applied on
+  the way up; a stopped REPL is simply started; an unknown name only reports an
+  error) and the id in the registered-commands list.
+- README (*Running them*, *Commands*) and CHANGELOG.
+
+**Verification**
+
+- `make test` (xvfb): red first — 663 passing, 5 failing, all five the new
+  assertions — then 668 passing, 0 failing, lint and type-check clean.
+- The restart tests drive the real command through `vscode.commands.executeCommand`
+  in the VS Code test host against two real TCP nREPL stand-ins, so the
+  stop → pending-replace → start path is exercised end to end.
+
+**Issues encountered**
+
+- The per-task codex review checkpoint could not run: the `codex` CLI is
+  blocked by this environment's permission classifier. No second-opinion
+  review was obtained for any of the three commits.
+- The plan's Task 4 manual check in the Extension Development Host was not
+  performed — no Clojure project with a live nREPL on this machine.
+
+**Deviations**
+
+> Task 1 / 2 / 4: tests were run with `make test` (which wraps `npm test` in
+> `xvfb-run` on Linux) rather than `npm test` directly — the plan's command has
+> no display in this environment.
+> Task 1: the "restart the active REPL" test waits for the old socket to close
+> (`waitUntil(() => a.socketCount() === 1)`) instead of asserting it outright;
+> the server-side `close` event lands on a later event-loop turn than the
+> command's resolution, so a bare assertion would be flaky.
+> Task 1: the registered-commands test did fail on the red run, contrary to the
+> plan's warning that it might already pass — `getCommands(true)` does not list
+> a command that has no handler.
+
+**What the plan could have specified better:** that `getCommands(true)` filters
+by registered handler, so the registered-commands assertion is a real red test,
+not an unreliable one. Otherwise it held up — the pending-edit trap it called
+out (re-fetching the session by name after the stop) was exactly right, and the
+`onDidChange` hint for observing a deferred edit saved a wrong test.
