@@ -63,6 +63,7 @@ async function selectAndEval(code: string): Promise<void> {
 }
 
 const evals = (server: FakeNrepl) => server.received.filter((m) => m.op === "eval");
+const clones = (server: FakeNrepl) => server.received.filter((m) => m.op === "clone");
 
 suite("REPL manager with several sessions", () => {
   let api: ExtensionApi;
@@ -182,9 +183,79 @@ suite("REPL manager with several sessions", () => {
     assert.strictEqual(api.repls.get("a")?.connectionInfo?.port, b.port);
   });
 
+  test("restarting without an argument restarts the active REPL and nothing else", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "b");
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    assert.strictEqual(api.repls.active?.name, "a");
+    assert.strictEqual(a.socketCount(), 1);
+    assert.strictEqual(b.socketCount(), 1);
+    const clonesA = clones(a).length;
+    const clonesB = clones(b).length;
+
+    await vscode.commands.executeCommand("clojurePulse.restartRepl");
+
+    assert.strictEqual(api.repls.get("a")?.state, "connected");
+    assert.strictEqual(api.repls.active?.name, "a", "the restarted REPL is active again");
+    // A second handshake is the proof it really went down and came back up.
+    assert.ok(clones(a).length > clonesA, "the restarted REPL reconnected");
+    assert.strictEqual(clones(b).length, clonesB, "the other REPL was untouched");
+    // The old socket closes on its own event-loop turn, so give it one.
+    await waitUntil(() => a.socketCount() === 1, 5000, "the old connection to close");
+    assert.strictEqual(b.socketCount(), 1);
+  });
+
+  test("restarting applies a configuration edited while the REPL was running", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+    ]);
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    assert.strictEqual(api.repls.get("a")?.connectionInfo?.port, a.port);
+
+    // A running session holds the configuration it started with, so the edit
+    // is invisible through `config`; the registry's change event is the only
+    // signal that it landed.
+    let changed = false;
+    api.repls.onDidChange(() => {
+      changed = true;
+    });
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+    await waitUntil(() => changed, 5000, "the edit to reach the registry");
+
+    const running = api.repls.get("a");
+    assert.strictEqual(running?.state, "connected");
+    assert.strictEqual(
+      running?.config.type === "connect" ? running.config.port : undefined,
+      a.port,
+      "the edit is held pending, not applied to the running session",
+    );
+
+    await vscode.commands.executeCommand("clojurePulse.restartRepl", "a");
+
+    assert.strictEqual(api.repls.get("a")?.state, "connected");
+    assert.strictEqual(api.repls.get("a")?.connectionInfo?.port, b.port);
+  });
+
+  test("restarting a stopped REPL just starts it", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+    ]);
+    assert.strictEqual(api.repls.get("a")?.state, "stopped");
+
+    await vscode.commands.executeCommand("clojurePulse.restartRepl", "a");
+
+    assert.strictEqual(api.repls.get("a")?.state, "connected");
+  });
+
   test("starting an unknown REPL reports an error instead of throwing", async () => {
     await vscode.commands.executeCommand("clojurePulse.startRepl", "no-such-repl");
     await vscode.commands.executeCommand("clojurePulse.stopRepl", "no-such-repl");
+    await vscode.commands.executeCommand("clojurePulse.restartRepl", "no-such-repl");
     await vscode.commands.executeCommand("clojurePulse.showReplOutput", "no-such-repl");
     // A named REPL that does not exist is an error, not an invitation to add
     // one: a keybinding carrying `"args": "dev"` asked for that REPL.

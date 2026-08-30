@@ -111,20 +111,20 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 - Modify: `src/test/replCommands.integration.test.ts`
 - Modify: `src/test/replManager.integration.test.ts`
 
-- [ ] **Step 1: Contribute the command in `package.json`**
+- [x] **Step 1: Contribute the command in `package.json`**
   Add `clojurePulse.restartRepl` (title `Restart REPL`, category `Clojure Pulse`, icon `$(debug-restart)`) after `clojurePulse.stopRepl` in `contributes.commands`. Add the `view/item/context` entry from the design (group `0_run@1`, running rows only), placed before the `showReplOutput` context entry.
 
-- [ ] **Step 2: Add the registered-command assertion**
+- [x] **Step 2: Add the registered-command assertion**
   In `src/test/replCommands.integration.test.ts`, add `"clojurePulse.restartRepl"` to the id list in `registers the REPL commands`, after `"clojurePulse.stopRepl"`.
 
-- [ ] **Step 3: Write the restart tests**
+- [x] **Step 3: Write the restart tests**
   In `src/test/replManager.integration.test.ts`, add the four tests from the design's *Testing* section (restart active with no argument; restart applies a pending edit; restart of a stopped REPL starts it; unknown name added to the existing error test). Keep them next to the existing stop/edit tests. Use `socketCount()` and `received` on the fake servers for the reconnect proof. In the pending-edit test, wait for the edit to reach the registry through an `api.repls.onDidChange` listener subscribed before the edit — the existing `waitUntil`-on-`config` pattern from the "edit while stopped" test cannot see a deferred edit.
 
-- [ ] **Step 4: Run the tests to verify they fail**
+- [x] **Step 4: Run the tests to verify they fail**
   Run: `npm test`
   Expected: FAIL — the new restart tests fail because the command has no handler (`executeCommand` rejects with `command 'clojurePulse.restartRepl' not found`). `registers the REPL commands` may already pass: `getCommands()` can list a command contributed in `package.json` before a handler is registered, so do not rely on it as the red test. Everything else still passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Contribute Restart REPL and add its tests"`
 
 ### Task 2: Implement `restartRepl`
