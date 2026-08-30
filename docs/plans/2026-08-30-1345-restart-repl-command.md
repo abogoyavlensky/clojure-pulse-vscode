@@ -208,9 +208,17 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 
 **Issues encountered**
 
-- The per-task codex review checkpoint could not run: the `codex` CLI is
-  blocked by this environment's permission classifier. No second-opinion
-  review was obtained for any of the three commits.
+- The per-task codex review checkpoints did not run inline: `codex exec review`
+  with `--dangerously-bypass-approvals-and-sandbox` is refused by this
+  environment, and codex's own bubblewrap sandbox cannot initialise here
+  (`bwrap: loopback: Failed RTM_NEWADDR`), so codex could run no git command of
+  its own. Instead, one codex pass over the whole branch was run afterwards,
+  driven by the `code-review` skill with the diff and the supporting sources
+  (`replRegistry.ts`, `replSession.ts`, `fakeNreplServer.ts`, the
+  `src/extension.ts` command helpers) inlined in the prompt. It reported **no
+  findings**, naming the re-fetch after pending replacement, the stop/start
+  failure boundary, and the test coverage as sound. Caveat: one pass over
+  supplied context, not a repo-wide review.
 - The plan's Task 4 manual check in the Extension Development Host was not
   performed — no Clojure project with a live nREPL on this machine.
 
@@ -226,6 +234,8 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 > Task 1: the registered-commands test did fail on the red run, contrary to the
 > plan's warning that it might already pass — `getCommands(true)` does not list
 > a command that has no handler.
+
+- Reviewed by codex over the full branch (see above): no findings.
 
 **What the plan could have specified better:** that `getCommands(true)` filters
 by registered handler, so the registered-commands assertion is a real red test,
