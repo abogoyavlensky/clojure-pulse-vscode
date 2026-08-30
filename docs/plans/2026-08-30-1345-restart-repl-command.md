@@ -132,20 +132,20 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 **Files:**
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Make `stopSession` report success**
+- [x] **Step 1: Make `stopSession` report success**
   Change `stopSession` to return `Promise<boolean>`: `true` when `session.stop()` resolved, `false` when it rejected (the error notification stays as is). Existing callers keep ignoring the result.
 
-- [ ] **Step 2: Add `restartRepl`**
+- [x] **Step 2: Add `restartRepl`**
   After `stopSession`, add `restartRepl(registry, arg?)` following the design: resolve via `sessionFor` (active name first, then the running-only `pickSession`); `if (!(await stopSession(session))) return;`; `const fresh = registry.get(name); if (!fresh) return;`; `await runSessionStart(fresh);`. Add a doc comment explaining why the session is re-fetched by name (the registry may have swapped in a session built from a pending edit).
 
-- [ ] **Step 3: Register the command and extend the status-bar menu**
+- [x] **Step 3: Register the command and extend the status-bar menu**
   Register `clojurePulse.restartRepl` right after `clojurePulse.stopRepl` in `setupRepl`. In `replMenu`, add the `$(debug-restart) Restart` item (only when `active` exists, immediately before *Disconnect*) and its `restart` case calling `restartRepl(registry, active.name)`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `npm test`
   Expected: PASS, including the four new restart tests and the registered-commands test. Lint is clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add Restart REPL command"`
 
 ### Task 3: Documentation
