@@ -154,13 +154,13 @@ The full suite is run with `npm test` (which compiles, bundles, and lints first)
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   In *Running them*, after the keybinding example, add the sentence about **Restart REPL** (stop and start in one go; how an edit made while running takes effect; available on a running row's right-click menu and in the status-bar menu). In the *Commands* list, add the *Restart REPL* entry after *Stop REPL*, using the wording from the design. Use /writing-clearly.
 
-- [ ] **Step 2: CHANGELOG**
+- [x] **Step 2: CHANGELOG**
   Add the *Restart REPL* bullet under `## [Unreleased]`, above the bracket-highlighting bullet, using the wording from the design.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document Restart REPL"`
 
 ### Task 4: Final verification
