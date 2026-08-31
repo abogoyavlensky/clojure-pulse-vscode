@@ -1,4 +1,7 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
@@ -89,13 +92,30 @@ suite("clojurePulse.newline (integration)", () => {
   });
 
   test("eats whitespace after the cursor instead of stranding it", async () => {
+    // cljfmt community style: a head alone on its line gets one space.
     const editor = await openClojureDoc("(foo   bar)", cursor(0, 4));
     await vscode.commands.executeCommand("clojurePulse.newline");
-    assert.strictEqual(editor.document.getText(), "(foo\n  bar)");
+    assert.strictEqual(editor.document.getText(), "(foo\n bar)");
     assert.deepStrictEqual(
       [editor.selection.active.line, editor.selection.active.character],
-      [1, 2],
+      [1, 1],
     );
+  });
+
+  test("arguments on the head line align later arguments (cljfmt)", async () => {
+    const editor = await openClojureDoc("(foo bar)", cursor(0, 8));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    assert.strictEqual(editor.document.getText(), "(foo bar\n     )");
+    assert.deepStrictEqual(
+      [editor.selection.active.line, editor.selection.active.character],
+      [1, 5],
+    );
+  });
+
+  test("unbalanced text falls back to the structural rule", async () => {
+    const editor = await openClojureDoc("(foo (bar", cursor(0, 9));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    assert.strictEqual(editor.document.getText(), "(foo (bar\n       ");
   });
 
   test("multi-cursor: each selection gets its own indent", async () => {
@@ -123,19 +143,63 @@ suite("clojurePulse.newline (integration)", () => {
     // form's body shifts to match, folded into the same atomic edit.
     const editor = await openClojureDoc("(a (b\n    c))", cursor(0, 2));
     await vscode.commands.executeCommand("clojurePulse.newline");
-    await waitForText(editor.document, "(a\n  (b\n   c))");
+    await waitForText(editor.document, "(a\n (b\n  c))");
     assert.deepStrictEqual(
       [editor.selection.active.line, editor.selection.active.character],
-      [1, 2],
+      [1, 1],
     );
   });
 
   test("one undo reverts the Enter and the carried body together", async () => {
     const editor = await openClojureDoc("(a (b\n    c))", cursor(0, 2));
     await vscode.commands.executeCommand("clojurePulse.newline");
-    await waitForText(editor.document, "(a\n  (b\n   c))");
+    await waitForText(editor.document, "(a\n (b\n  c))");
 
     await vscode.commands.executeCommand("undo");
     await waitForText(editor.document, "(a (b\n    c))");
+  });
+});
+
+suite("clojurePulse.newline with the structural engine", () => {
+  suiteSetup(async () => {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("formatting.engine", "structural", vscode.ConfigurationTarget.Global);
+  });
+
+  suiteTeardown(async () => {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("formatting.engine", undefined, vscode.ConfigurationTarget.Global);
+  });
+
+  test("head alone gets the fixed two-space rule again", async () => {
+    const editor = await openClojureDoc("(foo   bar)", cursor(0, 4));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    assert.strictEqual(editor.document.getText(), "(foo\n  bar)");
+  });
+
+  test("later arguments do not align under the first", async () => {
+    const editor = await openClojureDoc("(foo bar)", cursor(0, 8));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    assert.strictEqual(editor.document.getText(), "(foo bar\n  )");
+  });
+});
+
+suite("clojurePulse.newline reads .cljfmt.edn", () => {
+  test("a cursive config next to the file changes Enter", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cljp-newline-"));
+    fs.writeFileSync(
+      path.join(dir, ".cljfmt.edn"),
+      "{:function-arguments-indentation :cursive}",
+    );
+    const file = path.join(dir, "sample.clj");
+    fs.writeFileSync(file, "(foo   bar)");
+    const doc = await vscode.workspace.openTextDocument(file);
+    const editor = await vscode.window.showTextDocument(doc);
+    editor.selections = [cursor(0, 4)];
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    // :cursive: a head alone on its line indents two spaces, not one.
+    assert.strictEqual(editor.document.getText(), "(foo\n  bar)");
   });
 });

@@ -22,8 +22,13 @@ import {
   IgnoredFormDecorator,
 } from "./ignoredForms";
 import { createFormHighlighter } from "./formHighlight";
-import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
+import { defaultConfig, reformatString } from "@abogoyavlensky/cljfmt-js";
+import { createCljfmtEngine } from "./fmt/cljfmtEngine";
+import { createConfigDiscovery } from "./fmt/configDiscovery";
+import { FormattingEngine } from "./fmt/engine";
+import { createNsContextCache } from "./fmt/nsContext";
+import { structuralEngine } from "./fmt/structuralEngine";
 import {
   ConnectCancelledError,
   EvalOptions,
@@ -258,6 +263,7 @@ export async function activate(
   );
 
   setupIgnoredFormDimming(context);
+  setupFormatting(context);
   setupMaintainIndentation(context);
   const repl = setupRepl(context);
 
@@ -2020,6 +2026,65 @@ function isClojure(doc: vscode.TextDocument): boolean {
   return doc.languageId === "clojure";
 }
 
+/** Config discovery + ns-context caches behind the cljfmt engine; created
+ *  in `setupFormatting`. */
+const configDiscovery = createConfigDiscovery();
+const nsContexts = createNsContextCache();
+
+/** The engine the current settings and the document's config call for. */
+function engineFor(doc: vscode.TextDocument): FormattingEngine {
+  const kind = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<string>("formatting.engine", "cljfmt");
+  if (kind === "structural") {
+    return structuralEngine;
+  }
+  // Only real files have a directory to discover a config from; untitled
+  // buffers format with the defaults.
+  const lookup =
+    doc.uri.scheme === "file"
+      ? configDiscovery.configFor(
+          doc.uri.fsPath,
+          vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath ?? null,
+        )
+      : { config: defaultConfig, maxInner: 2 };
+  // Deriving the ns context parses the whole buffer, which throws on
+  // unbalanced mid-edit text — the engine still works without a context.
+  let nsContext;
+  try {
+    nsContext = nsContexts.contextFor(doc.uri.toString(), doc.version, () =>
+      doc.getText(),
+    );
+  } catch {
+    nsContext = undefined;
+  }
+  return createCljfmtEngine(lookup, nsContext);
+}
+
+function setupFormatting(context: vscode.ExtensionContext): void {
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    "**/{.cljfmt.edn,cljfmt.edn}",
+  );
+  watcher.onDidCreate(() => configDiscovery.invalidate());
+  watcher.onDidChange(() => configDiscovery.invalidate());
+  watcher.onDidDelete(() => configDiscovery.invalidate());
+  context.subscriptions.push(
+    watcher,
+    vscode.workspace.onDidCloseTextDocument((doc) =>
+      nsContexts.drop(doc.uri.toString()),
+    ),
+  );
+  // The first cljfmt-js call pays a ~1s JIT warm-up; spend it off the
+  // activation path so the first Enter doesn't stall.
+  setTimeout(() => {
+    try {
+      reformatString("(warm up)");
+    } catch {
+      // Warming is best-effort.
+    }
+  }, 0);
+}
+
 /**
  * Enter, owned by the extension for Clojure (bound in package.json): inserts
  * the newline *and* the structural indent as one atomic edit, so the cursor
@@ -2036,6 +2101,7 @@ async function insertStructuralNewline(): Promise<void> {
   }
   const doc = editor.document;
   const text = doc.getText();
+  const engine = engineFor(doc);
   const edits = [...editor.selections]
     .sort((a, b) => a.start.compareTo(b.start))
     .map((sel) => {
@@ -2049,7 +2115,7 @@ async function insertStructuralNewline(): Promise<void> {
       }
       return {
         range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
-        indent: indentColumnAt(text, doc.offsetAt(sel.start)) ?? 0,
+        indent: engine.indentAt(text, doc.offsetAt(sel.start)) ?? 0,
       };
     });
 
