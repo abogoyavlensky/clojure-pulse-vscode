@@ -41,11 +41,12 @@ do not need any other Clojure extension.
   classpath for your project type (e.g. `clojure -Spath` for deps.edn). In a
   multi-project workspace the tree is grouped by project, with a per-project
   classpath toggle — see [Monorepos](#monorepos).
-- **cljfmt formatting** — indent-on-Enter and Format Document produce output
-  byte-identical to the [cljfmt](https://github.com/weavejester/cljfmt) CLI
-  (bundled cljfmt 0.16.5, compiled to JavaScript — no JVM, no binary on your
-  PATH), honoring the nearest `.cljfmt.edn` / `cljfmt.edn` up the directory
-  tree. See [Formatting](#formatting).
+- **cljfmt formatting** — Format Document produces output byte-identical to
+  the [cljfmt](https://github.com/weavejester/cljfmt) CLI, and Enter indents
+  the new line to the column cljfmt would choose (bundled cljfmt 0.16.5,
+  compiled to JavaScript — no JVM, no binary on your PATH), honoring the
+  nearest `.cljfmt.edn` / `cljfmt.edn` up the directory tree. See
+  [Formatting](#formatting).
 - **Indent on Enter** — pressing Enter indents the new line to the correct
   column, atomically. The extension owns the Enter key for Clojure and inserts
   newline + indent as one edit, so the cursor lands exactly right with no
@@ -157,9 +158,10 @@ indent-on-Enter and Format Document / Format Selection:
 
 - **`cljfmt`** (default) formats exactly like the cljfmt CLI — the extension
   bundles cljfmt 0.16.5 compiled to JavaScript
-  ([cljfmt-js](https://github.com/abogoyavlensky/cljfmt-js)), so the output is
-  byte-identical to `cljfmt fix` with the same configuration and nothing needs
-  to be installed. For each file the nearest `.cljfmt.edn` or `cljfmt.edn` up
+  ([cljfmt-js](https://github.com/abogoyavlensky/cljfmt-js)), so Format
+  Document output is byte-identical to `cljfmt fix` with the same
+  configuration, Enter uses the same rules for the new line's column, and
+  nothing needs to be installed. For each file the nearest `.cljfmt.edn` or `cljfmt.edn` up
   the directory tree (stopping at the workspace folder) applies, so monorepo
   sub-projects can carry their own rules. `.cljfmt.clj` is not read — it is
   arbitrary Clojure code, which cljfmt itself only evaluates behind an opt-in
