@@ -1,0 +1,124 @@
+// Discovery of the effective cljfmt config for a file: walk from the file's
+// directory up to (and including) its workspace-folder root — or only the
+// file's own directory when it belongs to no folder — checking for
+// `.cljfmt.edn` then `cljfmt.edn` in each directory, cljfmt's own order.
+// `.cljfmt.clj` is deliberately unsupported (it is arbitrary Clojure, not
+// EDN, and cljfmt itself gates it behind an opt-in flag).
+//
+// Results are cached per (directory, stop) pair; the extension wiring clears
+// the whole cache from a FileSystemWatcher on the config filenames — config
+// edits are rare, surgical invalidation isn't worth its bookkeeping.
+//
+// A config that fails to parse yields the defaults plus `error`/`path`, so
+// formatting keeps working while the status bar reports the breakage.
+
+import * as path from "path";
+import * as fs from "fs";
+import {
+  Config,
+  defaultConfig,
+  mergeConfig,
+  readConfig,
+} from "@abogoyavlensky/cljfmt-js";
+
+const CONFIG_NAMES = [".cljfmt.edn", "cljfmt.edn"];
+
+export interface ConfigLookup {
+  /** Effective config — defaults merged with the file's, or plain defaults
+   *  when none was found or it failed to parse. */
+  config: Config;
+  /** Deepest `[:inner n]` in the raw EDN (min 2) — sizes the Enter window. */
+  maxInner: number;
+  /** The config file used; also set when it failed to parse. */
+  path?: string;
+  /** Parse error message, for the status bar. */
+  error?: string;
+}
+
+/** Reads a file, `null` when missing/unreadable (doubles as an exists check). */
+export type ReadFile = (filePath: string) => string | null;
+
+const defaultReadFile: ReadFile = (filePath) => {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+};
+
+/** cljfmt's default rules max out at `[:inner 2 0]` (letfn). Over-counting
+ *  only widens the Enter window, so a plain regex scan is enough. */
+function maxInnerDepth(edn: string): number {
+  let max = 2;
+  for (const match of edn.matchAll(/:inner\s+(\d+)/g)) {
+    max = Math.max(max, Number(match[1]));
+  }
+  return max;
+}
+
+const NO_CONFIG: ConfigLookup = { config: defaultConfig, maxInner: 2 };
+
+export interface ConfigDiscovery {
+  /** Effective config for `filePath`, searching up to `stopDir` inclusive
+   *  (`null`: the file's own directory only). */
+  configFor(filePath: string, stopDir: string | null): ConfigLookup;
+  /** Drops every cached lookup (a config file appeared/changed/vanished). */
+  invalidate(): void;
+}
+
+export function createConfigDiscovery(
+  readFile: ReadFile = defaultReadFile,
+): ConfigDiscovery {
+  const cache = new Map<string, ConfigLookup>();
+
+  function load(configPath: string, raw: string): ConfigLookup {
+    try {
+      return {
+        config: mergeConfig(defaultConfig, readConfig(raw)),
+        maxInner: maxInnerDepth(raw),
+        path: configPath,
+      };
+    } catch (e) {
+      return {
+        config: defaultConfig,
+        maxInner: 2,
+        path: configPath,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
+
+  function search(startDir: string, stopDir: string | null): ConfigLookup {
+    let dir = startDir;
+    for (;;) {
+      for (const name of CONFIG_NAMES) {
+        const candidate = path.join(dir, name);
+        const raw = readFile(candidate);
+        if (raw !== null) {
+          return load(candidate, raw);
+        }
+      }
+      const parent = path.dirname(dir);
+      if (stopDir === null || dir === stopDir || parent === dir) {
+        return NO_CONFIG;
+      }
+      dir = parent;
+    }
+  }
+
+  return {
+    configFor(filePath, stopDir) {
+      const startDir = path.dirname(filePath);
+      const key = startDir + "\u0000" + (stopDir ?? "");
+      let found = cache.get(key);
+      if (!found) {
+        found = search(startDir, stopDir);
+        cache.set(key, found);
+      }
+      return found;
+    },
+    invalidate() {
+      cache.clear();
+    },
+  };
+}

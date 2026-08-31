@@ -77,6 +77,19 @@
           "default": "off",
           "description": "Traces the communication between VS Code and the clj-pulse language server."
         },
+        "clojurePulse.formatting.engine": {
+          "type": "string",
+          "enum": [
+            "cljfmt",
+            "structural"
+          ],
+          "default": "cljfmt",
+          "enumDescriptions": [
+            "Community formatting via cljfmt: byte-identical to the cljfmt CLI (bundled cljfmt 0.16.5), honoring the nearest .cljfmt.edn / cljfmt.edn up the directory tree. Falls back to the structural rule on unbalanced mid-edit code.",
+            "The fixed structural rule: two spaces inside symbol-headed lists, alignment to the first element elsewhere. Format Document with this engine only re-indents - it never removes whitespace, sorts namespaces, or otherwise rewrites code."
+          ],
+          "markdownDescription": "Engine for indent-on-Enter and Format Document in Clojure files."
+        },
         "clojurePulse.maintainIndentation": {
           "type": "boolean",
           "default": true,
@@ -630,6 +643,7 @@
     "package": "vsce package"
   },
   "dependencies": {
+    "@abogoyavlensky/cljfmt-js": "https://github.com/abogoyavlensky/cljfmt-js/releases/download/v0.1.0/abogoyavlensky-cljfmt-js-0.1.0.tgz",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {

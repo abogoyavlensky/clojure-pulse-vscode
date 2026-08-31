@@ -22,8 +22,18 @@ import {
   IgnoredFormDecorator,
 } from "./ignoredForms";
 import { createFormHighlighter } from "./formHighlight";
-import { indentColumnAt } from "./indent";
 import { planShift } from "./maintainIndent";
+import {
+  defaultConfig,
+  readConfig as readCljfmtConfig,
+  reformatString,
+} from "@abogoyavlensky/cljfmt-js";
+import { createCljfmtEngine } from "./fmt/cljfmtEngine";
+import { ConfigStatus, createConfigStatus } from "./fmt/configStatus";
+import { createConfigDiscovery } from "./fmt/configDiscovery";
+import { FormattingEngine } from "./fmt/engine";
+import { createNsContextCache } from "./fmt/nsContext";
+import { structuralEngine } from "./fmt/structuralEngine";
 import {
   ConnectCancelledError,
   EvalOptions,
@@ -93,6 +103,8 @@ let replRegistry: ReplRegistry | undefined;
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
+  /** Rendered cljfmt-config warning, `undefined` while hidden. */
+  cljfmtConfigStatus: () => { text: string; tooltip: string } | undefined;
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
   replForm: ReplFormPanel;
@@ -258,11 +270,12 @@ export async function activate(
   );
 
   setupIgnoredFormDimming(context);
+  setupFormatting(context);
   setupMaintainIndentation(context);
   const repl = setupRepl(context);
 
   await start();
-  return repl;
+  return { ...repl, cljfmtConfigStatus: () => cljfmtConfigStatus?.current() };
 }
 
 export async function deactivate(): Promise<void> {
@@ -531,7 +544,9 @@ async function restart(): Promise<void> {
  * the status bar item, and every REPL command. Fully independent of the
  * clj-pulse language server.
  */
-function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
+function setupRepl(
+  context: vscode.ExtensionContext,
+): Omit<ExtensionApi, "cljfmtConfigStatus"> {
   const inlineResults = new InlineResultsManager();
   const testStatus = new TestStatusManager({
     passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
@@ -2071,6 +2086,161 @@ function isClojure(doc: vscode.TextDocument): boolean {
   return doc.languageId === "clojure";
 }
 
+/** Config discovery + ns-context caches behind the cljfmt engine; created
+ *  in `setupFormatting`. */
+const configDiscovery = createConfigDiscovery();
+const nsContexts = createNsContextCache();
+let cljfmtConfigStatus: ConfigStatus | undefined;
+
+/** The engine the current settings and the document's config call for. */
+function engineFor(doc: vscode.TextDocument): FormattingEngine {
+  const kind = vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<string>("formatting.engine", "cljfmt");
+  if (kind === "structural") {
+    cljfmtConfigStatus?.report(undefined);
+    return structuralEngine;
+  }
+  // Only real files have a directory to discover a config from; untitled
+  // buffers format with the defaults.
+  const lookup =
+    doc.uri.scheme === "file"
+      ? configDiscovery.configFor(
+          doc.uri.fsPath,
+          vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath ?? null,
+        )
+      : undefined;
+  cljfmtConfigStatus?.report(lookup);
+  // Deriving the ns context parses the whole buffer, which throws on
+  // unbalanced mid-edit text — the engine still works without a context.
+  let nsContext;
+  try {
+    nsContext = nsContexts.contextFor(doc.uri.toString(), doc.version, () =>
+      doc.getText(),
+    );
+  } catch {
+    nsContext = undefined;
+  }
+  return createCljfmtEngine(lookup ?? { config: defaultConfig, maxInner: 2 }, nsContext);
+}
+
+/** Maps engine edits onto TextEdits (`null` — broken buffer — means none). */
+function toTextEdits(
+  doc: vscode.TextDocument,
+  edits: import("./fmt/engine").FormatEdit[] | null,
+): vscode.TextEdit[] {
+  if (edits === null) {
+    return [];
+  }
+  return edits.map((edit) => {
+    if (edit.kind === "line") {
+      const current = /^ */.exec(doc.lineAt(edit.line).text)![0].length;
+      return vscode.TextEdit.replace(
+        new vscode.Range(edit.line, 0, edit.line, current),
+        " ".repeat(edit.indent),
+      );
+    }
+    return vscode.TextEdit.replace(
+      new vscode.Range(
+        doc.positionAt(edit.startOffset),
+        doc.positionAt(edit.endOffset),
+      ),
+      edit.text,
+    );
+  });
+}
+
+function setupFormatting(context: vscode.ExtensionContext): void {
+  cljfmtConfigStatus = createConfigStatus();
+  context.subscriptions.push(
+    cljfmtConfigStatus,
+    vscode.commands.registerCommand("clojurePulse.openCljfmtConfig", async () => {
+      const target = cljfmtConfigStatus?.target();
+      if (target !== undefined) {
+        await vscode.window.showTextDocument(
+          await vscode.workspace.openTextDocument(target),
+        );
+      }
+    }),
+    vscode.languages.registerDocumentFormattingEditProvider("clojure", {
+      provideDocumentFormattingEdits(doc) {
+        return toTextEdits(doc, engineFor(doc).formatDocument(doc.getText()));
+      },
+    }),
+    vscode.languages.registerDocumentRangeFormattingEditProvider("clojure", {
+      provideDocumentRangeFormattingEdits(doc, range) {
+        // A selection ending at column 0 of the next line means "through
+        // the previous line", not that line itself.
+        const endLine =
+          range.end.character === 0 && range.end.line > range.start.line
+            ? range.end.line - 1
+            : range.end.line;
+        return toTextEdits(
+          doc,
+          engineFor(doc).formatRange(doc.getText(), range.start.line, endLine),
+        );
+      },
+    }),
+  );
+  const watcher = vscode.workspace.createFileSystemWatcher(
+    "**/{.cljfmt.edn,cljfmt.edn}",
+  );
+  watcher.onDidCreate(() => configDiscovery.invalidate());
+  watcher.onDidChange(() => configDiscovery.invalidate());
+  watcher.onDidDelete(() => configDiscovery.invalidate());
+  context.subscriptions.push(
+    watcher,
+    // The watcher only sees files under workspace folders; saving a config
+    // in the editor covers configs of files opened from anywhere else.
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      const name = doc.uri.path.split("/").pop();
+      if (name !== ".cljfmt.edn" && name !== "cljfmt.edn") {
+        return;
+      }
+      configDiscovery.invalidate();
+      // The save that breaks a config is an event — one warning, right
+      // now — and the status item must track the save immediately, not
+      // wait for the next format to run a lookup.
+      const cljfmtEngineActive =
+        vscode.workspace
+          .getConfiguration("clojurePulse")
+          .get<string>("formatting.engine", "cljfmt") === "cljfmt";
+      try {
+        readCljfmtConfig(doc.getText());
+        if (cljfmtConfigStatus?.target() === doc.uri.fsPath) {
+          cljfmtConfigStatus.report(undefined);
+        }
+      } catch (e) {
+        if (!cljfmtEngineActive) {
+          return;
+        }
+        const message = e instanceof Error ? e.message : String(e);
+        void vscode.window.showWarningMessage(
+          `${name}: ${message} - formatting uses the defaults until it parses.`,
+        );
+        cljfmtConfigStatus?.report({
+          config: defaultConfig,
+          maxInner: 2,
+          path: doc.uri.fsPath,
+          error: message,
+        });
+      }
+    }),
+    vscode.workspace.onDidCloseTextDocument((doc) =>
+      nsContexts.drop(doc.uri.toString()),
+    ),
+  );
+  // The first cljfmt-js call pays a ~1s JIT warm-up; spend it off the
+  // activation path so the first Enter doesn't stall.
+  setTimeout(() => {
+    try {
+      reformatString("(warm up)");
+    } catch {
+      // Warming is best-effort.
+    }
+  }, 0);
+}
+
 /**
  * Enter, owned by the extension for Clojure (bound in package.json): inserts
  * the newline *and* the structural indent as one atomic edit, so the cursor
@@ -2087,6 +2257,7 @@ async function insertStructuralNewline(): Promise<void> {
   }
   const doc = editor.document;
   const text = doc.getText();
+  const engine = engineFor(doc);
   const edits = [...editor.selections]
     .sort((a, b) => a.start.compareTo(b.start))
     .map((sel) => {
@@ -2100,7 +2271,7 @@ async function insertStructuralNewline(): Promise<void> {
       }
       return {
         range: new vscode.Range(sel.start, new vscode.Position(sel.end.line, wsEnd)),
-        indent: indentColumnAt(text, doc.offsetAt(sel.start)) ?? 0,
+        indent: engine.indentAt(text, doc.offsetAt(sel.start)) ?? 0,
       };
     });
 
