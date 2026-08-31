@@ -15,7 +15,7 @@ import {
 } from "./projects";
 import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
-import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
+import { createStatusBar, LintStatus, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
 import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
 import {
@@ -95,6 +95,10 @@ let outputChannel: vscode.OutputChannel | undefined;
 let statusBar: StatusBar | undefined;
 let stateListener: vscode.Disposable | undefined;
 let librariesChangedListener: vscode.Disposable | undefined;
+let lintStatusListener: vscode.Disposable | undefined;
+/** The last `clojurePulse/lintStatus` payload, replayed on every status
+ *  repaint. Cleared with the client so a restart cannot show a stale engine. */
+let lintStatus: LintStatus | undefined;
 let externalLibraries: ExternalLibrariesProvider | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -482,11 +486,15 @@ async function start(): Promise<void> {
   const newClient = createClient(resolution, outputChannel!, serverConfig());
   client = newClient;
 
-  stateListener = newClient.onDidChangeState((event) => {
-    statusBar?.update(toServerStatus(event.newState), {
+  const repaintStatus = (status: ServerStatus) =>
+    statusBar?.update(status, {
       serverInfo: newClient.initializeResult?.serverInfo,
       command: resolution.command,
+      lint: lintStatus,
     });
+
+  stateListener = newClient.onDidChangeState((event) => {
+    repaintStatus(toServerStatus(event.newState));
     // A crashed server can never report "no longer resolving": a stop of any
     // kind closes the view's classpath progress bar.
     if (event.newState === State.Stopped) {
@@ -500,6 +508,18 @@ async function start(): Promise<void> {
   librariesChangedListener = newClient.onNotification(
     "clojurePulse/librariesChanged",
     () => externalLibraries?.refresh(),
+  );
+
+  // Which lint engines the server has live, and whether it is warming
+  // clj-kondo's dependency cache. Informational only: it adds a tooltip line
+  // and never changes the item's state, since none of it means the server is
+  // unavailable. Older servers simply never send this.
+  lintStatusListener = newClient.onNotification(
+    "clojurePulse/lintStatus",
+    (status: LintStatus) => {
+      lintStatus = status;
+      repaintStatus(toServerStatus(newClient.state));
+    },
   );
 
   // Do not await: a failed spawn should surface as an error, not block (or
@@ -523,6 +543,9 @@ async function start(): Promise<void> {
         stateListener = undefined;
         librariesChangedListener?.dispose();
         librariesChangedListener = undefined;
+        lintStatusListener?.dispose();
+        lintStatusListener = undefined;
+        lintStatus = undefined;
         client = undefined;
         statusBar?.update("error", { message: "failed to start the language server" });
       }
@@ -545,6 +568,9 @@ async function stop(): Promise<void> {
   stateListener = undefined;
   librariesChangedListener?.dispose();
   librariesChangedListener = undefined;
+  lintStatusListener?.dispose();
+  lintStatusListener = undefined;
+  lintStatus = undefined;
   const current = client;
   client = undefined;
   // No client, no resolution to wait for: close the view progress bar.
