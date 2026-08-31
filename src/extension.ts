@@ -6,6 +6,7 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
+import { configuredValue } from "./configValue";
 import {
   parseProjects,
   ProjectNodeInfo,
@@ -437,12 +438,20 @@ function projectsServerConfig(): ReturnType<typeof toServerConfig> {
   return toServerConfig(entries);
 }
 
-/** The `clojurePulse.kondo.*` settings in the shape the server reads. */
-function kondoServerConfig(): { enabled: boolean; path: string } {
-  const config = vscode.workspace.getConfiguration("clojurePulse.kondo");
+/**
+ * The `clojurePulse.kondo.*` settings in the shape the server reads.
+ *
+ * Only values the user actually set are included. The server merges this
+ * editor layer over `.clj-pulse/config.edn`, so sending our contributed
+ * defaults would silently override a project that configured `:kondo` there.
+ */
+function kondoServerConfig(): { enabled?: boolean; path?: string } {
+  const config = vscode.workspace.getConfiguration("clojurePulse");
+  const enabled = configuredValue<boolean>(config.inspect<boolean>("kondo.enabled"));
+  const path = configuredValue<string>(config.inspect<string>("kondo.path"));
   return {
-    enabled: config.get<boolean>("enabled", true),
-    path: config.get<string>("path", "clj-kondo"),
+    ...(enabled === undefined ? {} : { enabled }),
+    ...(path === undefined ? {} : { path }),
   };
 }
 

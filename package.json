@@ -254,13 +254,11 @@
         "clojurePulse.kondo.enabled": {
           "type": "boolean",
           "default": true,
-          "scope": "resource",
           "markdownDescription": "Use [clj-kondo](https://github.com/clj-kondo/clj-kondo) for diagnostics when the binary is found. Its findings are published alongside the server's own lints and marked `clj-kondo`, and your `.clj-kondo/config.edn` applies as usual. When the binary is missing this changes nothing; set it to `false` to stay on the built-in lints only."
         },
         "clojurePulse.kondo.path": {
           "type": "string",
           "default": "clj-kondo",
-          "scope": "resource",
           "markdownDescription": "The `clj-kondo` command. A bare name is resolved from `PATH`; use an absolute path when the binary lives somewhere `PATH` does not reach."
         }
       }
