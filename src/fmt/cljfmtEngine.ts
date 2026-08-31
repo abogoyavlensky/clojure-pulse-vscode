@@ -224,20 +224,30 @@ export function createCljfmtEngine(
           }
           rangeEnd = nl + 1;
         }
-        const hit = topLevelSpans(text).filter(
-          (sp) => sp.start < rangeEnd && sp.end > rangeStart,
-        );
+        const spans = topLevelSpans(text);
+        const hit = spans.filter((sp) => sp.start < rangeEnd && sp.end > rangeStart);
         if (hit.length === 0) {
           return [];
         }
+        // A reader prefix glued to the opener (`#_`, `'`, `#?`, `@`, …) is
+        // part of the form and shifts its inner columns — extend the slice
+        // back over the contiguous non-whitespace run, stopping at the
+        // previous span or the line start. (Space-separated prefixes like
+        // `^:private (…)` are not recovered; Format Document handles those.)
+        let formStart = hit[0].start;
+        const lineStart = text.lastIndexOf("\n", formStart - 1) + 1;
+        const prevSpan = spans.filter((sp) => sp.end <= hit[0].start).pop();
+        const backStop = Math.max(lineStart, prevSpan ? prevSpan.end : 0);
+        while (formStart > backStop && !" \t,".includes(text[formStart - 1])) {
+          formStart--;
+        }
         // cljfmt never reindents the first line of its input (its pass
-        // rewrites whitespace after newlines), so the opener's leading
+        // rewrites whitespace after newlines), so the form's leading
         // indentation is excluded from the reformatted slice but included
         // in the replaced range — a misindented top-level opener moves to
         // column 0 exactly as whole-file cljfmt would move it.
-        const sliceStart = hit[0].start;
+        const sliceStart = formStart;
         let replaceStart = sliceStart;
-        const lineStart = text.lastIndexOf("\n", sliceStart - 1) + 1;
         if (/^[ \t]*$/.test(text.slice(lineStart, sliceStart))) {
           replaceStart = lineStart;
         }

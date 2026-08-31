@@ -89,6 +89,12 @@ suite("Format Document / Selection (integration)", () => {
     assert.strictEqual(text, "(a\n b)\n;; note\n(c\n d)");
   });
 
+  test("reader prefixes stay part of the range-formatted form", async () => {
+    const doc = await openClojureDoc("(x)\n#_(a\nb)\n'(c\nd)");
+    const text = await apply(doc, await formatRange(doc, new vscode.Range(1, 0, 4, 2)));
+    assert.strictEqual(text, "(x)\n#_(a\n   b)\n'(c\n  d)");
+  });
+
   test("a selection touching no top-level form yields no edits", async () => {
     const doc = await openClojureDoc("(a)\n\n;; only comment\n(b)");
     const edits = await formatRange(doc, new vscode.Range(1, 0, 2, 5));
