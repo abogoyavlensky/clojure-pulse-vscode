@@ -64,6 +64,10 @@ suite("cljfmtEngine.indentAt", () => {
 
   test("text after the cursor becomes the new line's tail", () => {
     assert.strictEqual(indentAt("(foo bar baz)", 8), 5);
+    // Tails starting with characters that are legal *inside* symbols must
+    // not fuse with the placeholder into one token.
+    assert.strictEqual(indentAt("(foo bar 'baz)", 8), 5);
+    assert.strictEqual(indentAt('(foo bar #"re")', 8), 5);
   });
 
   test("unbalanced text falls back to the structural rule", () => {

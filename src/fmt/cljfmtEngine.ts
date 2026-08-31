@@ -130,7 +130,11 @@ export function createCljfmtEngine(
       placeholder = `__cljp${n}__`;
     }
     const before = text.slice(win.start, offset);
-    const probe = before + "\n" + placeholder + text.slice(tailStart, win.end);
+    // The space keeps the placeholder a token of its own — `'`, `#` and
+    // most symbol characters would otherwise fuse it with the tail's first
+    // token and hand cljfmt a different form.
+    const probe =
+      before + "\n" + placeholder + " " + text.slice(tailStart, win.end);
     const out = reformatString(probe, mergeConfig(lookup.config, PROBE_OVERRIDES), nsContext);
     // Indentation-only reformatting preserves line structure, so the
     // placeholder's line index is known instead of searched for.
