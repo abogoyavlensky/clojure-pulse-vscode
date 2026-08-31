@@ -2070,6 +2070,14 @@ function setupFormatting(context: vscode.ExtensionContext): void {
   watcher.onDidDelete(() => configDiscovery.invalidate());
   context.subscriptions.push(
     watcher,
+    // The watcher only sees files under workspace folders; saving a config
+    // in the editor covers configs of files opened from anywhere else.
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      const name = doc.uri.path.split("/").pop();
+      if (name === ".cljfmt.edn" || name === "cljfmt.edn") {
+        configDiscovery.invalidate();
+      }
+    }),
     vscode.workspace.onDidCloseTextDocument((doc) =>
       nsContexts.drop(doc.uri.toString()),
     ),
