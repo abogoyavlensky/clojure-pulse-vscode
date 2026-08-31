@@ -23,8 +23,13 @@ import {
 } from "./ignoredForms";
 import { createFormHighlighter } from "./formHighlight";
 import { planShift } from "./maintainIndent";
-import { defaultConfig, reformatString } from "@abogoyavlensky/cljfmt-js";
+import {
+  defaultConfig,
+  readConfig as readCljfmtConfig,
+  reformatString,
+} from "@abogoyavlensky/cljfmt-js";
 import { createCljfmtEngine } from "./fmt/cljfmtEngine";
+import { ConfigStatus, createConfigStatus } from "./fmt/configStatus";
 import { createConfigDiscovery } from "./fmt/configDiscovery";
 import { FormattingEngine } from "./fmt/engine";
 import { createNsContextCache } from "./fmt/nsContext";
@@ -98,6 +103,8 @@ let replRegistry: ReplRegistry | undefined;
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
+  /** Rendered cljfmt-config warning, `undefined` while hidden. */
+  cljfmtConfigStatus: () => { text: string; tooltip: string } | undefined;
   repls: ReplRegistry;
   inlineResults: InlineResultsManager;
   replForm: ReplFormPanel;
@@ -268,7 +275,7 @@ export async function activate(
   const repl = setupRepl(context);
 
   await start();
-  return repl;
+  return { ...repl, cljfmtConfigStatus: () => cljfmtConfigStatus?.current() };
 }
 
 export async function deactivate(): Promise<void> {
@@ -537,7 +544,9 @@ async function restart(): Promise<void> {
  * the status bar item, and every REPL command. Fully independent of the
  * clj-pulse language server.
  */
-function setupRepl(context: vscode.ExtensionContext): ExtensionApi {
+function setupRepl(
+  context: vscode.ExtensionContext,
+): Omit<ExtensionApi, "cljfmtConfigStatus"> {
   const inlineResults = new InlineResultsManager();
   const testStatus = new TestStatusManager({
     passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
@@ -2030,6 +2039,7 @@ function isClojure(doc: vscode.TextDocument): boolean {
  *  in `setupFormatting`. */
 const configDiscovery = createConfigDiscovery();
 const nsContexts = createNsContextCache();
+let cljfmtConfigStatus: ConfigStatus | undefined;
 
 /** The engine the current settings and the document's config call for. */
 function engineFor(doc: vscode.TextDocument): FormattingEngine {
@@ -2037,6 +2047,7 @@ function engineFor(doc: vscode.TextDocument): FormattingEngine {
     .getConfiguration("clojurePulse")
     .get<string>("formatting.engine", "cljfmt");
   if (kind === "structural") {
+    cljfmtConfigStatus?.report(undefined);
     return structuralEngine;
   }
   // Only real files have a directory to discover a config from; untitled
@@ -2047,7 +2058,8 @@ function engineFor(doc: vscode.TextDocument): FormattingEngine {
           doc.uri.fsPath,
           vscode.workspace.getWorkspaceFolder(doc.uri)?.uri.fsPath ?? null,
         )
-      : { config: defaultConfig, maxInner: 2 };
+      : undefined;
+  cljfmtConfigStatus?.report(lookup);
   // Deriving the ns context parses the whole buffer, which throws on
   // unbalanced mid-edit text — the engine still works without a context.
   let nsContext;
@@ -2058,7 +2070,7 @@ function engineFor(doc: vscode.TextDocument): FormattingEngine {
   } catch {
     nsContext = undefined;
   }
-  return createCljfmtEngine(lookup, nsContext);
+  return createCljfmtEngine(lookup ?? { config: defaultConfig, maxInner: 2 }, nsContext);
 }
 
 /** Maps engine edits onto TextEdits (`null` — broken buffer — means none). */
@@ -2088,7 +2100,17 @@ function toTextEdits(
 }
 
 function setupFormatting(context: vscode.ExtensionContext): void {
+  cljfmtConfigStatus = createConfigStatus();
   context.subscriptions.push(
+    cljfmtConfigStatus,
+    vscode.commands.registerCommand("clojurePulse.openCljfmtConfig", async () => {
+      const target = cljfmtConfigStatus?.target();
+      if (target !== undefined) {
+        await vscode.window.showTextDocument(
+          await vscode.workspace.openTextDocument(target),
+        );
+      }
+    }),
     vscode.languages.registerDocumentFormattingEditProvider("clojure", {
       provideDocumentFormattingEdits(doc) {
         return toTextEdits(doc, engineFor(doc).formatDocument(doc.getText()));
@@ -2121,8 +2143,19 @@ function setupFormatting(context: vscode.ExtensionContext): void {
     // in the editor covers configs of files opened from anywhere else.
     vscode.workspace.onDidSaveTextDocument((doc) => {
       const name = doc.uri.path.split("/").pop();
-      if (name === ".cljfmt.edn" || name === "cljfmt.edn") {
-        configDiscovery.invalidate();
+      if (name !== ".cljfmt.edn" && name !== "cljfmt.edn") {
+        return;
+      }
+      configDiscovery.invalidate();
+      // The save that breaks a config is an event — one warning, right
+      // now. The lasting state lives in the status bar item.
+      try {
+        readCljfmtConfig(doc.getText());
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        void vscode.window.showWarningMessage(
+          `${name}: ${message} - formatting uses the defaults until it parses.`,
+        );
       }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) =>
