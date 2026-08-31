@@ -2061,7 +2061,54 @@ function engineFor(doc: vscode.TextDocument): FormattingEngine {
   return createCljfmtEngine(lookup, nsContext);
 }
 
+/** Maps engine edits onto TextEdits (`null` — broken buffer — means none). */
+function toTextEdits(
+  doc: vscode.TextDocument,
+  edits: import("./fmt/engine").FormatEdit[] | null,
+): vscode.TextEdit[] {
+  if (edits === null) {
+    return [];
+  }
+  return edits.map((edit) => {
+    if (edit.kind === "line") {
+      const current = /^ */.exec(doc.lineAt(edit.line).text)![0].length;
+      return vscode.TextEdit.replace(
+        new vscode.Range(edit.line, 0, edit.line, current),
+        " ".repeat(edit.indent),
+      );
+    }
+    return vscode.TextEdit.replace(
+      new vscode.Range(
+        doc.positionAt(edit.startOffset),
+        doc.positionAt(edit.endOffset),
+      ),
+      edit.text,
+    );
+  });
+}
+
 function setupFormatting(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider("clojure", {
+      provideDocumentFormattingEdits(doc) {
+        return toTextEdits(doc, engineFor(doc).formatDocument(doc.getText()));
+      },
+    }),
+    vscode.languages.registerDocumentRangeFormattingEditProvider("clojure", {
+      provideDocumentRangeFormattingEdits(doc, range) {
+        // A selection ending at column 0 of the next line means "through
+        // the previous line", not that line itself.
+        const endLine =
+          range.end.character === 0 && range.end.line > range.start.line
+            ? range.end.line - 1
+            : range.end.line;
+        return toTextEdits(
+          doc,
+          engineFor(doc).formatRange(doc.getText(), range.start.line, endLine),
+        );
+      },
+    }),
+  );
   const watcher = vscode.workspace.createFileSystemWatcher(
     "**/{.cljfmt.edn,cljfmt.edn}",
   );

@@ -96,6 +96,32 @@ export function selectWindow(
   return null;
 }
 
+/** Offset span of one delimited top-level form (`start` = opener token,
+ *  `end` = one past the closer). Comments, strings, `#_` markers and bare
+ *  top-level tokens open no span. */
+export interface TopLevelSpan {
+  start: number;
+  end: number;
+}
+
+/** One scanner pass recording every closed delimited top-level form. */
+export function topLevelSpans(text: string): TopLevelSpan[] {
+  const scanner = new Scanner();
+  const spans: TopLevelSpan[] = [];
+  let open: number | null = null;
+  for (let i = 0; i < text.length; i++) {
+    const prevDepth = scanner.stack.length;
+    scanner.advance(text[i], text[i + 1], i);
+    if (prevDepth === 0 && scanner.stack.length === 1) {
+      open = scanner.stack[0].openOffset;
+    } else if (prevDepth === 1 && scanner.stack.length === 0 && open !== null) {
+      spans.push({ start: open, end: i + 1 });
+      open = null;
+    }
+  }
+  return spans;
+}
+
 function countNewlines(s: string): number {
   let n = 0;
   for (let i = 0; i < s.length; i++) {
@@ -168,12 +194,64 @@ export function createCljfmtEngine(
       }
       return probed ?? structuralEngine.indentAt(text, offset);
     },
-    // Whole-file and range formatting arrive with the format providers.
-    formatDocument() {
-      return null;
+    formatDocument(text) {
+      try {
+        // The full text carries its own ns form — no context needed.
+        const out = reformatString(text, lookup.config);
+        return out === text
+          ? []
+          : [{ kind: "slice", startOffset: 0, endOffset: text.length, text: out }];
+      } catch {
+        return null;
+      }
     },
-    formatRange() {
-      return null;
+    formatRange(text, startLine, endLine) {
+      try {
+        let rangeStart = 0;
+        for (let line = 0; line < startLine; line++) {
+          const nl = text.indexOf("\n", rangeStart);
+          if (nl === -1) {
+            return [];
+          }
+          rangeStart = nl + 1;
+        }
+        let rangeEnd = rangeStart;
+        for (let line = startLine; line <= endLine; line++) {
+          const nl = text.indexOf("\n", rangeEnd);
+          if (nl === -1) {
+            rangeEnd = text.length;
+            break;
+          }
+          rangeEnd = nl + 1;
+        }
+        const hit = topLevelSpans(text).filter(
+          (sp) => sp.start < rangeEnd && sp.end > rangeStart,
+        );
+        if (hit.length === 0) {
+          return [];
+        }
+        // cljfmt never reindents the first line of its input (its pass
+        // rewrites whitespace after newlines), so the opener's leading
+        // indentation is excluded from the reformatted slice but included
+        // in the replaced range — a misindented top-level opener moves to
+        // column 0 exactly as whole-file cljfmt would move it.
+        const sliceStart = hit[0].start;
+        let replaceStart = sliceStart;
+        const lineStart = text.lastIndexOf("\n", sliceStart - 1) + 1;
+        if (/^[ \t]*$/.test(text.slice(lineStart, sliceStart))) {
+          replaceStart = lineStart;
+        }
+        const sliceEnd = hit[hit.length - 1].end;
+        const slice = text.slice(sliceStart, sliceEnd);
+        // The slice usually lacks the ns form; the document's context
+        // stands in for it.
+        const out = reformatString(slice, lookup.config, nsContext);
+        return out === slice && replaceStart === sliceStart
+          ? []
+          : [{ kind: "slice", startOffset: replaceStart, endOffset: sliceEnd, text: out }];
+      } catch {
+        return null;
+      }
     },
   };
 }
