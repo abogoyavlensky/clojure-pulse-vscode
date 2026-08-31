@@ -619,6 +619,7 @@
     "package": "vsce package"
   },
   "dependencies": {
+    "@abogoyavlensky/cljfmt-js": "https://github.com/abogoyavlensky/cljfmt-js/releases/download/v0.1.0/abogoyavlensky-cljfmt-js-0.1.0.tgz",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
