@@ -295,6 +295,11 @@ a key, pass its name as the command argument in `keybindings.json`:
 }
 ```
 
+**Restart REPL** does both halves in one go, and it is how a configuration
+edited while a REPL is running takes effect: a live REPL keeps the settings it
+started with, and the edit is applied on the way back up. Right-click a running
+row for it, or pick *Restart* from the status-bar REPL menu.
+
 Each REPL streams into its own **Output** channel, named `REPL: <name>` — a
 real editor buffer with Clojure highlighting, search, and scrollback. Click a
 row to open it. A configured REPL keeps its channel across disconnects and
@@ -467,6 +472,9 @@ Run these from the Command Palette:
   yet, it opens the form instead.
 - **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
   started.
+- **Clojure Pulse: Restart REPL** — stop a REPL and start it again, applying a
+  configuration edited while it was running. Takes a name as its argument, like
+  Start REPL.
 - **Clojure Pulse: Connect to Running nREPL** — connect one of the configured
   `connect` REPLs, offering to add one when none is configured yet.
 - **Clojure Pulse: Disconnect from nREPL** — disconnect the active REPL.

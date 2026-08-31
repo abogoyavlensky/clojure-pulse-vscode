@@ -4,6 +4,10 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Restart REPL**: one command to stop a REPL and bring it back up, from the
+  Command Palette, a running row's right-click menu, or the status-bar REPL
+  menu. A configuration edited while the REPL was running is applied on the way
+  up.
 - **Bracket highlighting shows the form eval will send**: in Clojure files the
   highlighted pair is now the brackets of the form Evaluate Current Form would
   pick — `(foo)|(bar)` highlights `(foo)`, `(foo | bar)` the enclosing list —

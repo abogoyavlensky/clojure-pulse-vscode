@@ -97,6 +97,7 @@ suite("REPL commands", () => {
       "clojurePulse.disconnectRepl",
       "clojurePulse.startRepl",
       "clojurePulse.stopRepl",
+      "clojurePulse.restartRepl",
       "clojurePulse.addReplConfig",
       "clojurePulse.editReplConfig",
       "clojurePulse.deleteReplConfig",
