@@ -50,6 +50,17 @@ suite("structuralEngine.formatDocument", () => {
     assert.deepStrictEqual(structuralEngine.formatDocument(input), []);
   });
 
+  test("lines anchored to a tab-indented opener are left alone too", () => {
+    // `(bar` sits on a tab line, so its column is a guess (a tab scans as
+    // one unit) — `baz` must not be re-anchored to it. A deeper form opened
+    // on a clean line is trustworthy again.
+    assert.deepStrictEqual(structuralEngine.formatDocument("(foo\n\t(bar\nbaz))"), []);
+    assert.deepStrictEqual(
+      structuralEngine.formatDocument("(foo\n\t(bar\n  (baz\nqux))))"),
+      [{ kind: "line", line: 3, indent: 4 }],
+    );
+  });
+
   test("already-correct input yields no edits", () => {
     assert.deepStrictEqual(
       structuralEngine.formatDocument("(defn f [x]\n  (inc x))"),

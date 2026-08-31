@@ -20,11 +20,14 @@ function frameIndent(top: Frame | undefined): number {
  * `fromLine..=toLine`. The scanner is fed the progressively *rewritten*
  * text, so a line whose opener moved anchors its children to the new column.
  * Untouchable lines — starting inside a string, blank/space-only, or
- * tab-indented (never guess tab width) — are fed unchanged.
+ * tab-indented (never guess tab width) — are fed unchanged. A frame opened
+ * on a tab-indented line has a column the scanner *guessed* (a tab counts as
+ * one unit), so lines anchored to such a frame are left unchanged too.
  */
 function reindentLines(text: string, fromLine: number, toLine: number): FormatEdit[] {
   const scanner = new Scanner();
   const edits: FormatEdit[] = [];
+  const tabLines = new Set<number>();
   let offset = 0;
   let line = 0;
   for (;;) {
@@ -45,8 +48,11 @@ function reindentLines(text: string, fromLine: number, toLine: number): FormatEd
           break;
         }
       }
-      if (!tab && ws < contentEnd) {
-        const desired = frameIndent(scanner.stack[scanner.stack.length - 1]);
+      const top = scanner.stack[scanner.stack.length - 1];
+      if (tab) {
+        tabLines.add(line);
+      } else if (ws < contentEnd && !(top && tabLines.has(top.openLine))) {
+        const desired = frameIndent(top);
         if (desired !== ws) {
           edits.push({ kind: "line", line, indent: desired });
         }
