@@ -2148,14 +2148,31 @@ function setupFormatting(context: vscode.ExtensionContext): void {
       }
       configDiscovery.invalidate();
       // The save that breaks a config is an event — one warning, right
-      // now. The lasting state lives in the status bar item.
+      // now — and the status item must track the save immediately, not
+      // wait for the next format to run a lookup.
+      const cljfmtEngineActive =
+        vscode.workspace
+          .getConfiguration("clojurePulse")
+          .get<string>("formatting.engine", "cljfmt") === "cljfmt";
       try {
         readCljfmtConfig(doc.getText());
+        if (cljfmtConfigStatus?.target() === doc.uri.fsPath) {
+          cljfmtConfigStatus.report(undefined);
+        }
       } catch (e) {
+        if (!cljfmtEngineActive) {
+          return;
+        }
         const message = e instanceof Error ? e.message : String(e);
         void vscode.window.showWarningMessage(
           `${name}: ${message} - formatting uses the defaults until it parses.`,
         );
+        cljfmtConfigStatus?.report({
+          config: defaultConfig,
+          maxInner: 2,
+          path: doc.uri.fsPath,
+          error: message,
+        });
       }
     }),
     vscode.workspace.onDidCloseTextDocument((doc) =>

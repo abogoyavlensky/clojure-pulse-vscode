@@ -59,11 +59,25 @@ suite("cljfmt config status (integration)", () => {
       ),
     );
     await configDoc.save();
+    // The fixing save alone hides the item — no format call needed.
+    assert.strictEqual(api.cljfmtConfigStatus(), undefined);
 
     fs.writeFileSync(path.join(dir, "three.clj"), "(foo   bar)");
     const after = await enterIn(path.join(dir, "three.clj"));
     assert.strictEqual(after.document.getText(), "(foo\n  bar)");
     assert.strictEqual(api.cljfmtConfigStatus(), undefined);
+  });
+
+  test("a breaking save shows the item without waiting for a format", async () => {
+    const configDoc = await vscode.workspace.openTextDocument(configPath);
+    const editor = await vscode.window.showTextDocument(configDoc);
+    await editor.edit((b) =>
+      b.replace(new vscode.Range(0, 0, configDoc.lineCount, 0), "{oops"),
+    );
+    await configDoc.save();
+    const view = api.cljfmtConfigStatus();
+    assert.ok(view, "status item should appear on the breaking save");
+    assert.ok(view.tooltip.includes(configPath), view.tooltip);
   });
 
   test("the structural engine never shows the item", async () => {
