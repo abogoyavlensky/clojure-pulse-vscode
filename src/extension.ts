@@ -674,6 +674,9 @@ function setupRepl(
     vscode.commands.registerCommand("clojurePulse.stopRepl", (arg?: unknown) =>
       stopRepl(registry, arg),
     ),
+    vscode.commands.registerCommand("clojurePulse.restartRepl", (arg?: unknown) =>
+      restartRepl(registry, arg),
+    ),
     vscode.commands.registerCommand("clojurePulse.connectRepl", (arg?: unknown) =>
       connectRepl(registry, arg),
     ),
@@ -920,15 +923,55 @@ async function stopRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
   }
 }
 
-async function stopSession(session: ReplSessionLike): Promise<void> {
+/** Stops a session, reporting a failure once. Returns whether it really
+ *  stopped, so a caller with more to do — restart — can give up quietly. */
+async function stopSession(session: ReplSessionLike): Promise<boolean> {
   try {
     await session.stop();
+    return true;
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err);
     void vscode.window.showErrorMessage(
       `Clojure Pulse: "${session.name}" could not be stopped — ${reason}`,
     );
+    return false;
   }
+}
+
+/**
+ * Stops a REPL and starts it again — the one action for "apply what I just
+ * edited". Without an argument it restarts the active REPL, which is what the
+ * status-bar menu and a bare palette invocation mean.
+ *
+ * The session is re-fetched by name after the stop: an edit made while the
+ * REPL was running is held as pending by the registry and applied the moment
+ * the session reaches `stopped`, which swaps in a *new* session object.
+ * Starting the one we stopped would bring the old configuration back up.
+ */
+async function restartRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
+  const session = await sessionFor(registry, arg, async () => {
+    if (registry.active) {
+      return registry.active.name;
+    }
+    return pickSession(
+      registry,
+      (candidate) => candidate.state !== "stopped",
+      "Restart a REPL",
+      "No REPL is running.",
+    );
+  });
+  if (!session) {
+    return;
+  }
+  const name = session.name;
+  if (!(await stopSession(session))) {
+    return; // the server is still up; stopSession has already said so
+  }
+  const fresh = registry.get(name);
+  if (!fresh) {
+    return; // the configuration was deleted while we were stopping
+  }
+  await runSessionStart(fresh);
 }
 
 /** A connect quick-pick row: a REPL, or the offer to configure one. */
@@ -1956,7 +1999,10 @@ async function replMenu(registry: ReplRegistry, form: ReplFormPanel): Promise<vo
         : []),
       { label: "$(add) Add REPL configuration", action: "add" },
       ...(active
-        ? [{ label: "$(debug-disconnect) Disconnect", action: "disconnect" }]
+        ? [
+            { label: "$(debug-restart) Restart", action: "restart" },
+            { label: "$(debug-disconnect) Disconnect", action: "disconnect" },
+          ]
         : []),
     ],
     { placeHolder: active ? `nREPL actions — active: ${active.name}` : "nREPL actions" },
@@ -1970,6 +2016,11 @@ async function replMenu(registry: ReplRegistry, form: ReplFormPanel): Promise<vo
       break;
     case "add":
       form.open({ kind: "add" });
+      break;
+    case "restart":
+      if (active) {
+        await restartRepl(registry, active.name);
+      }
       break;
     case "disconnect":
       if (active) {

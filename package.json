@@ -338,6 +338,12 @@
         "icon": "$(debug-stop)"
       },
       {
+        "command": "clojurePulse.restartRepl",
+        "title": "Restart REPL",
+        "category": "Clojure Pulse",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "clojurePulse.addReplConfig",
         "title": "Add REPL Configuration",
         "category": "Clojure Pulse",
@@ -520,6 +526,11 @@
           "command": "clojurePulse.editReplConfig",
           "when": "view == clojurePulse.replManager",
           "group": "inline@3"
+        },
+        {
+          "command": "clojurePulse.restartRepl",
+          "when": "view == clojurePulse.replManager && viewItem =~ /^(replCreateRunning|replConnectConnected)$/",
+          "group": "0_run@1"
         },
         {
           "command": "clojurePulse.showReplOutput",
