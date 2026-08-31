@@ -1,6 +1,8 @@
-// Structural indent computation for Clojure — the client-side mirror of
-// clj-pulse's `handlers/indent.rs`. Both implement the identical rule and
-// scanner algorithm (Clojure Sublimed's default):
+// Structural indent computation for Clojure — the fixed rule behind the
+// "structural" formatting engine, and the fallback + window-finder for the
+// cljfmt engine (`src/fmt/`). clj-pulse's `handlers/indent.rs` implements
+// the same rule for other editors, but the two are independent and may
+// drift. The rule (Clojure Sublimed's default):
 //
 //   indent = (column just after the open delimiter) + offset
 //   offset = 1  iff the delimiter is `(` / `#(` and the first form inside is

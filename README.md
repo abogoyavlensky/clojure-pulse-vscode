@@ -41,15 +41,18 @@ do not need any other Clojure extension.
   classpath for your project type (e.g. `clojure -Spath` for deps.edn). In a
   multi-project workspace the tree is grouped by project, with a per-project
   classpath toggle — see [Monorepos](#monorepos).
-- **Indent on Enter** — pressing Enter indents the new line to the
-  structurally correct column (vectors/maps align to the first element,
-  symbol-headed lists get a 2-space body). Handled client-side: the extension
-  owns the Enter key for Clojure and inserts newline + indent as one atomic
-  edit, so the cursor lands exactly right with no visible hop. clj-pulse still
-  serves `textDocument/onTypeFormatting` for other editors; the extension sets
-  `editor.formatOnType` to `false` for Clojure so the two never both fire.
-  Enter falls through to VS Code whenever a suggest widget, snippet, rename
-  box, or code-action menu is active.
+- **cljfmt formatting** — indent-on-Enter and Format Document produce output
+  byte-identical to the [cljfmt](https://github.com/weavejester/cljfmt) CLI
+  (bundled cljfmt 0.16.5, compiled to JavaScript — no JVM, no binary on your
+  PATH), honoring the nearest `.cljfmt.edn` / `cljfmt.edn` up the directory
+  tree. See [Formatting](#formatting).
+- **Indent on Enter** — pressing Enter indents the new line to the correct
+  column, atomically. The extension owns the Enter key for Clojure and inserts
+  newline + indent as one edit, so the cursor lands exactly right with no
+  visible hop. clj-pulse still serves `textDocument/onTypeFormatting` for
+  other editors; the extension sets `editor.formatOnType` to `false` for
+  Clojure so the two never both fire. Enter falls through to VS Code whenever
+  a suggest widget, snippet, rename box, or code-action menu is active.
 - **Maintained relative indentation** (Cursive-style) — when an edit moves
   code that later lines of a multiline form are anchored to, those lines
   follow automatically: add spaces before `(defn`, press Enter right before a
@@ -128,6 +131,7 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.server.path` | `"clj-pulse"` | Path to the server binary. A bare name is resolved from `PATH`; an absolute or relative path is used as-is. |
 | `clojurePulse.server.args` | `[]` | Extra arguments passed to the server on startup. |
 | `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
+| `clojurePulse.formatting.engine` | `"cljfmt"` | `"cljfmt"` (community rules, `.cljfmt.edn`-aware) or `"structural"` (the fixed 2-space rule) — see [Formatting](#formatting). |
 | `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
 | `clojurePulse.replConfigurations` | `[]` | The REPLs listed in the sidebar — see [REPL](#repl). |
 | `clojurePulse.projects` | `[]` | Per-project classpath overrides for multi-project workspaces — see [Monorepos](#monorepos). |
@@ -145,6 +149,37 @@ both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
 Clojure Pulse indents and shifts, Parinfer places brackets. If you prefer
 Parinfer (or anything else) to drive the Enter key, remove or rebind the
 `clojurePulse.newline` keybinding in your Keyboard Shortcuts.
+
+## Formatting
+
+Two engines sit behind `clojurePulse.formatting.engine`, driving both
+indent-on-Enter and Format Document / Format Selection:
+
+- **`cljfmt`** (default) formats exactly like the cljfmt CLI — the extension
+  bundles cljfmt 0.16.5 compiled to JavaScript
+  ([cljfmt-js](https://github.com/abogoyavlensky/cljfmt-js)), so the output is
+  byte-identical to `cljfmt fix` with the same configuration and nothing needs
+  to be installed. For each file the nearest `.cljfmt.edn` or `cljfmt.edn` up
+  the directory tree (stopping at the workspace folder) applies, so monorepo
+  sub-projects can carry their own rules. `.cljfmt.clj` is not read — it is
+  arbitrary Clojure code, which cljfmt itself only evaluates behind an opt-in
+  flag.
+- **`structural`** is the fixed rule this extension started with: two spaces
+  inside symbol-headed lists, alignment to the first element everywhere else,
+  no configuration. With this engine Format Document only **re-indents** —
+  it never strips whitespace, sorts `ns` references, or otherwise rewrites
+  code.
+
+On Enter the cljfmt engine reformats only a small window around the cursor,
+so big files and giant `comment` blocks stay fast; when the code around the
+cursor is too unbalanced to parse mid-edit, the structural rule answers
+instead — Enter never fails. Format-on-save is VS Code's own switch: set
+`"editor.formatOnSave": true` under `"[clojure]"` if you want it.
+
+A config file that fails to parse never breaks formatting — the defaults
+apply, a warning appears once when the breaking save happens, and a
+`$(warning) cljfmt config` status-bar item stays visible (click it to open
+the file) until the config parses again.
 
 ## Monorepos
 
