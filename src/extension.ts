@@ -437,6 +437,27 @@ function projectsServerConfig(): ReturnType<typeof toServerConfig> {
   return toServerConfig(entries);
 }
 
+/** The `clojurePulse.kondo.*` settings in the shape the server reads. */
+function kondoServerConfig(): { enabled: boolean; path: string } {
+  const config = vscode.workspace.getConfiguration("clojurePulse.kondo");
+  return {
+    enabled: config.get<boolean>("enabled", true),
+    path: config.get<string>("path", "clj-kondo"),
+  };
+}
+
+/**
+ * The complete editor configuration layer the server stores.
+ *
+ * Always sent whole. The server *replaces* its editor layer on every push, so
+ * a payload carrying only the key that changed would erase the other one.
+ */
+function serverConfig(): ReturnType<typeof toServerConfig> & {
+  kondo: ReturnType<typeof kondoServerConfig>;
+} {
+  return { ...projectsServerConfig(), kondo: kondoServerConfig() };
+}
+
 async function start(): Promise<void> {
   const resolution = resolveServerPath(readConfig());
 
@@ -449,7 +470,7 @@ async function start(): Promise<void> {
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
   statusBar?.update("starting");
-  const newClient = createClient(resolution, outputChannel!, projectsServerConfig());
+  const newClient = createClient(resolution, outputChannel!, serverConfig());
   client = newClient;
 
   stateListener = newClient.onDidChangeState((event) => {
@@ -658,13 +679,17 @@ function setupRepl(
         logCustomCommandWarnings();
         commandsTree.refresh();
       }
-      if (event.affectsConfiguration("clojurePulse.projects")) {
+      if (
+        event.affectsConfiguration("clojurePulse.projects") ||
+        event.affectsConfiguration("clojurePulse.kondo")
+      ) {
         // Pushed explicitly (no `synchronize` section) so the payload is
-        // exactly the `{clojurePulse: {projects: [...]}}` envelope the server
-        // parses. The server re-resolves projects and re-indexes on its own —
+        // exactly the `{clojurePulse: {projects, kondo}}` envelope the server
+        // parses. Either setting sends both, since the server replaces its
+        // whole editor layer per push. It re-resolves and re-lints on its own:
         // no restart, and the tree refreshes via `librariesChanged`.
         void client?.sendNotification(DidChangeConfigurationNotification.type, {
-          settings: { clojurePulse: projectsServerConfig() },
+          settings: { clojurePulse: serverConfig() },
         });
       }
     }),
