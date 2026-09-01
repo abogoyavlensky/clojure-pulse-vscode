@@ -2,7 +2,7 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
-## [Unreleased]
+## [0.4.0]
 
 - **clj-kondo diagnostics**: with a `clj-kondo` binary on your `PATH`, its full
   linter set is published alongside the server's own lints, marked `clj-kondo`
