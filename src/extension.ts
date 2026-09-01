@@ -6,6 +6,7 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
+import { configuredValue } from "./configValue";
 import {
   parseProjects,
   ProjectNodeInfo,
@@ -14,7 +15,7 @@ import {
 } from "./projects";
 import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
-import { createStatusBar, ServerStatus, StatusBar } from "./statusBar";
+import { createStatusBar, LintStatus, ServerStatus, StatusBar } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
 import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
 import {
@@ -94,6 +95,10 @@ let outputChannel: vscode.OutputChannel | undefined;
 let statusBar: StatusBar | undefined;
 let stateListener: vscode.Disposable | undefined;
 let librariesChangedListener: vscode.Disposable | undefined;
+let lintStatusListener: vscode.Disposable | undefined;
+/** The last `clojurePulse/lintStatus` payload, replayed on every status
+ *  repaint. Cleared with the client so a restart cannot show a stale engine. */
+let lintStatus: LintStatus | undefined;
 let externalLibraries: ExternalLibrariesProvider | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -437,6 +442,35 @@ function projectsServerConfig(): ReturnType<typeof toServerConfig> {
   return toServerConfig(entries);
 }
 
+/**
+ * The `clojurePulse.kondo.*` settings in the shape the server reads.
+ *
+ * Only values the user actually set are included. The server merges this
+ * editor layer over `.clj-pulse/config.edn`, so sending our contributed
+ * defaults would silently override a project that configured `:kondo` there.
+ */
+function kondoServerConfig(): { enabled?: boolean; path?: string } {
+  const config = vscode.workspace.getConfiguration("clojurePulse");
+  const enabled = configuredValue<boolean>(config.inspect<boolean>("kondo.enabled"));
+  const path = configuredValue<string>(config.inspect<string>("kondo.path"));
+  return {
+    ...(enabled === undefined ? {} : { enabled }),
+    ...(path === undefined ? {} : { path }),
+  };
+}
+
+/**
+ * The complete editor configuration layer the server stores.
+ *
+ * Always sent whole. The server *replaces* its editor layer on every push, so
+ * a payload carrying only the key that changed would erase the other one.
+ */
+function serverConfig(): ReturnType<typeof toServerConfig> & {
+  kondo: ReturnType<typeof kondoServerConfig>;
+} {
+  return { ...projectsServerConfig(), kondo: kondoServerConfig() };
+}
+
 async function start(): Promise<void> {
   const resolution = resolveServerPath(readConfig());
 
@@ -449,14 +483,18 @@ async function start(): Promise<void> {
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
   statusBar?.update("starting");
-  const newClient = createClient(resolution, outputChannel!, projectsServerConfig());
+  const newClient = createClient(resolution, outputChannel!, serverConfig());
   client = newClient;
 
-  stateListener = newClient.onDidChangeState((event) => {
-    statusBar?.update(toServerStatus(event.newState), {
+  const repaintStatus = (status: ServerStatus) =>
+    statusBar?.update(status, {
       serverInfo: newClient.initializeResult?.serverInfo,
       command: resolution.command,
+      lint: lintStatus,
     });
+
+  stateListener = newClient.onDidChangeState((event) => {
+    repaintStatus(toServerStatus(event.newState));
     // A crashed server can never report "no longer resolving": a stop of any
     // kind closes the view's classpath progress bar.
     if (event.newState === State.Stopped) {
@@ -470,6 +508,18 @@ async function start(): Promise<void> {
   librariesChangedListener = newClient.onNotification(
     "clojurePulse/librariesChanged",
     () => externalLibraries?.refresh(),
+  );
+
+  // Which lint engines the server has live, and whether it is warming
+  // clj-kondo's dependency cache. Informational only: it adds a tooltip line
+  // and never changes the item's state, since none of it means the server is
+  // unavailable. Older servers simply never send this.
+  lintStatusListener = newClient.onNotification(
+    "clojurePulse/lintStatus",
+    (status: LintStatus) => {
+      lintStatus = status;
+      repaintStatus(toServerStatus(newClient.state));
+    },
   );
 
   // Do not await: a failed spawn should surface as an error, not block (or
@@ -493,6 +543,9 @@ async function start(): Promise<void> {
         stateListener = undefined;
         librariesChangedListener?.dispose();
         librariesChangedListener = undefined;
+        lintStatusListener?.dispose();
+        lintStatusListener = undefined;
+        lintStatus = undefined;
         client = undefined;
         statusBar?.update("error", { message: "failed to start the language server" });
       }
@@ -515,6 +568,9 @@ async function stop(): Promise<void> {
   stateListener = undefined;
   librariesChangedListener?.dispose();
   librariesChangedListener = undefined;
+  lintStatusListener?.dispose();
+  lintStatusListener = undefined;
+  lintStatus = undefined;
   const current = client;
   client = undefined;
   // No client, no resolution to wait for: close the view progress bar.
@@ -658,13 +714,17 @@ function setupRepl(
         logCustomCommandWarnings();
         commandsTree.refresh();
       }
-      if (event.affectsConfiguration("clojurePulse.projects")) {
+      if (
+        event.affectsConfiguration("clojurePulse.projects") ||
+        event.affectsConfiguration("clojurePulse.kondo")
+      ) {
         // Pushed explicitly (no `synchronize` section) so the payload is
-        // exactly the `{clojurePulse: {projects: [...]}}` envelope the server
-        // parses. The server re-resolves projects and re-indexes on its own —
+        // exactly the `{clojurePulse: {projects, kondo}}` envelope the server
+        // parses. Either setting sends both, since the server replaces its
+        // whole editor layer per push. It re-resolves and re-lints on its own:
         // no restart, and the tree refreshes via `librariesChanged`.
         void client?.sendNotification(DidChangeConfigurationNotification.type, {
-          settings: { clojurePulse: projectsServerConfig() },
+          settings: { clojurePulse: serverConfig() },
         });
       }
     }),

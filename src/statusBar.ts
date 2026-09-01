@@ -8,12 +8,27 @@ export interface ServerInfo {
   version?: string;
 }
 
+/** Which lint engines the server has live, from `clojurePulse/lintStatus`. */
+export interface LintStatus {
+  engine: "kondo+native" | "native";
+  /** The clj-kondo version, when the server found one. */
+  version?: string;
+  /** Whether a clj-kondo dependency-cache scan is running right now. */
+  warming?: boolean;
+}
+
 export interface StatusDetail {
   serverInfo?: ServerInfo;
   /** The resolved server command, shown in the tooltip when running. */
   command?: string;
   /** A short reason, shown in the tooltip for the error state. */
   message?: string;
+  /**
+   * The lint engine, shown as an extra tooltip line when running. Absent for
+   * servers older than the clj-kondo bridge, which never send the
+   * notification - the tooltip then reads exactly as it always did.
+   */
+  lint?: LintStatus;
 }
 
 export interface StatusView {
@@ -40,9 +55,10 @@ export function statusPresentation(
     case "running": {
       const version = detail.serverInfo?.version ? ` v${detail.serverInfo.version}` : "";
       const where = detail.command ? `\n${detail.command}` : "";
+      const lint = detail.lint ? `\n${lintLine(detail.lint)}` : "";
       return {
         text: "$(pulse) clj-pulse",
-        tooltip: `Clojure Pulse: running${version}${where}`,
+        tooltip: `Clojure Pulse: running${version}${where}${lint}`,
         error: false,
       };
     }
@@ -59,6 +75,19 @@ export function statusPresentation(
         error: true,
       };
   }
+}
+
+/**
+ * The tooltip's lint line. Warming is a suffix, never a state change: the item
+ * keeps its normal icon, because a cache scan degrades nothing while it runs.
+ */
+function lintLine(lint: LintStatus): string {
+  const engine =
+    lint.engine === "kondo+native"
+      ? `clj-kondo + native${lint.version ? ` (${lint.version})` : ""}`
+      : "native lints only";
+  const warming = lint.warming ? " - warming dependency cache…" : "";
+  return `Linting: ${engine}${warming}`;
 }
 
 export interface StatusBar {

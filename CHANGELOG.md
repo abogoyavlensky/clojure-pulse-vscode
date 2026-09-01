@@ -2,6 +2,18 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
+## [Unreleased]
+
+- **clj-kondo diagnostics**: with a `clj-kondo` binary on your `PATH`, its full
+  linter set is published alongside the server's own lints, marked `clj-kondo`
+  in the Problems panel, with your `.clj-kondo/config.edn` applying as usual.
+  Two new settings, `clojurePulse.kondo.enabled` and `clojurePulse.kondo.path`,
+  both applied live. The `clj-pulse` status-bar tooltip gains a `Linting:` line
+  naming the active tier and the clj-kondo version, and shows when the server
+  is warming clj-kondo's dependency cache. Nothing changes if clj-kondo is not
+  installed, and servers older than this feature never send the status, so the
+  tooltip stays as it was.
+
 ## [0.3.0]
 
 - **cljfmt formatting**: Format Document and Format Selection now produce
