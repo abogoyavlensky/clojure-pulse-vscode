@@ -14,6 +14,24 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   installed, and servers older than this feature never send the status, so the
   tooltip stays as it was.
 
+## [0.3.0]
+
+- **cljfmt formatting**: Format Document and Format Selection now produce
+  output byte-identical to the [cljfmt](https://github.com/weavejester/cljfmt)
+  CLI, and Enter indents the new line to the column cljfmt would choose. The
+  extension bundles cljfmt 0.16.5 compiled to JavaScript, so nothing needs to
+  be installed, and it honours the nearest `.cljfmt.edn` / `cljfmt.edn` up the
+  directory tree - each project in a monorepo can carry its own rules
+  (`.cljfmt.clj` is not read). This changes the default Enter behaviour:
+  arguments now align under the first argument, `(foo bar` continues at
+  column 5 rather than 2. The previous fixed rule is still available as
+  `"clojurePulse.formatting.engine": "structural"`, whose Format Document
+  only re-indents. Enter reformats only a small window around the cursor, so
+  large files and big `comment` blocks stay instant, and falls back to the
+  structural rule on code too unbalanced to parse. A config that fails to
+  parse never breaks formatting: the defaults apply, one warning appears on
+  the breaking save, and a `cljfmt config` status-bar item stays visible
+  (click to open the file) until it parses again.
 - **Restart REPL**: one command to stop a REPL and bring it back up, from the
   Command Palette, a running row's right-click menu, or the status-bar REPL
   menu. A configuration edited while the REPL was running is applied on the way
