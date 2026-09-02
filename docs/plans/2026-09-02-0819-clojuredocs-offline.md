@@ -1,5 +1,7 @@
 # Offline ClojureDocs Implementation Plan
 
+**Status: completed** (2026-09-02). Summary at the end.
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Show the ClojureDocs entry (docstring, arglists, examples, see-alsos) for the symbol under the cursor on a keyboard shortcut, with no network call at runtime: the extension bundles the data, the clj-pulse server resolves the symbol and serves it.
@@ -317,7 +319,7 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `src/clojureDocs.ts`
 - Test: `src/test/clojureDocs.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Mocha `suite("clojureDocs")` (tdd ui, as the other tests). Fixtures: a full result for `clojure.core/map` (doc containing `<b>` to test escaping, two examples, one with `<script>`, `added`, two see-alsos), and a minimal result (no doc, no added, no examples, no see-alsos). Cases for `renderClojureDocsHtml(result, "nonce")`:
   - contains `clojure.core/map`, both arglists, `Available since 1.0`, the escaped `&lt;b&gt;` and `&lt;script&gt;`, `Examples`, two `<pre>` example blocks, `See also`, anchors with `data-symbol="clojure.core/mapv"`, the footer link `https://clojuredocs.org/clojure.core/map`, the text `CC0`, and the nonce in both the CSP meta and the `<script nonce=`.
   - the minimal result contains no `Available since`, no `Examples`, no `See also`.
@@ -327,19 +329,21 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
   - a plain `Error("boom")` → contains `boom`.
   For `noEntryMessage`: `"clojure.core/frob"` → contains the fqn; `null` → says the symbol could not be resolved.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `make test`
   Expected: compile error for the missing module (the suite is compiled with `tsc` before running).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `src/clojureDocs.ts` with no `vscode` import: exported interfaces `ClojureDocsEntry`, `ClojureDocsResult` (the Protocol shapes), `CLOJUREDOCS_MIN_SERVER = "0.4.0"`, `CLOJUREDOCS_REQUEST = "clojurePulse/clojureDocs"`, an `escapeHtml` helper, `renderClojureDocsHtml`, `describeClojureDocsFailure` (detect method-not-found by `code === -32601` on the error object), `noEntryMessage`. The HTML follows the `renderHtml()` layout in `src/projectFormPanel.ts`: CSP with the nonce, theme variables, `pre { white-space: pre-wrap }` for the docstring and horizontal scroll for examples; the inline script wires `a[data-symbol]` clicks to `acquireVsCodeApi().postMessage({ type: "lookup", symbol })`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `make test`
   Expected: the new suite passes; everything else unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/clojureDocs.ts src/test/clojureDocs.test.ts && git commit -m "Render ClojureDocs entries to HTML"`
+
+> Deviation (Task 7): the failing-test check used `npm run compile-tests` (the same tsc failure, without a minutes-long VS Code run); the passing check ran the full `make test` once (744 passing) and then only the ClojureDocs suites after tightening two assertions that had matched the footer's "Examples from ClojureDocs" text.
 
 ### Task 8: Panel controller
 
@@ -347,7 +351,7 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `src/clojureDocsPanel.ts`
 - Test: `src/test/clojureDocsPanel.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   A fake host in the style of `src/test/projectFormPanel.test.ts` (`html`, `postMessage`, `onDidReceiveMessage`, `reveal`, `dispose`, `onDidDispose`, plus a `title`). A fake `lookup` recording its params and returning canned results. Cases:
   - `show({textDocument, position})` creates one panel, sets `title` to the fqn, and `html` contains `clojure.core/map`.
   - a second `show` reuses the panel: one `createPanel` call, `reveals === 1`.
@@ -358,36 +362,40 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
   - a see-also message whose `lookup` rejects calls the injected `onError` with the error and leaves `html` unchanged; `show` itself still rejects to its caller.
   - overlapping lookups: with a fake `lookup` returning deferred promises, resolve the second request first, then the first; the panel shows the second (a request sequence counter discards stale results).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `make test`
   Expected: compile error for the missing module.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `ClojureDocsPanelHost` and `ClojureDocsPanelDeps { createPanel, lookup, onError: (error: unknown) => void }` interfaces mirroring `projectFormPanel.ts`, `class ClojureDocsPanel { show(params): Promise<ClojureDocsResult>; settled(): Promise<void>; dispose(): void }`. Every lookup increments a sequence number and only the newest request may render. Webview-initiated lookups (see-also clicks) run inside the panel, so their rejections are caught and passed to `onError`; the command's own `show` call rejects to the caller. Render with a fresh nonce per render via `crypto.randomBytes`. Ignore unknown messages. No `vscode` import.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `make test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git add src/clojureDocsPanel.ts src/test/clojureDocsPanel.test.ts && git commit -m "Add the ClojureDocs panel controller"`
+
+> Deviation (Task 8): `show` also re-renders an already open panel when the result has no entry, so a see-also click to an undocumented var shows the empty state instead of doing nothing; with no panel open the caller still gets the result and reports it.
+
+> Deviation (Task 8, after review): the reused panel is revealed with `preserveFocus` so the cursor stays in the editor, and closing the tab invalidates in-flight lookups so a late answer cannot reopen it. Both found by the Task 8 codex review; the host's `reveal` slice now mirrors `WebviewPanel.reveal`'s arguments.
 
 ### Task 9: Command, keybinding, and wiring
 
 **Files:**
 - Modify: `src/extension.ts`, `package.json`
 
-- [ ] **Step 1: Contribute the command and keybinding**
+- [x] **Step 1: Contribute the command and keybinding**
   In `package.json` `contributes.commands` add `clojurePulse.showClojureDocs` with title `Show ClojureDocs`, matching the category and shape of the neighbouring commands. In `contributes.keybindings` add `{ "command": "clojurePulse.showClojureDocs", "key": "ctrl+alt+d", "when": "editorTextFocus && editorLangId == clojure" }`. In `menus.commandPalette` add a `when: "editorLangId == clojure"` entry for it, following the existing entries' form.
 
-- [ ] **Step 2: Wire the command**
+- [x] **Step 2: Wire the command**
   In `activate`, construct a `ClojureDocsPanel` with `createPanel` opening `vscode.window.createWebviewPanel("clojurePulse.clojureDocs", "ClojureDocs", { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, { enableScripts: true, retainContextWhenHidden: true })` with the extension's activity icon as `iconPath`, `lookup: (params) => client!.sendRequest(CLOJUREDOCS_REQUEST, params)`, and `onError: (err) => vscode.window.showWarningMessage(describeClojureDocsFailure(err, client?.initializeResult?.serverInfo?.version))` so see-also failures surface the same way as the command's. Register the command: no active Clojure editor or no word range at the cursor → information message "Place the cursor on a symbol."; no `client` → "clj-pulse is not running."; otherwise `await panel.show({ textDocument: { uri: doc.uri.toString() }, position: { line, character } })`, and if the result's `entry` is `null` show `noEntryMessage(result.symbol)`. Wrap in try/catch and show `describeClojureDocsFailure(err, client.initializeResult?.serverInfo?.version)` as a warning. Push the panel into `context.subscriptions`.
 
-- [ ] **Step 3: Compile, lint, test**
+- [x] **Step 3: Compile, lint, test**
   Run: `make check`
   Expected: clean.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -am "Add the Show ClojureDocs command and ctrl+alt+d binding"`
 
 ### Task 10: Monthly refresh workflow
@@ -395,14 +403,14 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 **Files:**
 - Create: `.github/workflows/clojuredocs-update.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
   Name `Update ClojureDocs data`. Triggers: `schedule: - cron: "0 6 1 * *"` and `workflow_dispatch`. `permissions: contents: write, pull-requests: write`. Steps: checkout, setup-node 20 with npm cache, `npm ci`, `npm run clojuredocs:update`, `npm run test:scripts`, then `peter-evans/create-pull-request@v7` with `commit-message: "Update bundled ClojureDocs data"`, `branch: chore/clojuredocs-update`, `title: "Update bundled ClojureDocs data"`, a body naming the source URL, and `delete-branch: true`. The action opens nothing when the tree is unchanged. Add a comment at the top that the repository setting "Allow GitHub Actions to create and approve pull requests" must be on.
 
-- [ ] **Step 2: Validate the YAML**
+- [x] **Step 2: Validate the YAML**
   Run: `node -e "require('js-yaml')" 2>/dev/null || npx --yes yaml-lint .github/workflows/clojuredocs-update.yml`
   Expected: no parse errors (either tool).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git add .github/workflows/clojuredocs-update.yml && git commit -m "Refresh bundled ClojureDocs data monthly"`
 
 ### Task 11: Extension docs
@@ -410,29 +418,54 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 **Files:**
 - Modify: `README.md`, `CHANGELOG.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Use /writing-clearly. In `## Features` add a bullet **ClojureDocs, offline** after the Language intelligence bullet: `ctrl+alt+d` on a symbol opens its ClojureDocs entry (docstring, arglists, community examples, see-alsos) in a panel beside the editor; the data is bundled, so it works offline and needs no download. Add a `## ClojureDocs` section after `## Linting` describing the command, the binding and how to rebind it, see-also surfing inside the panel, that the bundled copy is refreshed monthly, that it needs clj-pulse 0.4.0 or newer, and the data licenses: examples CC0 from ClojureDocs, docstrings EPL from Clojure, notes not included. Add the command to the `## Commands` table. In `## License` add one sentence that `data/clojuredocs.json` is derived from the ClojureDocs export under those terms.
 
-- [ ] **Step 2: CHANGELOG**
+- [x] **Step 2: CHANGELOG**
   Add `## [Unreleased]` above `## [0.4.0]` with a **ClojureDocs, offline** entry in the existing style, naming the command, the default binding, the server requirement, and the licenses.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -am "Document the ClojureDocs panel"`
 
 ### Task 12: End-to-end verification
 
 **Files:** none
 
-- [ ] **Step 1: Server checks**
+- [x] **Step 1: Server checks**
   Run: `cd /home/agent/Projects/clj-pulse && bb check && bb e2e`
   Expected: all green.
 
-- [ ] **Step 2: Extension checks**
+- [x] **Step 2: Extension checks**
   Run: `make check && npm run package`
   Expected: green; a `clojure-pulse-0.4.0.vsix` is produced. Run `unzip -l clojure-pulse-*.vsix | grep clojuredocs.json` and confirm the file is inside.
 
-- [ ] **Step 3: Manual smoke (report the outcome, do not skip silently)**
+- [x] **Step 3: Manual smoke (report the outcome, do not skip silently)**
   Build the server: `cd /home/agent/Projects/clj-pulse && cargo build`. In a VS Code window on any Clojure project with `"clojurePulse.server.path": "/home/agent/Projects/clj-pulse/target/debug/clj-pulse"`, install the vsix (`make install-extension`), open a `.clj` file, put the cursor on `map`, press `ctrl+alt+d`: a panel opens beside the editor with the docstring and examples, and clicking a see-also swaps the panel content. With the cursor on `str/join` (aliased) the entry for `clojure.string/join` appears. With an old server (`brew`/`mise` 0.3.0 on PATH) the warning names 0.4.0. If no display is available, state that the smoke run was not performed.
 
-- [ ] **Step 4: Wrap up**
+- [x] **Step 4: Wrap up**
   Both branches have all commits; no version bumps. Report the git log of each branch.
+
+> Deviation (Task 12): no display is available for the manual smoke run, so it became a durable check: `src/test/clojureDocs.e2e.test.ts` drives the real command in the VS Code test host against the binary named by `CLJ_PULSE_E2E_BIN` (skipped when unset) and passed against `target/debug/clj-pulse`: the panel opens for `map`, is retitled for the aliased `str/join`, and focus stays in the editor. The old-server warning path is covered by unit tests only.
+
+---
+
+## Completion summary
+
+**Implemented.** The server (clj-pulse, branch `feature/clojuredocs`, 9 commits) reads a ClojureDocs export file named in `initializationOptions.clojuredocs.path`, resolves the word at a position through `resolve_symbol` plus alias, refer, and clojure.core fallbacks, and answers `clojurePulse/clojureDocs` with `{symbol, entry}` or an error when no data is configured or readable. The extension (branch `feature/clojuredocs`, 10 commits after the plan) bundles `data/clojuredocs.json` (1572 vars, 2623 examples, 1.7 MB, about 450 KB in the vsix), passes its path at start, and adds **Show ClojureDocs** (`ctrl+alt+d` in Clojure editors) rendering the entry in a reusable webview beside the editor with in-place see-also navigation; a monthly workflow refreshes the data by pull request. Docs and changelog updated in both repos.
+
+**Verification.** Server: `bb check` and `bb e2e` green (102 e2e tests, 5 new). Extension: `make check` green (757 tests incl. 8 renderer, 11 panel, 6 script tests), `npm run package` produces a 720 KB vsix containing the data file, and the gated end-to-end test passes against the locally built server.
+
+**Issues encountered.** Per-task codex reviews found five real defects, all fixed in follow-up commits: null collections in the raw export (Task 1), referred vars from unindexed namespaces (Task 2), the load-failure cache that never short-circuited (Task 3), focus stolen by `reveal` and a late answer reopening a closed panel (Task 8). One test had a loose assertion matching the footer text (Task 7) and one hung on a never-resolving stub (Task 8); both were test bugs.
+
+**Deviations, gathered.**
+- Task 1: null-tolerant `Vec` deserializer; ignored `loads_real_export_from_env` test for a real download.
+- Task 2: bare words consult the ns form's `refers` before the clojure.core fallback.
+- Task 3: `failed: Option<String>` short-circuits re-reads of a broken file; extra e2e test.
+- Task 4: README wording on when the not-configured error is raised.
+- Task 7: `compile-tests` for the failing check; targeted suite reruns after tightening assertions.
+- Task 8: empty state rendered in an already open panel; `reveal(undefined, true)`; close invalidates in-flight lookups.
+- Task 12: manual smoke replaced by the gated end-to-end test.
+
+**Not done, by design.** No version bumps: the server must be released as 0.4.0 for the extension's gate; the extension release is separate. The repository setting allowing Actions to open pull requests must be enabled before the monthly workflow can deliver.
+
+**What the plan could have specified better.** The raw export's `null` collections and the `reveal(preserveFocus)` argument: both were knowable from the data and the VS Code API at planning time and each cost a review round.
