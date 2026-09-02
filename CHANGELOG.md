@@ -2,6 +2,18 @@
 
 All notable changes to the Clojure Pulse extension are documented in this file.
 
+## [Unreleased]
+
+- **ClojureDocs, offline**: `ctrl+alt+d` on a symbol (or **Clojure Pulse: Show
+  ClojureDocs**) opens its ClojureDocs entry — docstring, arglists, community
+  examples, see-also links — in a panel beside the editor, with focus kept in
+  the editor and see-also links loading in place. The data ships with the
+  extension (a stripped copy of the official export, refreshed monthly by a
+  scheduled workflow), so it works offline with nothing to download. The
+  server resolves the symbol like hover does, aliases included. Needs
+  clj-pulse 0.4.0 or newer; older servers get a message saying so. Examples
+  are CC0 and docstrings EPL; ClojureDocs notes are not bundled.
+
 ## [0.4.0]
 
 - **clj-kondo diagnostics**: with a `clj-kondo` binary on your `PATH`, its full
