@@ -138,11 +138,11 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 
 **Files:** none
 
-- [ ] **Step 1: Branch the server**
+- [x] **Step 1: Branch the server**
   Run: `git -C /home/agent/Projects/clj-pulse checkout -b feature/clojuredocs`
   Expected: `Switched to a new branch 'feature/clojuredocs'` (from a clean `master`).
 
-- [ ] **Step 2: Confirm the extension branch**
+- [x] **Step 2: Confirm the extension branch**
   The extension branch was created when this plan was committed. Run: `git -C /home/agent/Projects/clojure-pulse-vscode branch --show-current`
   Expected: `feature/clojuredocs`.
 
@@ -152,7 +152,7 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `/home/agent/Projects/clj-pulse/src/clojuredocs.rs`
 - Modify: `/home/agent/Projects/clj-pulse/src/lib.rs`, `/home/agent/Projects/clj-pulse/src/main.rs`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   In `src/clojuredocs.rs`, a `#[cfg(test)] mod tests` with a JSON literal in the export shape holding two vars (`clojure.core/map` with two examples, one see-also to `clojure.core/mapv`, `added`, `href`; `clojure.string/join` with no `added`, no `href`, and a `notes` array). Tests:
   - `parse` yields two entries; `get("clojure.core/map")` has `arglists == ["[f]", "[f coll]"]` from raw `"f"` and `"f coll"` (an already bracketed `"[x]"` stays as is), 2 example bodies, `see_alsos == ["clojure.core/mapv"]`, `added == Some("1.0")`, `url == "https://clojuredocs.org/clojure.core/map"`.
   - `clojure.string/join` parses with empty `arglists`, `added == None`, and `url` built from ns and name; notes are not represented anywhere on the entry.
@@ -160,19 +160,21 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
   - `path_from_init_options(&json!({"clojuredocs": {"path": "/x/y.json"}}))` is `Some("/x/y.json")`; a missing key, a non-object, or `{"dependency-scheme": "jar"}` is `None`.
   - `load` on a nonexistent path is `Err`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test clojuredocs`
   Expected: compile error (module does not exist yet).
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
   Serde structs for the export: `Export { vars: Vec<RawVar> }`, `RawVar { ns: Option<String>, name: Option<String>, doc: Option<String>, arglists: Vec<String>, added: Option<String>, href: Option<String>, examples: Vec<RawExample{ body: Option<String> }>, see_alsos (rename "see-alsos"): Vec<RawSeeAlso{ to_var (rename "to-var"): Option<RawRef{ ns, name }> }> }`, all `#[serde(default)]`. Public `Entry` with the fields from the Protocol section (`see_alsos` as fqn strings, `url` computed from `href` or `/{ns}/{name}`, and each arglist normalized to `[…]`: the export stores `"f coll"`, so wrap it in brackets unless it already starts with `[`), `ClojureDocs { entries: HashMap<String, Entry> }` with `get(&self, fqn) -> Option<&Entry>`, `parse(&str) -> anyhow::Result<ClojureDocs>`, `load(&Path) -> anyhow::Result<ClojureDocs>`, `path_from_init_options(&serde_json::Value) -> Option<PathBuf>`. Register `pub mod clojuredocs;` in `src/lib.rs` and `mod clojuredocs;` in `src/main.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test clojuredocs`
   Expected: all `clojuredocs::tests` PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git -C /home/agent/Projects/clj-pulse add -A && git -C /home/agent/Projects/clj-pulse commit -m "Add ClojureDocs export data model and loader"`
+
+> Deviation (Task 1): the raw export writes `null` for empty `examples`, `see-alsos`, `arglists`, and `doc` on hundreds of vars, which `#[serde(default)]` alone rejects. Added a null-tolerant `Vec` deserializer, a null-field test, and an ignored `loads_real_export_from_env` test (`CLJ_PULSE_CLOJUREDOCS_EXPORT=<file> cargo test clojuredocs -- --ignored`), verified against the current export. Found by the Task 1 codex review.
 
 ### Task 2: Server symbol resolution for ClojureDocs
 
@@ -180,7 +182,7 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `/home/agent/Projects/clj-pulse/src/handlers/clojuredocs.rs`
 - Modify: `/home/agent/Projects/clj-pulse/src/handlers/mod.rs`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Inline `#[cfg(test)]` tests building an `Index` the way `tests/test_hover.rs` does (`scanner::build_index` over `tests/fixtures/simple_project` plus `core::core_symbols()`), and a second index built in memory: `extractor::extract("(ns demo (:require [clojure.string :as str]))", Path::new("demo.clj"))` fed to `Index::insert_file(meta, symbols, vec![])` on an `Index::new_with_core()`. Cases for `resolve_var(&index, word, current_ns)`:
   - `"map"` in `simple.core` → `Some("clojure.core/map")` (core symbol).
   - `"add"` in `simple.core` → `Some("simple.core/add")` (project symbol fqn).
@@ -191,19 +193,21 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
   - `"frobnicate"` → `Some("clojure.core/frobnicate")` (bare fallback; the lookup, not the resolver, decides existence).
   A test for `DocsResult` serialization: `serde_json::to_value` uses camelCase `seeAlsos` and serializes `entry: None` as `null`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test handlers::clojuredocs`
   Expected: compile error.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   `pub fn resolve_var(index: &Index, word: &str, current_ns: &str) -> Option<String>` following the Design's resolution order, reusing `super::resolve_symbol` and `index.ns_meta(current_ns)` for aliases. `#[derive(Serialize)] #[serde(rename_all = "camelCase")] pub struct DocsResult { pub symbol: Option<String>, pub entry: Option<DocsEntry> }` where `DocsEntry` is the wire shape from the Protocol section (build it from `clojuredocs::Entry`, or derive `Serialize` on `Entry` with the camelCase rename if that keeps one type; the executor picks whichever avoids a copy). `pub fn lookup(docs: &ClojureDocs, fqn: &str) -> DocsResult`. Add `pub mod clojuredocs;` to `src/handlers/mod.rs`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test handlers::clojuredocs`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git -C /home/agent/Projects/clj-pulse add src/handlers/clojuredocs.rs src/handlers/mod.rs && git -C /home/agent/Projects/clj-pulse commit -m "Resolve symbols to ClojureDocs entries"`
+
+> Deviation (Task 2): the bare-word fallback now consults the ns form's `refers` map before trying clojure.core, so `(:require [clojure.string :refer [join]])` resolves to `clojure.string/join` even before that library is indexed. Found by the Task 2 codex review.
 
 ### Task 3: Server request wiring and e2e tests
 
@@ -212,47 +216,51 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `/home/agent/Projects/clj-pulse/tests/fixtures/clojuredocs/export.json`
 - Test: `/home/agent/Projects/clj-pulse/tests/test_e2e.rs`
 
-- [ ] **Step 1: Write the fixture export**
+- [x] **Step 1: Write the fixture export**
   `tests/fixtures/clojuredocs/export.json` in the official shape: `clojure.core/map` (doc, arglists, `added` "1.0", `href` "/clojure.core/map", two examples, see-alsos to `clojure.core/mapv` and `clojure.core/pmap`, one note that must not appear in responses) and `clojure.string/join` (doc, arglists, one example). Include `created-at` and an author object on the example to prove they are ignored.
 
-- [ ] **Step 2: Write the failing e2e tests**
+- [x] **Step 2: Write the failing e2e tests**
   In `tests/test_e2e.rs` add to `LspClient`: `initialize_with_options(&mut self, root: &Path, options: Value) -> Value` (same body as `initialize`, `initializationOptions` replaced by `options`), and `clojure_docs(&mut self, params: Value) -> Value` calling `request_full("clojurePulse/clojureDocs", params)` so tests can assert on `result` or `error`. Tests, each on a fresh `setup_project()` with the fixture path passed as `{"clojuredocs": {"path": <abs path of tests/fixtures/clojuredocs/export.json>}}`:
   - `test_e2e_clojuredocs_bare_core_symbol`: write `src/docs_demo.clj` containing `(ns simple.docs-demo)\n(map inc [1 2 3])\n` before `initialize`, `did_open` it, request at line 1 character 1 → `result.symbol == "clojure.core/map"`, `entry.examples.len() == 2`, `entry.seeAlsos` contains `"clojure.core/mapv"`, `entry.url == "https://clojuredocs.org/clojure.core/map"`, and the JSON has no `notes` key.
   - `test_e2e_clojuredocs_aliased_symbol`: file with `(ns simple.docs-alias (:require [clojure.string :as str]))\n(str/join "," [1 2])\n`, request on `str/join` → `symbol == "clojure.string/join"`, one example.
   - `test_e2e_clojuredocs_direct_symbol_lookup`: `{"symbol": "clojure.core/pmap"}` → `symbol == "clojure.core/pmap"`, `entry` is `null`.
   - `test_e2e_clojuredocs_not_configured`: plain `initialize`, request → the message has an `error` whose `message` contains `not configured`.
 
-- [ ] **Step 3: Run the e2e tests to verify they fail**
+- [x] **Step 3: Run the e2e tests to verify they fail**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test --test test_e2e clojuredocs`
   Expected: FAIL (method not found, or `error` where `result` is expected).
 
-- [ ] **Step 4: Implement the request**
+- [x] **Step 4: Implement the request**
   In `src/server.rs`: `#[derive(serde::Deserialize)] pub(crate) struct ClojureDocsParams { text_document: Option<TextDocumentIdentifier>, position: Option<Position>, symbol: Option<String> }` with `#[serde(default, rename_all = "camelCase")]`; a `SharedClojureDocs` state type next to the other `Shared*` types; a `clojuredocs` field on `Backend` initialized in `Backend::new`; in `initialize`, store `clojuredocs::path_from_init_options(opts)` into the state (inside the existing `initialization_options` handling; keep the server tolerant of Calva's unrelated options). Handler `pub async fn clojure_docs(&self, params: ClojureDocsParams) -> jsonrpc::Result<handlers::clojuredocs::DocsResult>`: compute the fqn (`symbol` param wins; otherwise `documents.word_at` + `uri::to_index_path` + `index.file_ns`, then `resolve_var`; no word → `DocsResult { symbol: None, entry: None }`); then obtain the data via a small `fn docs(&self) -> Result<Arc<ClojureDocs>, String>` that loads lazily under the mutex, sets `failed` and logs once on failure, and returns `Err("ClojureDocs data not configured")` when no path is set. Map `Err(msg)` to `jsonrpc::Error { code: ErrorCode::InternalError, message: msg, data: None }`. Keep the server.rs method short; the logic sits in the handler module. Register `.custom_method("clojurePulse/clojureDocs", Backend::clojure_docs)` in `src/main.rs` with a comment like the neighbours.
 
-- [ ] **Step 5: Run the e2e tests to verify they pass**
+- [x] **Step 5: Run the e2e tests to verify they pass**
   Run: `cd /home/agent/Projects/clj-pulse && cargo test --test test_e2e clojuredocs`
   Expected: 4 PASS.
 
-- [ ] **Step 6: Full check**
+- [x] **Step 6: Full check**
   Run: `cd /home/agent/Projects/clj-pulse && bb check && bb e2e`
   Expected: fmt clean, clippy clean with `-D warnings`, all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
   `git -C /home/agent/Projects/clj-pulse add -A && git -C /home/agent/Projects/clj-pulse commit -m "Serve ClojureDocs entries over clojurePulse/clojureDocs"`
+
+> Deviation (Task 3): the load-failure flag became `failed: Option<String>` and is checked before any re-read, so a broken export is parsed and logged once and later requests get the cached message; added `test_e2e_clojuredocs_unreadable_file`. Found by the Task 3 codex review.
 
 ### Task 4: Server docs
 
 **Files:**
 - Modify: `/home/agent/Projects/clj-pulse/README.md`, `/home/agent/Projects/clj-pulse/docs/ROADMAP2.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Under `## Features` add a bullet after Hover: **ClojureDocs** — the `clojurePulse/clojureDocs` request returns the ClojureDocs entry (docstring, arglists, examples, see-alsos) for the symbol at a position or for a given `ns/name`, resolved through the same alias-aware lookup as hover; served from a local file, never the network. Under `## Editor Setup` add a short subsection saying the data file is passed as `initializationOptions.clojuredocs.path`, that Clojure Pulse sends its bundled copy automatically, and that other editors can download `https://clojuredocs.org/clojuredocs-export.json` and point at it; the server reads the official export shape.
 
-- [ ] **Step 2: Roadmap**
+- [x] **Step 2: Roadmap**
   In `docs/ROADMAP2.md` tick the "Clojuredocs for built-ins" item and append " — served over `clojurePulse/clojureDocs` from an editor-supplied export file; hover enrichment still open."
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git -C /home/agent/Projects/clj-pulse commit -am "Document the ClojureDocs request"`
+
+> Deviation (Task 4): README wording qualified so the not-configured error is described as raised only once a var is resolved or named; a position with no symbol still answers nulls. Found by the Task 4 codex review.
 
 ### Task 5: Data build script and initial data file
 
@@ -260,32 +268,32 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 - Create: `scripts/build-clojuredocs.mjs`, `scripts/build-clojuredocs.test.mjs`, `data/clojuredocs.json`
 - Modify: `package.json`, `Makefile`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   `scripts/build-clojuredocs.test.mjs` using `node:test` and `node:assert/strict`, importing `{ stripExport, serialize }` from `./build-clojuredocs.mjs`. Cases: keeps only `ns, name, doc, arglists, added, href, examples[].body, see-alsos[].to-var{ns,name}`; drops `notes`, `created-at`, authors, `_id`; sorts by ns then name; skips a var without `ns` or `name`; tolerates missing `examples`/`see-alsos`/`arglists` (they become `[]`); an example without `body` is dropped; `serialize` output parses back to the same object and has one var per line (line count equals var count plus the wrapper lines).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `node --test scripts/build-clojuredocs.test.mjs`
   Expected: FAIL, cannot find module.
 
-- [ ] **Step 3: Implement the script**
+- [x] **Step 3: Implement the script**
   ESM. `export function stripExport(raw)` and `export function serialize(stripped)` (the `{"description":…,"vars":[` wrapper, one `JSON.stringify(var)` per line, joined by `,\n`, trailing newline). `main()` runs only when the file is the entry point (`import.meta.url` versus `process.argv[1]`): source is `process.argv[2]` or the default `https://clojuredocs.org/clojuredocs-export.json`; an `http(s)` source is fetched with global `fetch` (Node 20), anything else read from disk; writes `data/clojuredocs.json` relative to the repo root (resolve from `import.meta.url`), creating `data/` if needed; prints the var and example counts. No dependencies.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `node --test scripts/build-clojuredocs.test.mjs`
   Expected: PASS.
 
-- [ ] **Step 5: Wire scripts**
+- [x] **Step 5: Wire scripts**
   `package.json` scripts: `"clojuredocs:update": "node scripts/build-clojuredocs.mjs"`, `"test:scripts": "node --test scripts/build-clojuredocs.test.mjs"`, and change `"test"` to `"npm run test:scripts && vscode-test"`. `Makefile`: `clojuredocs: ## Regenerate data/clojuredocs.json from the ClojureDocs export` running `npm run clojuredocs:update`; add it to the `.PHONY` list.
 
-- [ ] **Step 6: Generate the data file**
+- [x] **Step 6: Generate the data file**
   Run: `npm run clojuredocs:update`
   Expected: `data/clojuredocs.json` written; the printed var count is about 1570 and examples about 2600. Run `node -e "const d=require('./data/clojuredocs.json');console.log(d.vars.length, Object.keys(d.vars[0]))"` and confirm the keys are exactly the kept set and no `notes` key exists anywhere: `grep -c '"notes"' data/clojuredocs.json` prints `0`.
 
-- [ ] **Step 7: Confirm packaging includes the data**
+- [x] **Step 7: Confirm packaging includes the data**
   Run: `npx vsce ls | grep data/clojuredocs.json`
   Expected: the path is listed (`.vscodeignore` does not exclude `data/`).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
   `git add scripts/build-clojuredocs.mjs scripts/build-clojuredocs.test.mjs data/clojuredocs.json package.json Makefile && git commit -m "Add ClojureDocs export build script and bundled data"`
 
 ### Task 6: Extension passes the data path to the server
@@ -293,14 +301,14 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 **Files:**
 - Modify: `src/extension.ts`
 
-- [ ] **Step 1: Implement**
+- [x] **Step 1: Implement**
   Add a module-level `let clojureDocsPath: string | undefined;` set in `activate` from `context.asAbsolutePath(path.join("data", "clojuredocs.json"))`. In `start()`, build the init options as `{ ...serverConfig(), clojuredocs: { path: clojureDocsPath } }` and pass that to `createClient`. Add a comment that the server reads this key only at `initialize`, so the `didChangeConfiguration` push (which sends `serverConfig()` alone) does not need it. Update the `createClient` doc comment in `src/client.ts` if it still says the object is only `{projects}`.
 
-- [ ] **Step 2: Compile and lint**
+- [x] **Step 2: Compile and lint**
   Run: `npm run compile && npm run lint`
   Expected: clean.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -am "Send the bundled ClojureDocs path in initializationOptions"`
 
 ### Task 7: Renderer and message helpers

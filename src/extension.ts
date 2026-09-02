@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import {
   DidChangeConfigurationNotification,
@@ -105,6 +106,9 @@ let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 /** Kept out of `context.subscriptions` so deactivate() can *await* shutdown:
  *  disposables are fire-and-forget, and killing REPL processes is not. */
 let replRegistry: ReplRegistry | undefined;
+/** The bundled ClojureDocs export (`data/clojuredocs.json`), handed to the
+ *  server at start so `clojurePulse/clojureDocs` never touches the network. */
+let clojureDocsPath: string | undefined;
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
@@ -123,6 +127,7 @@ export async function activate(
 ): Promise<ExtensionApi> {
   outputChannel = vscode.window.createOutputChannel("Clojure Pulse");
   statusBar = createStatusBar();
+  clojureDocsPath = context.asAbsolutePath(path.join("data", "clojuredocs.json"));
 
   context.subscriptions.push(
     outputChannel,
@@ -483,7 +488,13 @@ async function start(): Promise<void> {
 
   outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
   statusBar?.update("starting");
-  const newClient = createClient(resolution, outputChannel!, serverConfig());
+  // The ClojureDocs path is read by the server at `initialize` only, so it
+  // rides along here and not in the `didChangeConfiguration` push (which
+  // sends `serverConfig()` alone).
+  const newClient = createClient(resolution, outputChannel!, {
+    ...serverConfig(),
+    clojuredocs: { path: clojureDocsPath },
+  });
   client = newClient;
 
   const repaintStatus = (status: ServerStatus) =>
