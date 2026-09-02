@@ -7,6 +7,13 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
+import {
+  CLOJUREDOCS_REQUEST,
+  ClojureDocsResult,
+  describeClojureDocsFailure,
+  noEntryMessage,
+} from "./clojureDocs";
+import { ClojureDocsPanel } from "./clojureDocsPanel";
 import { configuredValue } from "./configValue";
 import {
   parseProjects,
@@ -232,6 +239,47 @@ export async function activate(
     vscode.commands.registerCommand(
       "clojurePulse.disableProjectClasspath",
       (node?: unknown) => toggleProjectClasspath(node, false),
+    ),
+  );
+
+  // ClojureDocs, offline: a panel beside the editor for the symbol under the
+  // cursor. The server resolves the symbol and reads the bundled export it
+  // was pointed at in initializationOptions; this side only renders.
+  const clojureDocsPanel = new ClojureDocsPanel({
+    createPanel: () => {
+      const panel = vscode.window.createWebviewPanel(
+        "clojurePulse.clojureDocs",
+        "ClojureDocs",
+        // Beside, keeping focus: the point is to keep reading and typing.
+        { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(
+        context.extensionUri,
+        "images",
+        "activity-icon.svg",
+      );
+      return panel;
+    },
+    lookup: (params) => {
+      const running = client;
+      if (!running) {
+        return Promise.reject(new Error("clj-pulse is not running."));
+      }
+      return running.sendRequest<ClojureDocsResult>(CLOJUREDOCS_REQUEST, params);
+    },
+    // See-also clicks fail the same way the command does (old server, no
+    // data file), so they get the same message.
+    onError: (error) => {
+      void vscode.window.showWarningMessage(
+        describeClojureDocsFailure(error, client?.initializeResult?.serverInfo?.version),
+      );
+    },
+  });
+  context.subscriptions.push(
+    clojureDocsPanel,
+    vscode.commands.registerCommand("clojurePulse.showClojureDocs", () =>
+      showClojureDocs(clojureDocsPanel),
     ),
   );
 
@@ -2219,6 +2267,42 @@ function toTextEdits(
       edit.text,
     );
   });
+}
+
+/**
+ * Show ClojureDocs: the entry for the symbol under the cursor, in the panel.
+ * The word comes from the Clojure `wordPattern`, so `str/join` and `map?`
+ * are single words; the server does the resolving.
+ */
+async function showClojureDocs(panel: ClojureDocsPanel): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  const range =
+    editor?.document.languageId === "clojure"
+      ? editor.document.getWordRangeAtPosition(editor.selection.active)
+      : undefined;
+  if (!editor || !range) {
+    void vscode.window.showInformationMessage("Place the cursor on a symbol.");
+    return;
+  }
+  const running = client;
+  if (!running) {
+    void vscode.window.showInformationMessage("clj-pulse is not running.");
+    return;
+  }
+  const position = editor.selection.active;
+  try {
+    const result = await panel.show({
+      textDocument: { uri: editor.document.uri.toString() },
+      position: { line: position.line, character: position.character },
+    });
+    if (!result.entry) {
+      void vscode.window.showInformationMessage(noEntryMessage(result.symbol));
+    }
+  } catch (error) {
+    void vscode.window.showWarningMessage(
+      describeClojureDocsFailure(error, running.initializeResult?.serverInfo?.version),
+    );
+  }
 }
 
 function setupFormatting(context: vscode.ExtensionContext): void {
