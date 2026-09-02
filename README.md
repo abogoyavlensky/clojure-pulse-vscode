@@ -28,11 +28,11 @@ do not need any other Clojure extension.
   - Code actions, including "Add require", and live diagnostics from the
     server plus [clj-kondo](#linting) when it is installed.
   - Keyword and Integrant-key navigation, and built-in Java interop.
-- **ClojureDocs, offline** — **Show ClojureDocs** on a symbol opens its
-  [ClojureDocs](https://clojuredocs.org) entry (docstring, arglists, community
-  examples, see-also links) in a panel beside the editor. The data ships with
-  the extension, so it works offline with nothing to download. See
-  [ClojureDocs](#clojuredocs).
+- **ClojureDocs, offline** — **Show ClojureDocs** on a symbol adds its
+  [ClojureDocs](https://clojuredocs.org) entry (community examples, see-also
+  links) to the editor hover, opened focused so the arrow keys scroll it. The
+  data ships with the extension, so it works offline with nothing to
+  download. See [ClojureDocs](#clojuredocs).
 - **Library navigation** — jumping into a `jar:` source (a dependency or
   `clojure.core`) opens the real file, read-only.
 - **External Libraries panel** — a Cursive-style tree, in its own activity-bar
@@ -233,11 +233,16 @@ server scans your classpath in the background to fill the cache, showing
 
 ## ClojureDocs
 
-Put the cursor on a symbol and run **Clojure Pulse: Show ClojureDocs** to
-open its [ClojureDocs](https://clojuredocs.org) entry beside the editor: the docstring, the arglists, the community examples, and
-the see-also links. Focus stays in the editor, so you can keep typing while
-the panel is open, and every lookup reuses the same panel. Click a see-also
-link to load that var's entry in place.
+Put the cursor on a symbol and run **Clojure Pulse: Show ClojureDocs**. The
+editor hover opens with the usual arglists and docstring from clj-pulse, and
+below them the [ClojureDocs](https://clojuredocs.org) entry: the community
+examples, syntax-highlighted in your theme, and the see-also links. The hover
+opens focused, so Up and Down scroll it, PageUp and PageDown page through the
+examples, and Escape puts the cursor back where it was. Click a see-also link
+to load that var's examples in the same hover.
+
+The ordinary hover is unchanged: mouse hovers and `Ctrl+K Ctrl+I` never grow
+examples; only the command adds them.
 
 clj-pulse resolves the symbol the same way hover does, so `str/join` finds
 `clojure.string/join` through your `ns` form and bare names fall back to
@@ -584,8 +589,8 @@ Run these from the Command Palette:
 
 - **Clojure Pulse: Restart Server** — restart the language server.
 - **Clojure Pulse: Show Output** — open the server output channel.
-- **Clojure Pulse: Show ClojureDocs** — open the ClojureDocs entry for the
-  symbol under the cursor. See [ClojureDocs](#clojuredocs).
+- **Clojure Pulse: Show ClojureDocs** — add the ClojureDocs entry for the
+  symbol under the cursor to the editor hover. See [ClojureDocs](#clojuredocs).
 - **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
   tree (also available as a button on the view title).
 - **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as

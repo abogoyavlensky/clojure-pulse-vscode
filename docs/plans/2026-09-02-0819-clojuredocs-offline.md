@@ -471,3 +471,5 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 **What the plan could have specified better.** The raw export's `null` collections and the `reveal(preserveFocus)` argument: both were knowable from the data and the VS Code API at planning time and each cost a review round.
 
 > Post-completion change: the default `ctrl+alt+d` binding was removed at the user's request (F1 was ruled out because it is VS Code's Command Palette). The command ships without a default keybinding, like the eval commands; the README shows how to bind it.
+
+> Superseded in part by `docs/plans/2026-09-02-2258-clojuredocs-hover.md`: the webview panel was replaced by the editor hover.
