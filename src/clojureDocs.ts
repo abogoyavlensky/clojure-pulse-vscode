@@ -83,6 +83,54 @@ export function describeClojureDocsFailure(
   return `ClojureDocs lookup failed: ${message}`;
 }
 
+const SHOW_COMMAND = "clojurePulse.showClojureDocs";
+
+/** Backslash-escapes the characters markdown would otherwise interpret in a
+ *  var name (`*`, `_`, `` ` ``, brackets, angle brackets). */
+function escapeMarkdown(text: string): string {
+  return text.replace(/[\\*_`[\]<>]/g, (c) => `\\${c}`);
+}
+
+/** A fenced Clojure block whose fence is longer than any backtick run
+ *  inside, so the example renders verbatim. */
+function fence(code: string): string {
+  const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length));
+  const ticks = "`".repeat(Math.max(3, longest + 1));
+  return `${ticks}clojure\n${code}\n${ticks}`;
+}
+
+/** A link that re-runs Show ClojureDocs for `fqn` (needs a trusted string). */
+function seeAlsoLink(fqn: string): string {
+  const args = encodeURIComponent(JSON.stringify([fqn]));
+  return `[${escapeMarkdown(fqn)}](command:${SHOW_COMMAND}?${args})`;
+}
+
+/**
+ * The ClojureDocs part of the hover, as markdown. It names the var (after a
+ * see-also click the server's part still describes the word under the
+ * cursor), then the examples as Clojure fences — VS Code highlights those
+ * with the real grammar and theme — then see-also links. Arglists and the
+ * docstring are left out: the server's part above already shows them.
+ */
+export function buildClojureDocsMarkdown(entry: ClojureDocsEntry): string {
+  const header = [`**ClojureDocs: ${escapeMarkdown(`${entry.ns}/${entry.name}`)}**`];
+  if (entry.added) {
+    header.push(`Available since ${escapeMarkdown(entry.added)}`);
+  }
+  header.push(`[clojuredocs.org](${entry.url})`);
+
+  const parts = [header.join(" · ")];
+  if (entry.examples.length === 0) {
+    parts.push("No examples on ClojureDocs yet.");
+  } else {
+    parts.push("**Examples**", ...entry.examples.map(fence));
+  }
+  if (entry.seeAlsos.length > 0) {
+    parts.push(`**See also** ${entry.seeAlsos.map(seeAlsoLink).join(" · ")}`);
+  }
+  return `${parts.join("\n\n")}\n`;
+}
+
 /**
  * The panel document for one result. Sections appear only when they have
  * content. See-also links carry `data-symbol`; the inline script posts

@@ -2,9 +2,9 @@ import * as assert from "assert";
 import {
   CLOJUREDOCS_MIN_SERVER,
   ClojureDocsResult,
+  buildClojureDocsMarkdown,
   describeClojureDocsFailure,
   noEntryMessage,
-  renderClojureDocsHtml,
 } from "../clojureDocs";
 
 const full: ClojureDocsResult = {
@@ -12,10 +12,10 @@ const full: ClojureDocsResult = {
   entry: {
     ns: "clojure.core",
     name: "map",
-    doc: "Returns a lazy sequence of <b>results</b>.",
+    doc: "Returns a lazy sequence of results.",
     arglists: ["[f]", "[f coll]"],
     added: "1.0",
-    examples: ['(map inc [1 2 3])\n;;=> (2 3 4)', '(map str ["<script>"])'],
+    examples: ['(map inc [1 2 3])\n;;=> (2 3 4)', '(map str ["x"])'],
     seeAlsos: ["clojure.core/mapv", "clojure.core/pmap"],
     url: "https://clojuredocs.org/clojure.core/map",
   },
@@ -33,35 +33,57 @@ const minimal: ClojureDocsResult = {
   },
 };
 
-suite("renderClojureDocsHtml", () => {
-  test("renders every section of a full entry, escaped", () => {
-    const html = renderClojureDocsHtml(full, "NONCE");
-    assert.match(html, /clojure\.core\/map/);
-    assert.match(html, /\[f\]/);
-    assert.match(html, /\[f coll\]/);
-    assert.match(html, /Available since 1\.0/);
-    assert.match(html, /&lt;b&gt;results&lt;\/b&gt;/);
-    assert.match(html, /&lt;script&gt;/);
-    assert.doesNotMatch(html, /<script>/);
-    assert.match(html, /<h2>Examples<\/h2>/);
-    assert.strictEqual((html.match(/<pre class="example">/g) ?? []).length, 2);
-    assert.match(html, /;;=&gt; \(2 3 4\)/);
-    assert.match(html, /<h2>See also<\/h2>/);
-    assert.match(html, /data-symbol="clojure\.core\/mapv"/);
-    assert.match(html, /data-symbol="clojure\.core\/pmap"/);
-    assert.match(html, /href="https:\/\/clojuredocs\.org\/clojure\.core\/map"/);
-    assert.match(html, /CC0/);
-    assert.match(html, /nonce-NONCE/);
-    assert.match(html, /<script nonce="NONCE">/);
+suite("buildClojureDocsMarkdown", () => {
+  test("names the var, the version, the page, and every example", () => {
+    const md = buildClojureDocsMarkdown(full.entry!);
+    assert.match(
+      md,
+      /^\*\*ClojureDocs: clojure\.core\/map\*\* · Available since 1\.0 · \[clojuredocs\.org\]\(https:\/\/clojuredocs\.org\/clojure\.core\/map\)$/m,
+    );
+    assert.match(md, /^\*\*Examples\*\*$/m);
+    assert.strictEqual((md.match(/^```clojure$/gm) ?? []).length, 2);
+    assert.ok(md.includes("```clojure\n(map inc [1 2 3])\n;;=> (2 3 4)\n```"));
+    assert.ok(md.includes("```clojure\n(map str [\"x\"])\n```"));
   });
 
-  test("omits empty sections", () => {
-    const html = renderClojureDocsHtml(minimal, "n");
-    assert.match(html, /clojure\.set\/union/);
-    assert.doesNotMatch(html, /Available since/);
-    assert.doesNotMatch(html, /<h2>Examples<\/h2>/);
-    assert.doesNotMatch(html, /<h2>See also<\/h2>/);
-    assert.doesNotMatch(html, /<pre class="example">/);
+  test("links see-alsos as command URIs that re-run the command with the var", () => {
+    const md = buildClojureDocsMarkdown(full.entry!);
+    assert.match(md, /^\*\*See also\*\* /m);
+    assert.ok(
+      md.includes("[clojure.core/mapv](command:clojurePulse.showClojureDocs?%5B%22clojure.core%2Fmapv%22%5D)"),
+      md,
+    );
+    assert.ok(md.includes("[clojure.core/pmap](command:clojurePulse.showClojureDocs?%5B%22clojure.core%2Fpmap%22%5D)"));
+  });
+
+  test("omits the version and see-alsos when absent and says when there are no examples", () => {
+    const md = buildClojureDocsMarkdown(minimal.entry!);
+    assert.match(md, /^\*\*ClojureDocs: clojure\.set\/union\*\* · \[clojuredocs\.org\]/m);
+    assert.doesNotMatch(md, /Available since/);
+    assert.doesNotMatch(md, /\*\*Examples\*\*/);
+    assert.match(md, /^No examples on ClojureDocs yet\.$/m);
+    assert.doesNotMatch(md, /See also/);
+  });
+
+  test("does not repeat the arglists or the docstring", () => {
+    const md = buildClojureDocsMarkdown(full.entry!);
+    assert.doesNotMatch(md, /\[f coll\]/);
+    assert.doesNotMatch(md, /lazy sequence/);
+  });
+
+  test("widens the fence past any backticks inside an example", () => {
+    const entry = { ...full.entry!, examples: ["(str \"```\")", "(str \"`\")"] };
+    const md = buildClojureDocsMarkdown(entry);
+    assert.ok(md.includes("````clojure\n(str \"```\")\n````"), md);
+    assert.ok(md.includes("```clojure\n(str \"`\")\n```"), md);
+  });
+
+  test("escapes markdown in var names", () => {
+    const entry = { ...minimal.entry!, ns: "clojure.core", name: "*", url: "https://clojuredocs.org/clojure.core/*" };
+    const md = buildClojureDocsMarkdown(entry);
+    assert.ok(md.includes("**ClojureDocs: clojure.core/\\***"), md);
+    const star = { ...entry, seeAlsos: ["clojure.core/*'"] };
+    assert.ok(buildClojureDocsMarkdown(star).includes("[clojure.core/\\*'](command:"), buildClojureDocsMarkdown(star));
   });
 });
 
