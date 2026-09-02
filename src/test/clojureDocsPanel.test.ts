@@ -6,6 +6,8 @@ import { ClojureDocsPanel, ClojureDocsPanelHost } from "../clojureDocsPanel";
 interface FakePanel {
   host: ClojureDocsPanelHost;
   reveals: number;
+  /** `preserveFocus` of the last reveal. */
+  preservedFocus: boolean | undefined;
   disposes: number;
   send(message: unknown): void;
   closeTab(): void;
@@ -16,6 +18,7 @@ function fakePanel(): FakePanel {
   let onDispose: (() => void) | undefined;
   const panel: FakePanel = {
     reveals: 0,
+    preservedFocus: undefined,
     disposes: 0,
     send: (message) => onMessage?.(message),
     closeTab: () => onDispose?.(),
@@ -27,8 +30,9 @@ function fakePanel(): FakePanel {
           onMessage = listener;
         },
       },
-      reveal: () => {
+      reveal: (_viewColumn, preserveFocus) => {
         panel.reveals++;
+        panel.preservedFocus = preserveFocus;
       },
       dispose: () => {
         panel.disposes++;
@@ -95,12 +99,38 @@ suite("ClojureDocsPanel", () => {
     assert.deepStrictEqual(h.calls, [atCursor]);
   });
 
-  test("a second show reuses the panel and reveals it", async () => {
+  test("a second show reuses the panel and reveals it without taking focus", async () => {
     const h = harness(async () => entryFor("clojure.core/map"));
     await h.panel.show(atCursor);
     await h.panel.show(atCursor);
     assert.strictEqual(h.panels.length, 1);
     assert.strictEqual(h.panels[0].reveals, 1);
+    assert.strictEqual(h.panels[0].preservedFocus, true);
+  });
+
+  test("a lookup finishing after the tab was closed does not reopen it", async () => {
+    const deferred: Array<(result: ClojureDocsResult) => void> = [];
+    let call = 0;
+    // Only the second lookup is slow; the first and third answer at once.
+    const h = harness(() => {
+      call++;
+      if (call !== 2) {
+        return Promise.resolve(entryFor("clojure.core/map"));
+      }
+      return new Promise<ClojureDocsResult>((resolve) => {
+        deferred.push(resolve);
+      });
+    });
+    await h.panel.show(atCursor);
+    const pending = h.panel.show({ symbol: "clojure.core/mapv" });
+    h.panels[0].closeTab();
+    deferred[0](entryFor("clojure.core/mapv"));
+    const result = await pending;
+    assert.strictEqual(result.symbol, "clojure.core/mapv");
+    assert.strictEqual(h.panels.length, 1, "closing must not be undone by a late answer");
+    // The next explicit request opens a fresh panel as usual.
+    await h.panel.show(atCursor);
+    assert.strictEqual(h.panels.length, 2);
   });
 
   test("no entry opens nothing and returns the result", async () => {

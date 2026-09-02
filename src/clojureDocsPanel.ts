@@ -27,7 +27,8 @@ export interface ClojureDocsWebview {
 export interface ClojureDocsPanelHost {
   title: string;
   webview: ClojureDocsWebview;
-  reveal(): void;
+  /** `vscode.WebviewPanel.reveal`'s shape; the panel always keeps focus. */
+  reveal(viewColumn?: undefined, preserveFocus?: boolean): void;
   dispose(): void;
   onDidDispose(listener: () => void): void;
 }
@@ -74,20 +75,28 @@ export class ClojureDocsPanel {
 
   dispose(): void {
     this.panel?.dispose();
+    this.closed();
+  }
+
+  /** The tab is gone: forget it, and drop any lookup still in flight — its
+   *  answer must not reopen what the user just closed. */
+  private closed(): void {
     this.panel = undefined;
+    this.sequence++;
   }
 
   private render(result: ClojureDocsResult): void {
     let panel = this.panel;
     if (panel) {
-      panel.reveal();
+      // Keep focus in the editor: the point is to keep reading and typing.
+      panel.reveal(undefined, true);
     } else {
       panel = this.deps.createPanel();
       this.panel = panel;
       panel.webview.onDidReceiveMessage((message) => this.handle(message));
       panel.onDidDispose(() => {
         if (this.panel === panel) {
-          this.panel = undefined;
+          this.closed();
         }
       });
     }
