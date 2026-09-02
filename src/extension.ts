@@ -7,13 +7,9 @@ import {
   State,
 } from "vscode-languageclient/node";
 import { createClient } from "./client";
-import {
-  CLOJUREDOCS_REQUEST,
-  ClojureDocsResult,
-  describeClojureDocsFailure,
-  noEntryMessage,
-} from "./clojureDocs";
-import { ClojureDocsPanel } from "./clojureDocsPanel";
+import { CLOJUREDOCS_REQUEST, ClojureDocsResult } from "./clojureDocs";
+import { createClojureDocsHoverProvider } from "./clojureDocsHover";
+import { PendingClojureDocsRequest } from "./clojureDocsRequest";
 import { configuredValue } from "./configValue";
 import {
   parseProjects,
@@ -127,6 +123,9 @@ export interface ExtensionApi {
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
   commandStatusBar: CommandStatusBar;
+  /** The one-shot request behind Show ClojureDocs — lets the end-to-end test
+   *  prove the command's ask reached the hover provider. */
+  clojureDocsRequests: PendingClojureDocsRequest;
 }
 
 export async function activate(
@@ -135,10 +134,37 @@ export async function activate(
   outputChannel = vscode.window.createOutputChannel("Clojure Pulse");
   statusBar = createStatusBar();
   clojureDocsPath = context.asAbsolutePath(path.join("data", "clojuredocs.json"));
+  const clojureDocsRequests = new PendingClojureDocsRequest();
 
   context.subscriptions.push(
     outputChannel,
     statusBar,
+    // ClojureDocs, offline: the hover part Show ClojureDocs adds. Registered
+    // here, before start(), on purpose: VS Code renders later-registered
+    // providers first, so the server's arglists-and-docstring part (registered
+    // when the client starts) stays above ours. Ordinary hovers get nothing
+    // from this provider — it answers only a request the command recorded.
+    vscode.languages.registerHoverProvider(
+      { language: "clojure" },
+      createClojureDocsHoverProvider({
+        pending: clojureDocsRequests,
+        lookup: (params) => {
+          const running = client;
+          if (!running) {
+            return Promise.reject(new Error("clj-pulse is not running."));
+          }
+          return running.sendRequest<ClojureDocsResult>(CLOJUREDOCS_REQUEST, params);
+        },
+        serverVersion: () => client?.initializeResult?.serverInfo?.version,
+        notify: {
+          info: (message) => void vscode.window.showInformationMessage(message),
+          warn: (message) => void vscode.window.showWarningMessage(message),
+        },
+      }),
+    ),
+    vscode.commands.registerCommand("clojurePulse.showClojureDocs", (symbol?: unknown) =>
+      showClojureDocs(clojureDocsRequests, symbol),
+    ),
     vscode.commands.registerCommand("clojurePulse.restart", restart),
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
@@ -242,47 +268,6 @@ export async function activate(
     ),
   );
 
-  // ClojureDocs, offline: a panel beside the editor for the symbol under the
-  // cursor. The server resolves the symbol and reads the bundled export it
-  // was pointed at in initializationOptions; this side only renders.
-  const clojureDocsPanel = new ClojureDocsPanel({
-    createPanel: () => {
-      const panel = vscode.window.createWebviewPanel(
-        "clojurePulse.clojureDocs",
-        "ClojureDocs",
-        // Beside, keeping focus: the point is to keep reading and typing.
-        { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-        { enableScripts: true, retainContextWhenHidden: true },
-      );
-      panel.iconPath = vscode.Uri.joinPath(
-        context.extensionUri,
-        "images",
-        "activity-icon.svg",
-      );
-      return panel;
-    },
-    lookup: (params) => {
-      const running = client;
-      if (!running) {
-        return Promise.reject(new Error("clj-pulse is not running."));
-      }
-      return running.sendRequest<ClojureDocsResult>(CLOJUREDOCS_REQUEST, params);
-    },
-    // See-also clicks fail the same way the command does (old server, no
-    // data file), so they get the same message.
-    onError: (error) => {
-      void vscode.window.showWarningMessage(
-        describeClojureDocsFailure(error, client?.initializeResult?.serverInfo?.version),
-      );
-    },
-  });
-  context.subscriptions.push(
-    clojureDocsPanel,
-    vscode.commands.registerCommand("clojurePulse.showClojureDocs", () =>
-      showClojureDocs(clojureDocsPanel),
-    ),
-  );
-
   // The project override form: adding a project (view title +) and editing
   // one (the row's pencil). Writes route through updateProjects, the same
   // serialized chain the toggle uses.
@@ -333,7 +318,11 @@ export async function activate(
   const repl = setupRepl(context);
 
   await start();
-  return { ...repl, cljfmtConfigStatus: () => cljfmtConfigStatus?.current() };
+  return {
+    ...repl,
+    cljfmtConfigStatus: () => cljfmtConfigStatus?.current(),
+    clojureDocsRequests,
+  };
 }
 
 export async function deactivate(): Promise<void> {
@@ -661,7 +650,7 @@ async function restart(): Promise<void> {
  */
 function setupRepl(
   context: vscode.ExtensionContext,
-): Omit<ExtensionApi, "cljfmtConfigStatus"> {
+): Omit<ExtensionApi, "cljfmtConfigStatus" | "clojureDocsRequests"> {
   const inlineResults = new InlineResultsManager();
   const testStatus = new TestStatusManager({
     passIcon: vscode.Uri.joinPath(context.extensionUri, "images", "test-pass.svg"),
@@ -2270,39 +2259,46 @@ function toTextEdits(
 }
 
 /**
- * Show ClojureDocs: the entry for the symbol under the cursor, in the panel.
- * The word comes from the Clojure `wordPattern`, so `str/join` and `map?`
- * are single words; the server does the resolving.
+ * Show ClojureDocs: record the ask, then open the editor hover focused so the
+ * arrow keys scroll it. The hover provider does the lookup and rendering.
+ * `symbol` comes from a see-also link inside the hover (a command URI); it
+ * counts only as a non-empty string, so odd keybinding args read as absent.
+ * The word check uses the Clojure `wordPattern`, so `str/join` and `map?` are
+ * single words; the server does the resolving.
  */
-async function showClojureDocs(panel: ClojureDocsPanel): Promise<void> {
+async function showClojureDocs(
+  pending: PendingClojureDocsRequest,
+  symbol?: unknown,
+): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  const range =
-    editor?.document.languageId === "clojure"
-      ? editor.document.getWordRangeAtPosition(editor.selection.active)
-      : undefined;
-  if (!editor || !range) {
-    void vscode.window.showInformationMessage("Place the cursor on a symbol.");
-    return;
-  }
-  const running = client;
-  if (!running) {
-    void vscode.window.showInformationMessage("clj-pulse is not running.");
+  if (!editor || editor.document.languageId !== "clojure") {
+    void vscode.window.showInformationMessage(
+      "Open a Clojure file and place the cursor on a symbol.",
+    );
     return;
   }
   const position = editor.selection.active;
-  try {
-    const result = await panel.show({
-      textDocument: { uri: editor.document.uri.toString() },
-      position: { line: position.line, character: position.character },
-    });
-    if (!result.entry) {
-      void vscode.window.showInformationMessage(noEntryMessage(result.symbol));
-    }
-  } catch (error) {
-    void vscode.window.showWarningMessage(
-      describeClojureDocsFailure(error, running.initializeResult?.serverInfo?.version),
-    );
+  const bySymbol = typeof symbol === "string" && symbol !== "";
+  if (!bySymbol && !editor.document.getWordRangeAtPosition(position)) {
+    void vscode.window.showInformationMessage("Place the cursor on a symbol.");
+    return;
   }
+  if (!client) {
+    void vscode.window.showInformationMessage("clj-pulse is not running.");
+    return;
+  }
+  // A visible hover would only be focused, not re-queried, by showHover — so
+  // hide first; that is what lets a see-also link swap the content in place.
+  await vscode.commands.executeCommand("editor.action.hideHover");
+  pending.record({
+    uri: editor.document.uri.toString(),
+    line: position.line,
+    character: position.character,
+    symbol: bySymbol ? symbol : undefined,
+  });
+  await vscode.commands.executeCommand("editor.action.showHover", {
+    focus: "autoFocusImmediately",
+  });
 }
 
 function setupFormatting(context: vscode.ExtensionContext): void {
