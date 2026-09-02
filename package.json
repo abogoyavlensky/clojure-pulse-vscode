@@ -649,8 +649,10 @@
     "compile-tests": "tsc -p . --outDir out",
     "lint": "eslint src",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "test": "vscode-test",
-    "package": "vsce package"
+    "test:scripts": "node --test scripts/build-clojuredocs.test.mjs",
+    "test": "npm run test:scripts && vscode-test",
+    "package": "vsce package",
+    "clojuredocs:update": "node scripts/build-clojuredocs.mjs"
   },
   "dependencies": {
     "@abogoyavlensky/cljfmt-js": "https://github.com/abogoyavlensky/cljfmt-js/releases/download/v0.1.0/abogoyavlensky-cljfmt-js-0.1.0.tgz",

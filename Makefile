@@ -16,7 +16,7 @@ TEST_CMD := xvfb-run -a npm test
 endif
 
 .PHONY: help setup install compile watch lint test check package \
-	install-extension uninstall-extension clean icon tag
+	install-extension uninstall-extension clean icon tag clojuredocs
 
 help: ## List available tasks
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -45,6 +45,9 @@ check: lint compile test ## Lint, compile, and test
 
 icon: ## Regenerate images/icon.png (256x256) from docs/images/icon.png
 	node scripts/build-icon.mjs
+
+clojuredocs: ## Regenerate data/clojuredocs.json from the ClojureDocs export
+	npm run clojuredocs:update
 
 package: ## Build the installable .vsix
 	npm run package
