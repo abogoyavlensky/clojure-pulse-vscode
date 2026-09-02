@@ -469,3 +469,5 @@ The extension gates on server `0.4.0`. Cargo.toml is at `0.3.0`; per `docs/RELEA
 **Not done, by design.** No version bumps: the server must be released as 0.4.0 for the extension's gate; the extension release is separate. The repository setting allowing Actions to open pull requests must be enabled before the monthly workflow can deliver.
 
 **What the plan could have specified better.** The raw export's `null` collections and the `reveal(preserveFocus)` argument: both were knowable from the data and the VS Code API at planning time and each cost a review round.
+
+> Post-completion change: the default `ctrl+alt+d` binding was removed at the user's request (F1 was ruled out because it is VS Code's Command Palette). The command ships without a default keybinding, like the eval commands; the README shows how to bind it.

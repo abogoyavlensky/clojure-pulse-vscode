@@ -28,7 +28,7 @@ do not need any other Clojure extension.
   - Code actions, including "Add require", and live diagnostics from the
     server plus [clj-kondo](#linting) when it is installed.
   - Keyword and Integrant-key navigation, and built-in Java interop.
-- **ClojureDocs, offline** — `ctrl+alt+d` on a symbol opens its
+- **ClojureDocs, offline** — **Show ClojureDocs** on a symbol opens its
   [ClojureDocs](https://clojuredocs.org) entry (docstring, arglists, community
   examples, see-also links) in a panel beside the editor. The data ships with
   the extension, so it works offline with nothing to download. See
@@ -233,9 +233,8 @@ server scans your classpath in the background to fill the cache, showing
 
 ## ClojureDocs
 
-Put the cursor on a symbol and press `ctrl+alt+d` (or run **Clojure Pulse:
-Show ClojureDocs**) to open its [ClojureDocs](https://clojuredocs.org) entry
-beside the editor: the docstring, the arglists, the community examples, and
+Put the cursor on a symbol and run **Clojure Pulse: Show ClojureDocs** to
+open its [ClojureDocs](https://clojuredocs.org) entry beside the editor: the docstring, the arglists, the community examples, and
 the see-also links. Focus stays in the editor, so you can keep typing while
 the panel is open, and every lookup reuses the same panel. Click a see-also
 link to load that var's entry in place.
@@ -248,8 +247,18 @@ namespaces; a project function shows "No ClojureDocs entry".
 The data ships inside the extension as `data/clojuredocs.json`, a stripped
 copy of the official export that a scheduled workflow refreshes monthly, so
 nothing is downloaded and it works offline. It needs clj-pulse 0.4.0 or newer;
-an older server gets a message saying so. To rebind the shortcut, bind
-`clojurePulse.showClojureDocs` in your Keyboard Shortcuts.
+an older server gets a message saying so.
+
+Like the eval commands, it ships without a default keybinding. Bind
+`clojurePulse.showClojureDocs` in your Keyboard Shortcuts, for example:
+
+```json
+{
+  "key": "ctrl+alt+d",
+  "command": "clojurePulse.showClojureDocs",
+  "when": "editorTextFocus && editorLangId == clojure"
+}
+```
 
 Examples are contributed to ClojureDocs under
 [CC0](https://creativecommons.org/publicdomain/zero/1.0/); docstrings come from
@@ -576,7 +585,7 @@ Run these from the Command Palette:
 - **Clojure Pulse: Restart Server** — restart the language server.
 - **Clojure Pulse: Show Output** — open the server output channel.
 - **Clojure Pulse: Show ClojureDocs** — open the ClojureDocs entry for the
-  symbol under the cursor (`ctrl+alt+d`). See [ClojureDocs](#clojuredocs).
+  symbol under the cursor. See [ClojureDocs](#clojuredocs).
 - **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
   tree (also available as a button on the view title).
 - **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as

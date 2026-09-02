@@ -4,10 +4,11 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
-- **ClojureDocs, offline**: `ctrl+alt+d` on a symbol (or **Clojure Pulse: Show
-  ClojureDocs**) opens its ClojureDocs entry — docstring, arglists, community
-  examples, see-also links — in a panel beside the editor, with focus kept in
-  the editor and see-also links loading in place. The data ships with the
+- **ClojureDocs, offline**: **Clojure Pulse: Show ClojureDocs** on a symbol
+  opens its ClojureDocs entry — docstring, arglists, community examples,
+  see-also links — in a panel beside the editor, with focus kept in the editor
+  and see-also links loading in place. No default keybinding, like the eval
+  commands; bind `clojurePulse.showClojureDocs` to the key you like. The data ships with the
   extension (a stripped copy of the official export, refreshed monthly by a
   scheduled workflow), so it works offline with nothing to download. The
   server resolves the symbol like hover does, aliases included. Needs

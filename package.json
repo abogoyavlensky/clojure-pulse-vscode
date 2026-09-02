@@ -647,11 +647,6 @@
         "command": "clojurePulse.clearInlineResults",
         "key": "escape",
         "when": "editorTextFocus && editorLangId == clojure && clojurePulse.hasInlineResults && !suggestWidgetVisible && !renameInputVisible && !parameterHintsVisible && !findWidgetVisible && !inSnippetMode && !editorHasSelection"
-      },
-      {
-        "command": "clojurePulse.showClojureDocs",
-        "key": "ctrl+alt+d",
-        "when": "editorTextFocus && editorLangId == clojure"
       }
     ]
   },
