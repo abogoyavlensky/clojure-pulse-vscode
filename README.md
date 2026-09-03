@@ -28,6 +28,11 @@ do not need any other Clojure extension.
   - Code actions, including "Add require", and live diagnostics from the
     server plus [clj-kondo](#linting) when it is installed.
   - Keyword and Integrant-key navigation, and built-in Java interop.
+- **ClojureDocs, offline** — **Show ClojureDocs** on a symbol adds its
+  [ClojureDocs](https://clojuredocs.org) entry (community examples, see-also
+  links) to the editor hover, opened focused so the arrow keys scroll it. The
+  data ships with the extension, so it works offline with nothing to
+  download. See [ClojureDocs](#clojuredocs).
 - **Library navigation** — jumping into a `jar:` source (a dependency or
   `clojure.core`) opens the real file, read-only.
 - **External Libraries panel** — a Cursive-style tree, in its own activity-bar
@@ -225,6 +230,45 @@ into a `.clj-kondo` directory it will not create itself. Run `mkdir .clj-kondo`
 once per project and `invalid-arity` and `unresolved-var` start working; the
 server scans your classpath in the background to fill the cache, showing
 "Linting classpath (clj-kondo)" in the status bar while it does.
+
+## ClojureDocs
+
+Put the cursor on a symbol and run **Clojure Pulse: Show ClojureDocs**. The
+editor hover opens with the usual arglists and docstring from clj-pulse, and
+below them the [ClojureDocs](https://clojuredocs.org) entry: the community
+examples, syntax-highlighted in your theme, and the see-also links. The hover
+opens focused, so Up and Down scroll it, PageUp and PageDown page through the
+examples, and Escape puts the cursor back where it was. Click a see-also link
+to load that var's examples in the same hover.
+
+The ordinary hover is unchanged: mouse hovers and `Ctrl+K Ctrl+I` never grow
+examples; only the command adds them.
+
+clj-pulse resolves the symbol the same way hover does, so `str/join` finds
+`clojure.string/join` through your `ns` form and bare names fall back to
+`clojure.core`. ClojureDocs covers `clojure.core` and the other `clojure.*`
+namespaces; a project function shows "No ClojureDocs entry".
+
+The data ships inside the extension as `data/clojuredocs.json`, a stripped
+copy of the official export that a scheduled workflow refreshes monthly, so
+nothing is downloaded and it works offline. It needs clj-pulse 0.4.0 or newer;
+an older server gets a message saying so.
+
+Like the eval commands, it ships without a default keybinding. Bind
+`clojurePulse.showClojureDocs` in your Keyboard Shortcuts, for example:
+
+```json
+{
+  "key": "ctrl+alt+d",
+  "command": "clojurePulse.showClojureDocs",
+  "when": "editorTextFocus && editorLangId == clojure"
+}
+```
+
+Examples are contributed to ClojureDocs under
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/); docstrings come from
+Clojure under the EPL. ClojureDocs notes carry no stated license and are not
+bundled.
 
 ## Monorepos
 
@@ -545,6 +589,8 @@ Run these from the Command Palette:
 
 - **Clojure Pulse: Restart Server** — restart the language server.
 - **Clojure Pulse: Show Output** — open the server output channel.
+- **Clojure Pulse: Show ClojureDocs** — add the ClojureDocs entry for the
+  symbol under the cursor to the editor hover. See [ClojureDocs](#clojuredocs).
 - **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
   tree (also available as a button on the view title).
 - **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as
@@ -651,3 +697,7 @@ changes (bump `version` in `package.json` for clean version tracking).
 ## License
 
 [MIT](LICENSE). Copyright (c) 2026 Andrey Bogoyavlenskiy.
+
+`data/clojuredocs.json` is derived from the
+[ClojureDocs](https://clojuredocs.org) export: examples under CC0, docstrings
+from Clojure under the EPL.

@@ -1,0 +1,51 @@
+# Refreshes the bundled ClojureDocs data (data/clojuredocs.json) from the
+# official export once a month and opens a pull request when it changed.
+#
+# The repository setting "Allow GitHub Actions to create and approve pull
+# requests" (Settings → Actions → General → Workflow permissions) must be on,
+# or the create-pull-request step fails with a permissions error.
+
+name: Update ClojureDocs data
+
+on:
+  schedule:
+    # 06:00 UTC on the first day of every month.
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild data/clojuredocs.json from the export
+        run: npm run clojuredocs:update
+
+      - name: Check the build script
+        run: npm run test:scripts
+
+      # Opens nothing when the working tree is unchanged, so a month with no
+      # new examples leaves no trace.
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: Update bundled ClojureDocs data
+          branch: chore/clojuredocs-update
+          delete-branch: true
+          title: Update bundled ClojureDocs data
+          body: |
+            Monthly refresh of `data/clojuredocs.json` from
+            https://clojuredocs.org/clojuredocs-export.json via
+            `npm run clojuredocs:update`. Examples are CC0; notes are not bundled.

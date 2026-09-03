@@ -15,7 +15,8 @@ const LANGUAGE_ID = "clojure";
  * server over stdio. The client id `clojurePulse` makes the standard
  * `clojurePulse.trace.server` setting drive LSP tracing automatically.
  * `initializationOptions` is sent verbatim in the `initialize` request — the
- * server reads the bare `{projects: [...]}` config object from it.
+ * server reads the bare `{projects: [...], kondo: {...}, clojuredocs: {path}}`
+ * config object from it.
  */
 export function createClient(
   server: ResolvedServer,
