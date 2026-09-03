@@ -49,6 +49,15 @@ function blank(line: string): boolean {
   return line.trim() === "";
 }
 
+/** Whether the line holding `offset` is tab-indented. A frame opened on such
+ *  a line sits at a column the scanner *guessed* (a tab counts as one unit),
+ *  so lines anchored to it must not move either — the same rule the
+ *  structural engine's re-indentation follows. */
+function tabIndentedAt(text: string, offset: number): boolean {
+  const start = text.lastIndexOf("\n", offset - 1) + 1;
+  return leading(text.slice(start, offset + 1)).tab;
+}
+
 /**
  * The indentation the pasted text should get, or `null` when it should be
  * inserted exactly as copied. Line endings are dropped: the caller joins
@@ -138,7 +147,11 @@ function shiftBodyLines(
   const shiftable = (i: number): boolean => {
     const info = infos.get(firstLine + i);
     return (
-      info !== undefined && !info.startsInString && !blank(lines[i]) && !leading(lines[i]).tab
+      info !== undefined &&
+      !info.startsInString &&
+      !blank(lines[i]) &&
+      !leading(lines[i]).tab &&
+      !(info.anchorOffset !== null && tabIndentedAt(postText, info.anchorOffset))
     );
   };
 

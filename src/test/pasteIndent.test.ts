@@ -74,6 +74,15 @@ suite("planPaste", () => {
     });
   });
 
+  test("lines anchored to a tab-indented line stay put", () => {
+    // The anchor's column is a guess (a tab counts as one unit), so its
+    // children must not be moved by it.
+    assert.deepStrictEqual(paste("(comment\n|)", "(def TEST\n\t(foo\n  bar))"), {
+      lines: ["  (def TEST", "\t(foo", "  bar))"],
+      deleteBefore: 0,
+    });
+  });
+
   test("a negative shift stops at column 0", () => {
     assert.deepStrictEqual(paste("(comment\n|)", "(def TEST\n      {:a 1\n :b 2})"), {
       lines: ["  (def TEST", "    {:a 1", ":b 2})"],
