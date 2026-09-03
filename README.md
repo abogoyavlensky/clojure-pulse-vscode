@@ -60,6 +60,14 @@ do not need any other Clojure extension.
   other editors; the extension sets `editor.formatOnType` to `false` for
   Clojure so the two never both fire. Enter falls through to VS Code whenever
   a suggest widget, snippet, rename box, or code-action menu is active.
+- **Indent on paste** — a pasted multi-line form lands at the column its new
+  position calls for, keeping its own internal layout: every line moves by the
+  same amount, so hand-aligned map values and nested forms survive. The active
+  formatting engine picks the column, exactly as it does for Enter. Paste a
+  `def` into a `comment` block and its body follows along instead of keeping
+  the columns it had where you copied it. For a full reformat of what you
+  paste, turn on `editor.formatOnPaste`; `editor.pasteAs.enabled` turns paste
+  providers off altogether.
 - **Maintained relative indentation** (Cursive-style) — when an edit moves
   code that later lines of a multiline form are anchored to, those lines
   follow automatically: add spaces before `(defn`, press Enter right before a
@@ -101,6 +109,8 @@ Then install the `clj-pulse` server (next section) to get the language
 features.
 
 ## Requirements
+
+VS Code 1.97 or newer.
 
 Install the `clj-pulse` server and make sure it is on your `PATH`.
 

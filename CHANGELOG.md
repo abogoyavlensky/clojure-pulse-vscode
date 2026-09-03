@@ -4,6 +4,16 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Indent on paste**: pasting a multi-line Clojure form re-indents it to
+  where it lands, instead of keeping the columns it had at the source. The
+  form's own layout is preserved — every line moves by the same amount, so
+  hand-aligned map values and nested forms stay as they were — and the active
+  formatting engine picks the column, the same one Enter would. It covers
+  every paste path (Ctrl+V, the context menu, Shift+Insert, Paste As…) and
+  leaves a paste that needs no change untouched. `editor.formatOnPaste` still
+  reformats what you paste, and `editor.pasteAs.enabled` switches paste
+  providers off. This uses VS Code's document-paste API, so the extension now
+  requires **VS Code 1.97** or newer.
 - **ClojureDocs, offline**: **Clojure Pulse: Show ClojureDocs** on a symbol
   adds its ClojureDocs entry — community examples, syntax-highlighted in your
   theme, and see-also links — to the editor hover, below the usual arglists
