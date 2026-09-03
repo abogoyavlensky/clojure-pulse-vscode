@@ -1,4 +1,7 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 
 const EXTENSION_ID = "abogoyavlensky.clojure-pulse";
@@ -87,6 +90,17 @@ suite("indent on paste (integration)", () => {
       editor.document,
       "(comment\n  (def TEST\n    {:a 1\n     :b 2}))",
     );
+  });
+
+  test("a file on disk pastes through its own cljfmt config", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cljp-paste-"));
+    const file = path.join(dir, "sample.clj");
+    fs.writeFileSync(file, "(comment\n  )");
+    const doc = await vscode.workspace.openTextDocument(file);
+    const editor = await vscode.window.showTextDocument(doc);
+    editor.selections = [cursor(1, 2)];
+    await paste(DEF_WITH_MAP);
+    await waitForText(doc, "(comment\n  (def TEST\n    {:a 1\n     :b 2}))");
   });
 
   test("a CRLF document keeps its line endings", async () => {

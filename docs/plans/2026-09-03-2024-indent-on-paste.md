@@ -1,5 +1,7 @@
 # Indent on Paste Implementation Plan
 
+**Status: completed** (2026-09-03).
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Pasting a multi-line Clojure form lands every pasted line at the right column, preserving the form's internal layout, through a `DocumentPasteEditProvider` backed by the active formatting engine; and a newline that bypasses the extension's Enter keybinding is still reindented by the engine.
@@ -206,13 +208,13 @@ export function planPaste(ctx: PasteContext, indentAt: IndentAt): PastePlan | nu
 - Modify: `src/test/cljfmtEngine.test.ts`
 - Modify: `src/test/newline.integration.test.ts`
 
-- [ ] **Step 1: Add unit cases**
+- [x] **Step 1: Add unit cases**
   `indent.test.ts`: `indentColumnAt("(:require [a :as b][c :as d])", offsetBefore("d"))` is 20 (column just after the second `[`). `cljfmtEngine.test.ts`: the same input through `indentAt` is 20.
 
-- [ ] **Step 2: Add the integration case**
+- [x] **Step 2: Add the integration case**
   `newline.integration.test.ts`: open `"(:require [a :as b][c :as d])"` with the cursor before `d`, run `clojurePulse.newline`, expect `"(:require [a :as b][c :as\n" + " ".repeat(20) + "d])"` and the cursor at `[1, 20]`.
 
-- [ ] **Step 3: Run and commit**
+- [x] **Step 3: Run and commit**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "vector"`
   Expected: PASS.
   `git commit -m "Pin Enter indentation beside a sibling vector"`
@@ -223,13 +225,13 @@ export function planPaste(ctx: PasteContext, indentAt: IndentAt): PastePlan | nu
 - Modify: `README.md`
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Add an **Indent on paste** bullet after *Indent on Enter* in the features list: pasted multi-line forms are re-indented to the paste position with their internal layout preserved, the engine decides the column, and `editor.formatOnPaste` remains the way to get a full reformat. Mention that `editor.pasteAs.enabled` turns it off. Update the "requires VS Code" mention if the README states a version.
 
-- [ ] **Step 2: CHANGELOG**
+- [x] **Step 2: CHANGELOG**
   Under `## [Unreleased]`, add an **Indent on paste** entry in the existing style, including the VS Code 1.97 requirement.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document indent on paste"`
 
 ### Task 6: Fallback indent for a plain newline
@@ -238,20 +240,68 @@ export function planPaste(ctx: PasteContext, indentAt: IndentAt): PastePlan | nu
 - Modify: `src/extension.ts`
 - Test: `src/test/newline.integration.test.ts`
 
-- [ ] **Step 1: Write the failing integration tests**
+- [x] **Step 1: Write the failing integration tests**
   In `newline.integration.test.ts`, add a suite `fallback newline`: open `"(:require [a :as b][c :as d])"` with the cursor before `d`, run `vscode.commands.executeCommand("type", { text: "\n" })` (VS Code's own Enter path, which the keybinding never sees), and `waitForText` for `"(:require [a :as b][c :as\n" + " ".repeat(20) + "d])"`; also assert the cursor ends at `[1, 20]`. Add a string case: `'(def s "ab")'` with the cursor after `a`, type `"\n"`, expect `'(def s "a\nb")'` unchanged after a short wait (no reindent inside strings).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "fallback newline"`
   Expected: FAIL, the new line keeps VS Code's copied indentation.
 
-- [ ] **Step 3: Implement the fallback listener**
+- [x] **Step 3: Implement the fallback listener**
   In `src/extension.ts`, add `setupNewlineFallback(context)` registering an `onDidChangeTextDocument` listener, called from `activate` next to `setupMaintainIndentation`. Bail unless: the document is Clojure, `event.reason` is undefined, there is exactly one content change, the change text matches `/^\r?\n[ \t]*(\r?\n[ \t]*)?$/`, and neither `newlineBusy` (set by `insertStructuralNewline` around its own edit) nor `maintainIndentBusy` is set. Compute `desired = engineFor(doc).indentAt(doc.getText(), doc.offsetAt(new Position(line, 0)))` for `line = change.range.start.line + 1`; on `null` or when the line's leading whitespace already equals `desired` spaces, return. Otherwise replace the leading whitespace with `undoStopBefore: false, undoStopAfter: false`, then, if the active cursor sits on that line at or before the old whitespace end, place it at `desired`. Guard the whole body with a `fallbackBusy` flag so the follow-up edit is not re-processed.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "newline"`
   Expected: PASS, including the existing `clojurePulse.newline` suite.
 
-- [ ] **Step 5: Update docs and commit**
+- [x] **Step 5: Update docs and commit**
   README *Indent on Enter* bullet: the sentence "Enter falls through to VS Code whenever …" gains "and the new line is still reindented a moment later". CHANGELOG: a **Fixed** line under Unreleased.
   `git commit -m "Reindent a newline that bypassed the Enter keybinding"`
+
+> Deviation: the cursor move is decided *after* the reindent edit, one tick later. The command that inserted the newline updates its cursor state after the change event fires, so the selection read inside the listener is still the pre-Enter one; the listener now waits, then moves a cursor that is still inside the line's indentation.
+
+---
+
+## Completion summary
+
+All six tasks are implemented, tested and committed on `fix-paste-and-indent`.
+The full suite passes: 786 tests, no failures.
+
+**Bug 2 (paste).** `src/pasteIndent.ts` plans the indentation (pure, engine-agnostic,
+15 unit cases); `setupPasteIndent` in `src/extension.ts` registers the
+`DocumentPasteEditProvider` behind it. Four integration tests drive the real
+clipboard and paste command, including a dedenting paste, a CRLF document and a
+file on disk (the cljfmt config-discovery path untitled buffers skip).
+
+**Bug 1 (Enter beside a sibling vector).** The regression tests confirmed the
+diagnosis rather than a defect: `indentColumnAt`, the cljfmt probe and the Enter
+command all put the new line at the second vector's own column. The wrong column
+comes from VS Code's own Enter, which runs whenever the keybinding is suppressed
+— reproduced by typing `\n` through the `type` command, which produced exactly
+the reported line. `setupNewlineFallback` now reindents such a newline with the
+engine, in the keystroke's undo group.
+
+### Deviations
+
+- **Tab-indented anchors freeze their children** (task 1, from the codex review):
+  a body line whose structural anchor sits on a tab-indented line is not shifted
+  — that anchor's column is a scanner guess. The structural engine already
+  refuses the same case.
+- **The pasted text rides in `additionalEdit`** (task 3): VS Code inserts a
+  non-empty `insertText` as a *snippet*, and snippet insertion prepends the paste
+  line's indentation to every later line — the form landed indented twice. With
+  an empty `insertText` VS Code applies only the additional edit, verbatim; that
+  is the API's documented path for advanced insertion. The dedent is folded into
+  it by extending the replaced range back over `deleteBefore`.
+- **The fallback's cursor move happens after its edit** (task 6): the command
+  that inserted the newline updates its cursor state after the change event, so
+  the selection read inside the listener is still the pre-Enter one. The listener
+  waits a tick, then moves a cursor that is still inside the line's indentation.
+
+### What the plan could have specified better
+
+The wiring section assumed `DocumentPasteEdit.insertText` is inserted literally.
+It is not — VS Code runs it through snippet insertion with whitespace adjustment,
+which silently double-indents every line but the first. A plan that pins an
+editor API's *insertion semantics*, not just its shape, would have saved the
+debugging round; the same goes for when a listener may trust `editor.selection`.
