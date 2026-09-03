@@ -12,7 +12,7 @@
     "url": "https://github.com/abogoyavlensky/clojure-pulse-vscode"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.97.0"
   },
   "categories": [
     "Programming Languages",
@@ -671,7 +671,7 @@
     "@eslint/js": "^9.0.0",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.0",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.97.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.0",
     "@vscode/vsce": "^3.0.0",

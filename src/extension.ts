@@ -28,6 +28,7 @@ import {
 } from "./ignoredForms";
 import { createFormHighlighter } from "./formHighlight";
 import { planShift } from "./maintainIndent";
+import { planPaste } from "./pasteIndent";
 import {
   defaultConfig,
   readConfig as readCljfmtConfig,
@@ -315,6 +316,8 @@ export async function activate(
   setupIgnoredFormDimming(context);
   setupFormatting(context);
   setupMaintainIndentation(context);
+  setupNewlineFallback(context);
+  setupPasteIndent(context);
   const repl = setupRepl(context);
 
   await start();
@@ -2459,22 +2462,28 @@ async function insertStructuralNewline(): Promise<void> {
       }) ?? [];
   }
 
-  const applied = await editor.edit((builder) => {
-    for (const edit of edits) {
-      builder.replace(edit.range, "\n" + " ".repeat(edit.indent));
-    }
-    // Shift lines come back in post-edit coordinates; the newline edit adds
-    // one line (minus any lines a multi-line selection removed) above them.
-    const lineDelta = 1 - (edits[0].range.end.line - edits[0].range.start.line);
-    for (const shift of shiftEdits) {
-      const preLine = shift.line - lineDelta;
-      if (shift.deltaCols > 0) {
-        builder.insert(new vscode.Position(preLine, 0), " ".repeat(shift.deltaCols));
-      } else {
-        builder.delete(new vscode.Range(preLine, 0, preLine, -shift.deltaCols));
+  newlineBusy = true;
+  let applied: boolean;
+  try {
+    applied = await editor.edit((builder) => {
+      for (const edit of edits) {
+        builder.replace(edit.range, "\n" + " ".repeat(edit.indent));
       }
-    }
-  });
+      // Shift lines come back in post-edit coordinates; the newline edit adds
+      // one line (minus any lines a multi-line selection removed) above them.
+      const lineDelta = 1 - (edits[0].range.end.line - edits[0].range.start.line);
+      for (const shift of shiftEdits) {
+        const preLine = shift.line - lineDelta;
+        if (shift.deltaCols > 0) {
+          builder.insert(new vscode.Position(preLine, 0), " ".repeat(shift.deltaCols));
+        } else {
+          builder.delete(new vscode.Range(preLine, 0, preLine, -shift.deltaCols));
+        }
+      }
+    });
+  } finally {
+    newlineBusy = false;
+  }
   if (!applied) {
     return;
   }
@@ -2495,6 +2504,13 @@ async function insertStructuralNewline(): Promise<void> {
 /** Set while this extension's own shift edit is in flight, so the change
  *  event it raises is not re-processed. */
 let maintainIndentBusy = false;
+
+/** Set while the extension's own Enter edit is in flight — that newline
+ *  already carries the engine's indent. */
+let newlineBusy = false;
+
+/** Set while the fallback's own reindent is in flight. */
+let fallbackBusy = false;
 
 /**
  * Maintains relative indentation (Cursive-style): when a single edit moves
@@ -2566,6 +2582,176 @@ async function maintainIndent(event: vscode.TextDocumentChangeEvent): Promise<vo
   } finally {
     maintainIndentBusy = false;
   }
+}
+
+/** A bare newline plus the whitespace VS Code copied after it: one inserted
+ *  line, or the two it inserts between an empty bracket pair. */
+const PLAIN_NEWLINE = /^\r?\n[ \t]*(\r?\n[ \t]*)?$/;
+
+/**
+ * Reindents a newline that never reached `clojurePulse.newline`. The Enter
+ * keybinding is suppressed while a suggest widget, snippet, rename box or
+ * code-action menu is up (its `when` clause in package.json), and VS Code's
+ * own Enter then simply copies the current line's indentation — for Clojure
+ * usually the wrong column, since the language ships no indentation rules for
+ * the editor to apply. The engine recomputes it here and the correction
+ * merges into the keystroke's undo group, so one undo reverts both.
+ *
+ * The ordinary Enter path is untouched — it stays one atomic edit with no
+ * visible hop. Only the newlines that bypassed it are corrected, a beat
+ * later, where they would otherwise stay wrong.
+ */
+function setupNewlineFallback(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((event) => void newlineFallback(event)),
+  );
+}
+
+async function newlineFallback(event: vscode.TextDocumentChangeEvent): Promise<void> {
+  if (
+    newlineBusy ||
+    fallbackBusy ||
+    maintainIndentBusy ||
+    !isClojure(event.document) ||
+    event.reason !== undefined || // Undo/Redo restore their own text
+    event.contentChanges.length !== 1 || // multi-cursor / bulk edits: bail
+    !PLAIN_NEWLINE.test(event.contentChanges[0].text)
+  ) {
+    return;
+  }
+  const doc = event.document;
+  // Only the first inserted line: between an empty bracket pair VS Code adds
+  // a second one for the closer, which is already where it belongs.
+  const line = event.contentChanges[0].range.start.line + 1;
+  if (line >= doc.lineCount) {
+    return;
+  }
+  const desired = engineFor(doc).indentAt(
+    doc.getText(),
+    doc.offsetAt(new vscode.Position(line, 0)),
+  );
+  // `null` means the new line is string content — never touch it.
+  if (desired === null) {
+    return;
+  }
+  const current = /^[ \t]*/.exec(doc.lineAt(line).text)![0];
+  if (current === " ".repeat(desired)) {
+    return;
+  }
+  const editor = vscode.window.visibleTextEditors.find((e) => e.document === doc);
+  if (!editor) {
+    return;
+  }
+  fallbackBusy = true;
+  try {
+    const applied = await editor.edit(
+      (builder) =>
+        builder.replace(
+          new vscode.Range(line, 0, line, current.length),
+          " ".repeat(desired),
+        ),
+      // Merge into the keystroke's undo group: one undo reverts both.
+      { undoStopBefore: false, undoStopAfter: false },
+    );
+    if (!applied) {
+      return;
+    }
+    // The command that inserted the newline sets its own cursor state after
+    // this edit, so where the cursor ended up is only known a tick later. A
+    // cursor still inside the line's indentation belongs at its new column.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const active = editor.selection.active;
+    if (
+      editor.selections.length === 1 &&
+      active.line === line &&
+      active.character <= desired
+    ) {
+      editor.selections = [new vscode.Selection(line, desired, line, desired)];
+    }
+  } finally {
+    fallbackBusy = false;
+  }
+}
+
+/** The kind this extension's paste edit carries; VS Code lists it under
+ *  *Paste As…* and in the hint widget after a paste. */
+const PASTE_KIND = vscode.DocumentDropOrPasteEditKind.Text.append("indent", "clojure");
+
+/**
+ * Indent on paste: a pasted multi-line form lands at the columns its new
+ * position calls for while keeping its own internal layout (`planPaste`).
+ * VS Code's built-in auto-indent-on-paste never runs for Clojure — the
+ * language ships no indentation rules — so this provider stands in for it and
+ * covers every paste entry point at once (Ctrl+V, the context menu,
+ * Shift+Insert, Paste As…).
+ *
+ * It is always on; `editor.pasteAs.enabled` is VS Code's own switch for users
+ * who want no paste providers at all. Because no edit is returned when
+ * nothing needs adjusting, the small "paste as" hint appears only after a
+ * paste that was actually re-indented.
+ */
+function setupPasteIndent(context: vscode.ExtensionContext): void {
+  const provider: vscode.DocumentPasteEditProvider = {
+    async provideDocumentPasteEdits(doc, ranges, dataTransfer, pasteContext) {
+      try {
+        // Multi-cursor pastes stay plain: one uniform shift cannot serve
+        // several unrelated positions.
+        if (ranges.length !== 1) {
+          return undefined;
+        }
+        if (pasteContext.only && !pasteContext.only.intersects(PASTE_KIND)) {
+          return undefined;
+        }
+        const clipboard = await dataTransfer.get("text/plain")?.asString();
+        if (!clipboard) {
+          return undefined;
+        }
+        const range = ranges[0];
+        const engine = engineFor(doc);
+        const plan = planPaste(
+          {
+            text: doc.getText(),
+            start: doc.offsetAt(range.start),
+            end: doc.offsetAt(range.end),
+            clipboard,
+          },
+          (text, offset) => engine.indentAt(text, offset),
+        );
+        if (!plan) {
+          return undefined;
+        }
+        const eol = doc.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+        // The text goes in an additional edit rather than `insertText`: VS
+        // Code inserts a non-empty `insertText` as a snippet, which prepends
+        // the paste line's own indentation to every later line — indenting
+        // the form twice. An empty `insertText` is the API's documented way
+        // to say "my additional edit is the paste". A dedent simply extends
+        // the replaced range back over the excess indentation.
+        const from =
+          plan.deleteBefore > 0
+            ? range.start.translate(0, -plan.deleteBefore)
+            : range.start;
+        const additional = new vscode.WorkspaceEdit();
+        additional.replace(doc.uri, new vscode.Range(from, range.end), plan.lines.join(eol));
+        const edit = new vscode.DocumentPasteEdit(
+          "",
+          "Paste with Clojure indentation",
+          PASTE_KIND,
+        );
+        edit.additionalEdit = additional;
+        return [edit];
+      } catch {
+        // A paste must never fail because of formatting.
+        return undefined;
+      }
+    },
+  };
+  context.subscriptions.push(
+    vscode.languages.registerDocumentPasteEditProvider("clojure", provider, {
+      providedPasteEditKinds: [PASTE_KIND],
+      pasteMimeTypes: ["text/plain"],
+    }),
+  );
 }
 
 /** Refreshes the dim decoration for a single Clojure editor. */
