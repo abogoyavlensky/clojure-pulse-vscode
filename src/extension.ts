@@ -28,6 +28,7 @@ import {
 } from "./ignoredForms";
 import { createFormHighlighter } from "./formHighlight";
 import { planShift } from "./maintainIndent";
+import { planPaste } from "./pasteIndent";
 import {
   defaultConfig,
   readConfig as readCljfmtConfig,
@@ -315,6 +316,7 @@ export async function activate(
   setupIgnoredFormDimming(context);
   setupFormatting(context);
   setupMaintainIndentation(context);
+  setupPasteIndent(context);
   const repl = setupRepl(context);
 
   await start();
@@ -2566,6 +2568,87 @@ async function maintainIndent(event: vscode.TextDocumentChangeEvent): Promise<vo
   } finally {
     maintainIndentBusy = false;
   }
+}
+
+/** The kind this extension's paste edit carries; VS Code lists it under
+ *  *Paste As…* and in the hint widget after a paste. */
+const PASTE_KIND = vscode.DocumentDropOrPasteEditKind.Text.append("indent", "clojure");
+
+/**
+ * Indent on paste: a pasted multi-line form lands at the columns its new
+ * position calls for while keeping its own internal layout (`planPaste`).
+ * VS Code's built-in auto-indent-on-paste never runs for Clojure — the
+ * language ships no indentation rules — so this provider stands in for it and
+ * covers every paste entry point at once (Ctrl+V, the context menu,
+ * Shift+Insert, Paste As…).
+ *
+ * It is always on; `editor.pasteAs.enabled` is VS Code's own switch for users
+ * who want no paste providers at all. Because no edit is returned when
+ * nothing needs adjusting, the small "paste as" hint appears only after a
+ * paste that was actually re-indented.
+ */
+function setupPasteIndent(context: vscode.ExtensionContext): void {
+  const provider: vscode.DocumentPasteEditProvider = {
+    async provideDocumentPasteEdits(doc, ranges, dataTransfer, pasteContext) {
+      try {
+        // Multi-cursor pastes stay plain: one uniform shift cannot serve
+        // several unrelated positions.
+        if (ranges.length !== 1) {
+          return undefined;
+        }
+        if (pasteContext.only && !pasteContext.only.intersects(PASTE_KIND)) {
+          return undefined;
+        }
+        const clipboard = await dataTransfer.get("text/plain")?.asString();
+        if (!clipboard) {
+          return undefined;
+        }
+        const range = ranges[0];
+        const engine = engineFor(doc);
+        const plan = planPaste(
+          {
+            text: doc.getText(),
+            start: doc.offsetAt(range.start),
+            end: doc.offsetAt(range.end),
+            clipboard,
+          },
+          (text, offset) => engine.indentAt(text, offset),
+        );
+        if (!plan) {
+          return undefined;
+        }
+        const eol = doc.eol === vscode.EndOfLine.CRLF ? "\r\n" : "\n";
+        // The text goes in an additional edit rather than `insertText`: VS
+        // Code inserts a non-empty `insertText` as a snippet, which prepends
+        // the paste line's own indentation to every later line — indenting
+        // the form twice. An empty `insertText` is the API's documented way
+        // to say "my additional edit is the paste". A dedent simply extends
+        // the replaced range back over the excess indentation.
+        const from =
+          plan.deleteBefore > 0
+            ? range.start.translate(0, -plan.deleteBefore)
+            : range.start;
+        const additional = new vscode.WorkspaceEdit();
+        additional.replace(doc.uri, new vscode.Range(from, range.end), plan.lines.join(eol));
+        const edit = new vscode.DocumentPasteEdit(
+          "",
+          "Paste with Clojure indentation",
+          PASTE_KIND,
+        );
+        edit.additionalEdit = additional;
+        return [edit];
+      } catch {
+        // A paste must never fail because of formatting.
+        return undefined;
+      }
+    },
+  };
+  context.subscriptions.push(
+    vscode.languages.registerDocumentPasteEditProvider("clojure", provider, {
+      providedPasteEditKinds: [PASTE_KIND],
+      pasteMimeTypes: ["text/plain"],
+    }),
+  );
 }
 
 /** Refreshes the dim decoration for a single Clojure editor. */
