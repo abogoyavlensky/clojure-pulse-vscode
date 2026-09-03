@@ -81,6 +81,21 @@ suite("clojurePulse.newline (integration)", () => {
     );
   });
 
+  test("a second vector on the line keeps its own column", async () => {
+    // The reported bug: the new line landed one column right of the *first*
+    // bracket on the line instead of inside the vector the cursor sat in.
+    const editor = await openClojureDoc("(:require [a :as b][c :as d])", cursor(0, 25));
+    await vscode.commands.executeCommand("clojurePulse.newline");
+    assert.strictEqual(
+      editor.document.getText(),
+      "(:require [a :as b][c :as\n" + " ".repeat(20) + "d])",
+    );
+    assert.deepStrictEqual(
+      [editor.selection.active.line, editor.selection.active.character],
+      [1, 20],
+    );
+  });
+
   test("plain newline inside a string", async () => {
     const editor = await openClojureDoc('(def s "ab")', cursor(0, 9));
     await vscode.commands.executeCommand("clojurePulse.newline");

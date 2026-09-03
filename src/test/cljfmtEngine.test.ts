@@ -21,6 +21,11 @@ suite("cljfmtEngine.indentAt", () => {
     assert.strictEqual(indentAt("(do (a))", 7), 4);
   });
 
+  test("a second vector on the line anchors to its own bracket", () => {
+    const source = "(:require [a :as b][c :as d])";
+    assert.strictEqual(indentAt(source, source.indexOf("d")), 20);
+  });
+
   test("head alone gets one space (community)", () => {
     assert.strictEqual(indentAt("(foo)", 4), 1);
   });

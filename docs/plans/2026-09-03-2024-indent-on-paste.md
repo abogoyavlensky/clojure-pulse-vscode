@@ -135,37 +135,39 @@ export function planPaste(ctx: PasteContext, indentAt: IndentAt): PastePlan | nu
 - Create: `src/pasteIndent.ts`
 - Test: `src/test/pasteIndent.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Create `src/test/pasteIndent.test.ts` (Mocha `suite`/`test`, `assert` from `node:assert`, like `maintainIndent.test.ts`). Use `structuralEngine.indentAt` from `../fmt/structuralEngine` as `indentAt`, and a helper `paste(text, marker, clipboard)` that finds a `|` marker in `text`, removes it, and calls `planPaste` with `start = end = markerOffset`. Cover every unit case listed under *Testing* in the design. Expected values for the headline case: text `"(comment\n  |)"`, clipboard `"(def TEST\n  {:a 1\n   :b 2})"` gives `lines = ["(def TEST", "    {:a 1", "     :b 2})"]`, `deleteBefore = 0`. Dedent case: text `"(comment\n      |)"` with the same clipboard gives `deleteBefore = 4` and the same lines. Column-0 case: text `"(comment\n|)"` gives `lines[0] = "  (def TEST"` and the same body. Add one cljfmt case using `createCljfmtEngine({ config: defaultConfig, maxInner: 2 }).indentAt` with the headline input, expecting the same output (cljfmt indents `def` bodies by 2).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `npm run compile-tests`
   Expected: compile error, `src/pasteIndent.ts` does not exist.
 
-- [ ] **Step 3: Implement `planPaste`**
+- [x] **Step 3: Implement `planPaste`**
   Create `src/pasteIndent.ts` with the shared shapes above and the algorithm from the design. Notes: leading whitespace of a line is counted as spaces only; any tab in it marks the line tab-indented. Line offsets in the post-paste text are `start - deleteBefore + (sum of preceding adjusted line lengths) + (number of preceding newlines)`. Use `scanLineInfo(postText, firstPastedLine, lastPastedLine)` for `startsInString`, where `firstPastedLine` is the count of `\n` in `text.slice(0, start)`. Header comment in the style of `maintainIndent.ts`: what the module does, that it mirrors VS Code's auto-indent-on-paste with the engine as the oracle, and that every guard bails to "no change".
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "planPaste"`
   Expected: all `planPaste` tests PASS.
 
-- [ ] **Step 5: Lint and commit**
+- [x] **Step 5: Lint and commit**
   Run: `npm run lint`
   `git commit -m "Add pure paste indentation planner"`
+
+> Deviation: a body line whose structural anchor sits on a tab-indented line is also left alone (that anchor's column is a scanner guess) — the rule the structural engine already applies. Found by the codex review.
 
 ### Task 2: Engine requirement bump
 
 **Files:**
 - Modify: `package.json`
 
-- [ ] **Step 1: Bump versions**
+- [x] **Step 1: Bump versions**
   Set `engines.vscode` and the `@types/vscode` devDependency to `^1.97.0`. Run `npm install` so `package-lock.json` follows.
 
-- [ ] **Step 2: Verify the build**
+- [x] **Step 2: Verify the build**
   Run: `npm run compile`
   Expected: clean.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Require VS Code 1.97 for the document paste API"`
 
 ### Task 3: Provider wiring
@@ -174,26 +176,28 @@ export function planPaste(ctx: PasteContext, indentAt: IndentAt): PastePlan | nu
 - Modify: `src/extension.ts`
 - Test: `src/test/paste.integration.test.ts`
 
-- [ ] **Step 1: Write the failing integration tests**
+- [x] **Step 1: Write the failing integration tests**
   Create `src/test/paste.integration.test.ts` following `newline.integration.test.ts` (same `openClojureDoc`, `cursor`, `waitForText` helpers and the `server.path` suite setup that keeps the language server out of the way). Each test writes the clipboard with `vscode.env.clipboard.writeText`, runs `vscode.commands.executeCommand("editor.action.clipboardPasteAction")`, and waits for the expected text. Cases: the headline example expecting `"(comment\n  (def TEST\n    {:a 1\n     :b 2}))"`; the dedent example `"(comment\n      )"` with the cursor at column 6 expecting the same result; a CRLF document (`editor.edit` + `setEndOfLine(vscode.EndOfLine.CRLF)` or `doc.eol` check) expecting `\r\n` throughout.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "paste"`
   Expected: FAIL, document text keeps the clipboard's original indentation.
 
-- [ ] **Step 3: Implement `setupPasteIndent`**
+- [x] **Step 3: Implement `setupPasteIndent`**
   In `src/extension.ts`, add `setupPasteIndent(context)` per the *Wiring* section and call it from `activate` right after `setupMaintainIndentation(context)`. Place the function near `setupMaintainIndentation` with a doc comment explaining the provider, the always-on choice, and the hint-widget behavior.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test --grep "paste"`
   Expected: PASS.
 
-- [ ] **Step 5: Run the full suite**
+- [x] **Step 5: Run the full suite**
   Run: `make test`
   Expected: all tests PASS, lint clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Indent pasted Clojure forms with the formatting engine"`
+
+> Deviation: the pasted text rides in `additionalEdit` (one replace over the paste range, extended back over `deleteBefore`) with `insertText` empty, instead of `insertText` carrying it. VS Code inserts a non-empty `insertText` as a *snippet*, whose whitespace adjustment prepends the paste line's indentation to every later line — the form landed indented twice. An empty `insertText` is the API's documented "my additional edit is the paste" path, and VS Code then applies that edit verbatim.
 
 ### Task 4: Regression tests for Enter beside a sibling vector
 

@@ -16,6 +16,13 @@ suite("indentColumnAt", () => {
     assert.strictEqual(indent("#{a\n"), 2);
   });
 
+  test("a second vector on the line anchors to its own bracket", () => {
+    // `(:require [a :as b][c :as d])` — a new line inside the *second*
+    // vector belongs to that vector, not to the first one on the line.
+    const source = "(:require [a :as b][c :as d])";
+    assert.strictEqual(indentColumnAt(source, source.indexOf("d")), 20);
+  });
+
   test("symbol-headed list indents two spaces", () => {
     assert.strictEqual(indent("(when x\n"), 2);
     assert.strictEqual(indent("(foo bar\n"), 2);
