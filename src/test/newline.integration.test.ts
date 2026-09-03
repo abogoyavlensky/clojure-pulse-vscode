@@ -37,6 +37,25 @@ async function waitForText(
   assert.strictEqual(doc.getText(), expected);
 }
 
+/** Polls until the caret reaches `[line, character]` (the fallback moves it
+ *  after the command that inserted the newline has finished). */
+async function waitForCursor(
+  editor: vscode.TextEditor,
+  line: number,
+  character: number,
+  ms = 3000,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  const at = () => [editor.selection.active.line, editor.selection.active.character];
+  while (Date.now() < deadline) {
+    if (at()[0] === line && at()[1] === character) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.deepStrictEqual(at(), [line, character]);
+}
+
 function cursor(line: number, character: number): vscode.Selection {
   return new vscode.Selection(line, character, line, character);
 }
@@ -172,6 +191,34 @@ suite("clojurePulse.newline (integration)", () => {
 
     await vscode.commands.executeCommand("undo");
     await waitForText(editor.document, "(a (b\n    c))");
+  });
+});
+
+suite("fallback newline (integration)", () => {
+  suiteSetup(async () => {
+    const ext = vscode.extensions.getExtension(EXTENSION_ID);
+    assert.ok(ext, `extension ${EXTENSION_ID} should be present`);
+    await ext.activate();
+  });
+
+  test("a newline VS Code inserted itself is reindented", async () => {
+    // `type` is the path Enter takes whenever the keybinding is suppressed —
+    // a visible suggest widget, snippet mode, the rename box. VS Code copies
+    // the current line's indentation; the engine's column replaces it.
+    const editor = await openClojureDoc("(:require [a :as b][c :as d])", cursor(0, 25));
+    await vscode.commands.executeCommand("type", { text: "\n" });
+    await waitForText(
+      editor.document,
+      "(:require [a :as b][c :as\n" + " ".repeat(20) + "d])",
+    );
+    await waitForCursor(editor, 1, 20);
+  });
+
+  test("a newline inside a string is left alone", async () => {
+    const editor = await openClojureDoc('(def s "ab")', cursor(0, 9));
+    await vscode.commands.executeCommand("type", { text: "\n" });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.strictEqual(editor.document.getText(), '(def s "a\nb")');
   });
 });
 

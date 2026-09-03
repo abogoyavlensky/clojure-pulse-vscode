@@ -59,7 +59,9 @@ do not need any other Clojure extension.
   visible hop. clj-pulse still serves `textDocument/onTypeFormatting` for
   other editors; the extension sets `editor.formatOnType` to `false` for
   Clojure so the two never both fire. Enter falls through to VS Code whenever
-  a suggest widget, snippet, rename box, or code-action menu is active.
+  a suggest widget, snippet, rename box, or code-action menu is active — and
+  the new line is still reindented a moment later, so it never keeps the
+  column VS Code copied from the line above.
 - **Indent on paste** — a pasted multi-line form lands at the column its new
   position calls for, keeping its own internal layout: every line moves by the
   same amount, so hand-aligned map values and nested forms survive. The active
