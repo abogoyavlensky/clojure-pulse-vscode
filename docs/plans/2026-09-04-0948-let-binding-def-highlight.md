@@ -230,7 +230,7 @@ local modification.
 **Files:**
 - Create: `docs/backlog/def-prefixed-call-highlighted-as-definition.md`
 
-- [ ] **Step 1: Write the backlog file**
+- [x] **Step 1: Write the backlog file**
   Follow `AGENTS.md` and the shape of
   `docs/backlog/format-selection-column-offset.md`: a title, `**Status: open**`,
   then the problem. Calling a *function* whose name starts with `def` —
@@ -242,7 +242,7 @@ local modification.
   and the rest. Note that a fix would need semantic tokens from the language
   server, and that functions named `def*` are rare.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: backlog def-prefixed calls read as definitions"`
 
 ---
