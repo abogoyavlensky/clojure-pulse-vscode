@@ -17,9 +17,10 @@ export interface ReplConnectionInfo {
 /** Source-location params carried through to the nREPL `eval` op, plus the
  *  extension's own `quiet`, which is not sent to the server. */
 export type EvalOptions = EvalExtras & {
-  /** Keeps the code out of the transcript. For evals the user never asked
-   *  for — the connect-time clj-reload prime — whose output would otherwise
-   *  be the first thing in a fresh REPL channel. */
+  /** Keeps the whole exchange — the code and everything it prints or
+   *  returns — out of the transcript. For evals the user never asked for:
+   *  the connect-time clj-reload prime, whose bare `nil` would otherwise be
+   *  the first thing in a fresh REPL channel. */
   quiet?: boolean;
 };
 
@@ -180,7 +181,7 @@ export class ConnectionManager {
     await connection.client.eval(
       code,
       connection.session,
-      (msg) => this.collectEvalMessage(msg, outcome),
+      (msg) => this.collectEvalMessage(msg, outcome, quiet),
       extras,
     );
     return outcome;
@@ -250,10 +251,18 @@ export class ConnectionManager {
     }
   }
 
-  /** Streams a message to the transcript and accumulates it into `outcome`. */
-  private collectEvalMessage(msg: NreplMessage, outcome: EvalOutcome): void {
+  /** Streams a message to the transcript and accumulates it into `outcome`.
+   *  A `quiet` eval still resolves with its outcome; only the transcript is
+   *  spared. */
+  private collectEvalMessage(
+    msg: NreplMessage,
+    outcome: EvalOutcome,
+    quiet = false,
+  ): void {
     const clean = this.sanitizeMessage(msg);
-    this.appendEvalMessage(clean);
+    if (!quiet) {
+      this.appendEvalMessage(clean);
+    }
     if (typeof clean.value === "string") {
       outcome.value = clean.value;
     }
