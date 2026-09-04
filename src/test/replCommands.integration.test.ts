@@ -21,6 +21,7 @@ interface ExtensionApi {
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
   commandStatusBar: CommandStatusBar;
+  warnedNoReload: (session: ReplSessionLike) => boolean;
 }
 
 async function waitUntil(
@@ -72,13 +73,22 @@ suite("REPL commands", () => {
       );
   }
 
+  function reloadBeforeRun(): string {
+    return vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<string>("test.reloadBeforeRun", "clj-reload");
+  }
+
   async function setReloadBeforeRun(value: string | undefined): Promise<void> {
     await vscode.workspace
       .getConfiguration("clojurePulse")
       .update("test.reloadBeforeRun", value, vscode.ConfigurationTarget.Global);
   }
 
-  /** Brings up the configured REPL that points at `server`. */
+  /** Brings up the configured REPL that points at `server`. Connecting
+   *  primes clj-reload, which every test would otherwise have to account
+   *  for, so the helper waits for that eval and then forgets it: what a test
+   *  sees in `server.received` is its own traffic. */
   async function connect(server: FakeNrepl): Promise<ReplSessionLike> {
     await setConfigurations([
       { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
@@ -94,7 +104,20 @@ suite("REPL commands", () => {
     const session = api.repls.get(REPL_NAME);
     assert.ok(session, `expected a session named "${REPL_NAME}"`);
     assert.strictEqual(session.state, "connected");
+    if (reloadBeforeRun() !== "none") {
+      await waitUntil(
+        () => server.received.some((m) => isPrime(m)),
+        5000,
+        "the clj-reload prime eval",
+      );
+    }
+    server.received.splice(0);
     return session;
+  }
+
+  /** True for the eval that fixes clj-reload's change baseline on connect. */
+  function isPrime(msg: { op?: unknown; code?: unknown }): boolean {
+    return msg.op === "eval" && String(msg.code ?? "").includes("require 'clj-reload.core");
   }
 
   test("registers the REPL commands", async () => {
@@ -385,6 +408,117 @@ suite("REPL commands", () => {
       const valueEntry = entries.find((e) => e.kind === "value");
       assert.strictEqual(inEntry?.text, "(+ 20 22)");
       assert.strictEqual(valueEntry?.text, "42");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("connecting primes clj-reload once, after the handshake", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      // Inline rather than through `connect`, which swallows the prime.
+      await setConfigurations([
+        { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
+      ]);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME) !== undefined,
+        5000,
+        `the "${REPL_NAME}" session to appear`,
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      await waitUntil(
+        () => server?.received.some((m) => isPrime(m)) === true,
+        5000,
+        "the clj-reload prime eval",
+      );
+
+      const primes = server.received.filter((m) => isPrime(m));
+      assert.strictEqual(primes.length, 1, "one prime per connection");
+      // The baseline is fixed once the session is usable, not before it.
+      const primeIndex = server.received.findIndex((m) => isPrime(m));
+      const cloneIndex = server.received.findIndex((m) => m.op === "clone");
+      assert.ok(cloneIndex >= 0 && cloneIndex < primeIndex, "clone comes first");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("the setting none primes nothing on connect", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      await setReloadBeforeRun("none");
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns scratch)\n(+ 1 2)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(1, 0, 1, 7);
+      await vscode.commands.executeCommand("clojurePulse.evalSelection");
+
+      assert.ok(
+        !server.received.some((m) => String(m.code ?? "").includes("clj-reload")),
+        "none means no clj-reload traffic at all",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("restarting a REPL re-arms the missing-clj-reload hint", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      // The restart below re-runs the handshake, so this responder has to
+      // answer clone/describe as well as the evals it is here for.
+      server.respond((msg, reply) => {
+        if (msg.op === "clone") {
+          reply({ "new-session": "sess-1", status: ["done"] });
+          return;
+        }
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: ":clojure-pulse/no-reload" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      assert.strictEqual(api.warnedNoReload(session), false);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoReload(session), true, "said once");
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoReload(session), true, "and not again");
+
+      // Restarting is how a user adds the dependency, so the hint has to be
+      // able to say it again — or to stop, once the dep is there.
+      await vscode.commands.executeCommand("clojurePulse.stopRepl", REPL_NAME);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME)?.state === "stopped",
+        5000,
+        "the REPL to stop",
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      const restarted = api.repls.get(REPL_NAME);
+      assert.ok(restarted, "the configuration still has its session");
+      assert.strictEqual(restarted.state, "connected");
+      assert.strictEqual(
+        api.warnedNoReload(restarted),
+        false,
+        "a fresh connection may warn again",
+      );
     } finally {
       await server?.close();
     }

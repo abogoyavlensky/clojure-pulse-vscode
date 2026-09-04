@@ -62,7 +62,13 @@ async function selectAndEval(code: string): Promise<void> {
   await vscode.commands.executeCommand("clojurePulse.evalSelection");
 }
 
-const evals = (server: FakeNrepl) => server.received.filter((m) => m.op === "eval");
+/** The evals a test asked for. Connecting also primes clj-reload, which is
+ *  the extension's own traffic and not what any of these tests are about. */
+const evals = (server: FakeNrepl) =>
+  server.received.filter(
+    (m) =>
+      m.op === "eval" && !String(m.code ?? "").includes("require 'clj-reload.core"),
+  );
 const clones = (server: FakeNrepl) => server.received.filter((m) => m.op === "clone");
 
 suite("REPL manager with several sessions", () => {

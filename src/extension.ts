@@ -130,6 +130,9 @@ export interface ExtensionApi {
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
   commandStatusBar: CommandStatusBar;
+  /** True while the active session has already been told that clj-reload is
+   *  missing — the one-time hint's state, which only a test reads. */
+  warnedNoReload: (session: ReplSessionLike) => boolean;
   /** The one-shot request behind Show ClojureDocs — lets the end-to-end test
    *  prove the command's ask reached the hover provider. */
   clojureDocsRequests: PendingClojureDocsRequest;
@@ -674,11 +677,30 @@ function setupRepl(
     // search, and cursor navigation over the transcript come for free.
     createChannel: (name) =>
       vscode.window.createOutputChannel(`REPL: ${name}`, "clojure"),
-    createSession: (config, channelFor) =>
-      new ReplSession(config, {
+    createSession: (config, channelFor) => {
+      const session = new ReplSession(config, {
         workspaceRoot: workspaceRoot(),
         createChannel: channelFor,
-      }),
+      });
+      session.onDidChangeState((state) => {
+        if (state !== "connected") {
+          return;
+        }
+        // A session object survives a stop/start, so the one-time "no
+        // clj-reload" hint is re-armed here rather than never shown again.
+        warnedNoReload.delete(session);
+        if (reloadSetting() !== "clj-reload") {
+          return;
+        }
+        // clj-reload records file mtimes when it is first required, and that
+        // is its baseline for "changed". Requiring it at connect time keeps
+        // the first test run from reloading the whole project. Never `init`:
+        // a user's own init in user.clj wins, because requiring an
+        // already-loaded namespace is a no-op.
+        void session.eval(PRIME_EXPR, { quiet: true }).catch(() => {});
+      });
+      return session;
+    },
   });
   replRegistry = registry;
 
@@ -878,6 +900,7 @@ function setupRepl(
     testStatus,
     testStatusBar,
     commandStatusBar: commandBar,
+    warnedNoReload: (session) => warnedNoReload.has(session),
   };
 }
 

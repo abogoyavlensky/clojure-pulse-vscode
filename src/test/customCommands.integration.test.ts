@@ -85,6 +85,17 @@ suite("Custom REPL commands", () => {
     const session = api.repls.get(REPL_NAME);
     assert.ok(session, `expected a session named "${REPL_NAME}"`);
     assert.strictEqual(session.state, "connected");
+    // Connecting primes clj-reload; forget that eval so a test sees only its
+    // own traffic.
+    await waitUntil(
+      () =>
+        server.received.some((m) =>
+          String(m.code ?? "").includes("require 'clj-reload.core"),
+        ),
+      5000,
+      "the clj-reload prime eval",
+    );
+    server.received.splice(0);
     return session;
   }
 

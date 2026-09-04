@@ -14,8 +14,14 @@ export interface ReplConnectionInfo {
   port: number;
 }
 
-/** Source-location params carried through to the nREPL `eval` op. */
-export type EvalOptions = EvalExtras;
+/** Source-location params carried through to the nREPL `eval` op, plus the
+ *  extension's own `quiet`, which is not sent to the server. */
+export type EvalOptions = EvalExtras & {
+  /** Keeps the code out of the transcript. For evals the user never asked
+   *  for — the connect-time clj-reload prime — whose output would otherwise
+   *  be the first thing in a fresh REPL channel. */
+  quiet?: boolean;
+};
 
 /** Path params carried through to the nREPL `load-file` op. */
 export type LoadFileOptions = LoadFileExtras;
@@ -166,13 +172,16 @@ export class ConnectionManager {
    *  transcript and resolving with the distilled outcome. */
   async eval(code: string, opts?: EvalOptions): Promise<EvalOutcome> {
     const connection = this.requireConnection();
-    this.transcript.append({ kind: "in", text: code });
+    const { quiet, ...extras } = opts ?? {};
+    if (!quiet) {
+      this.transcript.append({ kind: "in", text: code });
+    }
     const outcome = newOutcome();
     await connection.client.eval(
       code,
       connection.session,
       (msg) => this.collectEvalMessage(msg, outcome),
-      opts,
+      extras,
     );
     return outcome;
   }

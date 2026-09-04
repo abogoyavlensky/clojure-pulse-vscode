@@ -34,6 +34,10 @@ export function startFakeNrepl(): Promise<FakeNrepl> {
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
+    // A client that disconnects mid-exchange (a test that stops its REPL
+    // while an eval is in flight) would otherwise surface as an uncaught
+    // EPIPE from the write below.
+    socket.on("error", () => sockets.delete(socket));
     let pending: Buffer = Buffer.alloc(0);
     socket.on("data", (data) => {
       pending = Buffer.concat([pending, data]);
@@ -42,8 +46,12 @@ export function startFakeNrepl(): Promise<FakeNrepl> {
       for (const raw of decoded) {
         const msg = raw as Message;
         received.push(msg);
-        const reply: Reply = (response) =>
+        const reply: Reply = (response) => {
+          if (socket.destroyed || socket.writableEnded) {
+            return;
+          }
           socket.write(encode({ id: msg.id, ...response }));
+        };
         handler(msg, reply, socket);
       }
     });
