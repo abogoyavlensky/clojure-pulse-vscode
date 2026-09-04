@@ -185,24 +185,24 @@ local modification.
 - Modify: `syntaxes/clojure.tmLanguage.json`
 - Modify: `syntaxes/NOTICE`
 
-- [ ] **Step 1: Narrow both lookbehinds**
+- [x] **Step 1: Narrow both lookbehinds**
   In the `keyfn` rule, replace the leading `(?<=(\\s|\\(|\\[|\\{))` with
   `(?<=\\()` in both patterns — the `storage.control.clojure` one
   (`syntaxes/clojure.tmLanguage.json:131`) and the `keyword.control.clojure` one
   (`syntaxes/clojure.tmLanguage.json:136`). Leave the alternation and the
   trailing lookahead exactly as they are; this is a two-line diff.
 
-- [ ] **Step 2: Run the suite to verify it passes**
+- [x] **Step 2: Run the suite to verify it passes**
   Run: `make test`
   Expected: PASS — all grammar cases green, and the rest of the suite unchanged.
 
-- [ ] **Step 3: Record the modification in the NOTICE**
+- [x] **Step 3: Record the modification in the NOTICE**
   `syntaxes/NOTICE` says the grammar was converted "without changes to the
   patterns". Replace that with a statement that it was converted from CSON to
   JSON and since modified locally, naming this change: the `keyfn` patterns now
   require head position. Keep both licences intact.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "fix: highlight def and control forms only in head position"`
 
 ---

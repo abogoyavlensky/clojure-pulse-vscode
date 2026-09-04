@@ -3,7 +3,13 @@ highlighting.
 
   File:   syntaxes/clojure.tmLanguage.json
   Source: https://github.com/atom/language-clojure (grammars/clojure.cson),
-          converted from CSON to JSON without changes to the patterns.
+          converted from CSON to JSON and since modified locally.
+
+  Local changes:
+    - The two `keyfn` patterns match a special form or a definition keyword
+      only in head position — immediately after an opening paren. Upstream
+      they also match after a space or a bracket, which highlights a local
+      named `defenders`, `use` or `when-ready` as if it were a keyword.
 
 The grammar is distributed under the MIT License, reproduced in full below.
 
