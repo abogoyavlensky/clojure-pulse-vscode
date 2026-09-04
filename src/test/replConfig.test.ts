@@ -222,7 +222,7 @@ suite("defaultCreateCommand", () => {
     const command = defaultCreateCommand({ platform: "darwin" });
     assert.strictEqual(
       command,
-      'clojure -Sdeps \'{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}\' -M:clojure-pulse/nrepl',
+      'clojure -Sdeps \'{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"} io.github.tonsky/clj-reload {:mvn/version "1.0.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}\' -M:clojure-pulse/nrepl',
     );
   });
 
@@ -230,6 +230,10 @@ suite("defaultCreateCommand", () => {
     const command = defaultCreateCommand({ platform: "win32" });
     assert.ok(command.includes('-Sdeps "{:aliases'), command);
     assert.ok(command.includes('{:mvn/version \\"1.7.0\\"}'), command);
+    assert.ok(
+      command.includes('io.github.tonsky/clj-reload {:mvn/version \\"1.0.0\\"}'),
+      command,
+    );
     assert.ok(command.includes('[\\"-m\\" \\"nrepl.cmdline\\"]'), command);
     assert.ok(!command.includes("'"), command);
   });
@@ -240,6 +244,7 @@ suite("defaultCreateCommand", () => {
       assert.ok(command.includes(":clojure-pulse/nrepl"), platform);
       assert.ok(command.includes("-M:clojure-pulse/nrepl"), platform);
       assert.ok(command.includes("nrepl.cmdline"), platform);
+      assert.ok(command.includes("io.github.tonsky/clj-reload"), platform);
       assert.ok(!command.includes("--interactive"), platform);
     }
   });

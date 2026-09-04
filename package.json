@@ -112,11 +112,24 @@
           "default": true,
           "markdownDescription": "Show evaluation results inline in the editor as ghost text (` => value`) at the end of the evaluated form. Hover the result for the full value and a Copy link. When off, results appear only in the REPL's output channel (`REPL: <name>` in the Output panel)."
         },
+        "clojurePulse.test.reloadBeforeRun": {
+          "type": "string",
+          "enum": [
+            "clj-reload",
+            "none"
+          ],
+          "default": "clj-reload",
+          "enumDescriptions": [
+            "Save dirty Clojure files and reload the namespaces that changed, plus their dependents, through clj-reload.",
+            "Run the tests against whatever the REPL already has loaded."
+          ],
+          "markdownDescription": "What the test commands do before they run a test. With `clj-reload` they save every dirty Clojure file and reload the namespaces that changed on disk — and their dependents — through [clj-reload](https://github.com/tonsky/clj-reload), when it is on the REPL's classpath, so the code you just edited is what the test exercises. A file that fails to compile aborts the run with a notification. Without clj-reload on the classpath the tests run as before. `none` turns the whole step off. See [Reload before tests](https://github.com/abogoyavlensky/clojure-pulse-vscode#reload-before-tests)."
+        },
         "clojurePulse.replConfigurations": {
           "type": "array",
           "default": [],
           "scope": "resource",
-          "markdownDescription": "Named REPLs shown in the **REPL** view. Each entry either starts a server (`\"type\": \"create\"`) or attaches to a running one (`\"type\": \"connect\"`).\n\n```json\n[\n  { \"name\": \"dev\", \"type\": \"create\",\n    \"command\": \"clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \\\"1.7.0\\\"}} :main-opts [\\\"-m\\\" \\\"nrepl.cmdline\\\"]}}}' -M:clojure-pulse/nrepl\" },\n  { \"name\": \"local\", \"type\": \"connect\", \"port\": \".nrepl-port\" }\n]\n```\n\nAdd your own aliases by editing the command — `-M:dev:test:clojure-pulse/nrepl` merges their `:extra-deps` and still starts nREPL.",
+          "markdownDescription": "Named REPLs shown in the **REPL** view. Each entry either starts a server (`\"type\": \"create\"`) or attaches to a running one (`\"type\": \"connect\"`).\n\n```json\n[\n  { \"name\": \"dev\", \"type\": \"create\",\n    \"command\": \"clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \\\"1.7.0\\\"} io.github.tonsky/clj-reload {:mvn/version \\\"1.0.0\\\"}} :main-opts [\\\"-m\\\" \\\"nrepl.cmdline\\\"]}}}' -M:clojure-pulse/nrepl\" },\n  { \"name\": \"local\", \"type\": \"connect\", \"port\": \".nrepl-port\" }\n]\n```\n\nAdd your own aliases by editing the command — `-M:dev:test:clojure-pulse/nrepl` merges their `:extra-deps` and still starts nREPL.",
           "items": {
             "type": "object",
             "required": [
@@ -169,7 +182,7 @@
               "body": {
                 "name": "$1dev",
                 "type": "create",
-                "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
+                "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"} io.github.tonsky/clj-reload {:mvn/version \"1.0.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
               }
             },
             {

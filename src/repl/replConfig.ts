@@ -41,6 +41,9 @@ const MAX_PORT = 65535;
 /** The nREPL version injected by the default create command. */
 const NREPL_VERSION = "1.7.0";
 
+/** The clj-reload version injected by the default create command. */
+const CLJ_RELOAD_VERSION = "1.0.0";
+
 /**
  * Validates the raw `clojurePulse.replConfigurations` value. Invalid entries
  * are skipped with a warning rather than failing the whole list, so one bad
@@ -201,12 +204,15 @@ export function detectProjectKind(rootFileNames: readonly string[]): ProjectKind
 }
 
 /**
- * The command the form prefills. The Clojure CLI one injects nREPL under our
- * own namespaced alias rather than as a bare `:deps` override, so adding
- * project aliases composes: `-M:dev:test:clojure-pulse/nrepl` merges every
- * alias's `:extra-deps`, and `:main-opts` is last-alias-wins, so nREPL still
- * starts. All three commands announce the port in the line `parseNreplPort`
- * matches, and all three write `.nrepl-port` as a fallback.
+ * The command the form prefills. The Clojure CLI one injects nREPL and
+ * clj-reload — the latter is what the test commands reload changed namespaces
+ * with — under our own namespaced alias rather than as a bare `:deps`
+ * override, so adding project aliases composes: `-M:dev:test:clojure-pulse/nrepl`
+ * merges every alias's `:extra-deps`, and `:main-opts` is last-alias-wins, so
+ * nREPL still starts. Both deps sit in the visible command, so a user who
+ * wants neither can delete it. All three commands announce the port in the
+ * line `parseNreplPort` matches, and all three write `.nrepl-port` as a
+ * fallback.
  */
 export function defaultCreateCommand(options?: {
   kind?: ProjectKind;
@@ -219,7 +225,7 @@ export function defaultCreateCommand(options?: {
   if (kind === "lgx") {
     return "lgx nrepl";
   }
-  const deps = `{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "${NREPL_VERSION}"}} :main-opts ["-m" "nrepl.cmdline"]}}}`;
+  const deps = `{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "${NREPL_VERSION}"} io.github.tonsky/clj-reload {:mvn/version "${CLJ_RELOAD_VERSION}"}} :main-opts ["-m" "nrepl.cmdline"]}}}`;
   // No `--interactive`: the extension owns the process, and the bare server
   // prints its port line and blocks.
   const quoted =
