@@ -212,7 +212,7 @@ local modification.
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Add the entry**
+- [x] **Step 1: Add the entry**
   Under `## [Unreleased]`, a `- **Fixed**:` bullet in the voice of the existing
   entries: a local whose name starts with `def` — `defenders` — or matches a
   control form (`when-ready`, `cond`, `use`) was highlighted as if it were the
@@ -220,7 +220,7 @@ local modification.
   actually invoked, at the head of a form; `defn`, `def`, custom `def*` macros
   and every special form are unaffected. Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "docs: changelog entry for head-position highlighting"`
 
 ---

@@ -4,6 +4,12 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Fixed**: a local whose name starts with `def` — `defenders` — was
+  highlighted as if it were the name in a definition, and so were locals named
+  after control forms, such as `when-ready`, `cond` and `use`. These words now
+  highlight only where they are invoked, at the head of a form. `def`, `defn`,
+  custom `def*` macros and every special form are unchanged.
+
 - **Indent on paste**: pasting a multi-line Clojure form re-indents it to
   where it lands, instead of keeping the columns it had at the source. The
   form's own layout is preserved — every line moves by the same amount, so
