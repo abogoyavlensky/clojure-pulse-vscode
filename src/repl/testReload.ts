@@ -55,15 +55,26 @@ export function parseReloadOutcome(outcome: EvalOutcome): ReloadResult {
     // `:failed nil` is the scan failure above: no namespace was reached.
     const named = /:failed\s+([^\s,}]+)/.exec(value)?.[1];
     const ns = named === undefined || named === "nil" ? "?" : named;
-    const message = /:message\s+"((?:[^"\\]|\\.)*)"/.exec(value)?.[1];
-    return {
-      kind: "failed",
-      ns,
-      message: message === undefined ? value : unescapeString(message),
-    };
+    const raw = /:message\s+"((?:[^"\\]|\\.)*)"/.exec(value)?.[1];
+    const message = raw === undefined ? value : unescapeString(raw);
+    // A file clj-reload could not even read fails before it knows whose
+    // namespace it was, and the exception it throws then says nothing useful
+    // ("Cannot throw exception because \"exception\" is null"). What it
+    // printed does name the file, so that is the message worth showing.
+    const printed = ns === "?" ? lastLine(outcome.out) : undefined;
+    return { kind: "failed", ns, message: printed ?? message };
   }
   const loaded = /:loaded\s+(\d+)/.exec(value)?.[1];
   return { kind: "reloaded", loaded: loaded === undefined ? 0 : Number(loaded) };
+}
+
+/** The last non-empty line clj-reload printed, if it printed anything. */
+function lastLine(out: string | undefined): string | undefined {
+  const lines = (out ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines[lines.length - 1];
 }
 
 function unescapeString(text: string): string {

@@ -1511,6 +1511,14 @@ async function reloadBeforeTests(
   return result;
 }
 
+/** How a failed reload reads in a notification. A file clj-reload could not
+ *  read fails before it names a namespace, and there is nothing to name. */
+function reloadFailure(result: { ns: string; message: string }): string {
+  return result.ns === "?"
+    ? `reload failed: ${result.message}`
+    : `reload failed in ${result.ns}: ${result.message}`;
+}
+
 /** Guards eval commands on a live connection; warns with a Start action and
  *  returns undefined when nothing is connected. */
 function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
@@ -1729,7 +1737,7 @@ async function runSingleTest(
     if (reloaded?.kind === "failed") {
       // Nothing below can be trusted once a changed namespace fails to load;
       // clj-reload has already printed the full trace to the REPL output.
-      const message = `reload failed in ${reloaded.ns}: ${reloaded.message}`;
+      const message = reloadFailure(reloaded);
       if (id) {
         inlineResults.resolve(id, { err: message, namespaceNotFound: false });
       }
@@ -1938,7 +1946,7 @@ async function runTestsInDocument(
     if (reloaded?.kind === "failed") {
       // A changed namespace that no longer compiles makes the load below
       // meaningless; clj-reload printed the full trace to the REPL output.
-      reportRunError(`reload failed in ${reloaded.ns}: ${reloaded.message}`);
+      reportRunError(reloadFailure(reloaded));
       statusBar.clear(barToken);
       return;
     }

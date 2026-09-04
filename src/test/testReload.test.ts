@@ -90,6 +90,36 @@ suite("parseReloadOutcome", () => {
     );
   });
 
+  test("an unreadable file is reported by what clj-reload printed", () => {
+    // The exception clj-reload throws on a file it cannot read says nothing
+    // useful; the line it printed names the file.
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value:
+          '{:failed nil, :message "Cannot throw exception because \\"exception\\" is null"}',
+        out: "Failed to read src/app/core.clj java.lang.RuntimeException: EOF while reading, starting at line 3\n",
+        namespaceNotFound: false,
+      }),
+      {
+        kind: "failed",
+        ns: "?",
+        message:
+          "Failed to read src/app/core.clj java.lang.RuntimeException: EOF while reading, starting at line 3",
+      },
+    );
+  });
+
+  test("a named namespace keeps its own message, not the printed trace", () => {
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value: '{:failed app.core, :message "Syntax error: boom"}',
+        out: "Reloading 2 namespaces...\n  failed to load app.core #error {\n",
+        namespaceNotFound: false,
+      }),
+      { kind: "failed", ns: "app.core", message: "Syntax error: boom" },
+    );
+  });
+
   test("a failed value the regexes cannot read falls back", () => {
     assert.deepStrictEqual(
       parseReloadOutcome({ value: "{:failed}", namespaceNotFound: false }),
