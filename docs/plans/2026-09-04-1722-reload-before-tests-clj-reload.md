@@ -1,5 +1,7 @@
 # Reload Changed Namespaces Before Tests (clj-reload) Implementation Plan
 
+**Status: complete** (except Task 6 Step 3, let-go, which this machine cannot run - see the summary).
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every test command (Run Test at Cursor, Run Tests in Namespace, Run Last Test Command) first saves dirty Clojure files and reloads changed namespaces through [clj-reload](https://github.com/tonsky/clj-reload) when it is on the REPL's classpath, so the code you just edited is what the test exercises.
@@ -342,7 +344,7 @@ the dep to their `:dev` profile.
 - Modify: `CHANGELOG.md`
 - Modify: `docs/plans/2026-08-05-0038-rerun-last-test-command.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Use /writing-clearly.
   - In the Evaluating section's test-command bullets (around lines 482–530): a new lead-in paragraph or bullet **Reload before tests**: each test command saves dirty Clojure files and reloads changed namespaces (and their dependents) with clj-reload when it is on the REPL classpath, so the code you just edited is what runs; a file that fails to compile aborts the run with a notification and the full error in the REPL output; without clj-reload the tests run as before and the status bar says so once. Setting `clojurePulse.test.reloadBeforeRun`. Trim the Run Last Test Command bullet's "eval it in the REPL — then re-run" to match.
   - A short **What the extension assumes** note: it calls plain `clj-reload.core/reload`, never `init` and never a project's own reset wrapper; it does not restart an Integrant/Component/Mount system. Projects that want state to follow reloads use clj-reload's `before-ns-unload` / `after-ns-reload` hooks and `defonce` / `^:clj-reload/keep`, which work unchanged. Link to clj-reload's README.
@@ -351,28 +353,87 @@ the dep to their `:dev` profile.
   - Configuration table: a row for `clojurePulse.test.reloadBeforeRun`.
   - Commands section (lines 635–640): mention the reload in the two test-command entries.
 
-- [ ] **Step 2: CHANGELOG**
+- [x] **Step 2: CHANGELOG**
   Under `[Unreleased]`, a **Reload before tests** entry in the file's style, including the template change and the setting.
 
-- [ ] **Step 3: Rerun plan note**
+- [x] **Step 3: Rerun plan note**
   Under decision 5 in `docs/plans/2026-08-05-0038-rerun-last-test-command.md`, add: `Superseded by docs/plans/2026-09-04-1722-reload-before-tests-clj-reload.md — test commands now reload changed namespaces first.`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -m "Document reload-before-tests"`
 
 ### Task 6: Manual verification
 
 **Files:** none (scratch project outside the repo)
 
-- [ ] **Step 1: JVM**
+- [x] **Step 1: JVM**
   Create `/tmp/reload-check` with `deps.edn` (`{:paths ["src" "test"]}`), `src/app/core.clj` (`(defn add [a b] (+ a b))`), `test/app/core_test.clj` (a deftest asserting `(= 3 (add 1 2))`). Open it in the Extension Development Host (`F5`), add a REPL through the form (the prefilled command now includes clj-reload), start it, run the test → pass. Change `add` to return `(* a b)` without saving, run **Run Last Test Command** from `core.clj` → the file is saved and the test fails. Break `core.clj` with an unbalanced form, rerun → notification `reload failed in app.core: …`, no test run, full trace in the REPL output. Fix it, rerun → pass. Confirm `Reloaded 1 namespaces` lines appear in the REPL output.
 
-- [ ] **Step 2: Without clj-reload**
+- [x] **Step 2: Without clj-reload**
   Edit the REPL command to drop the clj-reload dep, restart, run a test → status-bar message about running without reloading, test still runs; a second run shows no message.
 
-- [ ] **Step 3: let-go**
+- [ ] **Step 3: let-go** — NOT DONE: no `lgx` or `lg` on this machine.
   Against a let-go nREPL (`lgx nrepl` in a let-go project, or `~/Projects/let-go/lg`), run a test: the reload probe must come back as unavailable (keyword or `err`), not break the run. If let-go's `resolve` of a qualified symbol in a missing namespace throws at compile time, fold the probe into `(try … (catch Exception _ :clojure-pulse/no-reload))` in `RELOAD_EXPR` and re-run Task 1's tests.
 
-- [ ] **Step 4: Final checks**
+- [x] **Step 4: Final checks**
   Run: `npm run lint && npm run compile && npm test`
   Expected: all clean.
+
+---
+
+## Completion summary
+
+Every test command now saves the dirty Clojure buffers and reloads the changed
+namespaces through clj-reload before it runs anything, and Run Last Test
+Command inherits it. Shipped across seven commits, `dfce365` through `061ff57`.
+Lint, compile and the full suite (808 tests) are clean.
+
+**Verified against a real JVM nREPL**, not only the fake server. In a scratch
+deps.edn project with clj-reload 1.0.0: an unchanged tree returns
+`{:loaded 0}`; editing `add` to multiply returns `{:loaded 2}` and the next
+call really returns the new value; an unresolvable symbol returns
+`{:failed app.core, :message "Syntax error compiling at (app/core.clj:3:17)..."}`;
+the fixed file reloads and the test passes. In a project without clj-reload the
+probe returns `:clojure-pulse/no-reload` and the prime writes nothing to `err`.
+
+**Deviations** (each also noted under its task):
+
+1. `RELOAD_EXPR` wraps the reload call in `(try ... (catch Exception e ...))`.
+   `{:throw false}` only converts *namespace load* failures into the result
+   map; clj-reload still throws out of its own scan when a file cannot be read.
+   Without the catch that came back as `err` and read as "clj-reload is
+   missing", so a broken file would have let the tests run against stale code.
+   Found by the codex review of Task 1 and confirmed by the manual run.
+2. `EvalOptions` gained a `quiet` flag (stripped before the nREPL op is sent)
+   that keeps an eval's code *and* its results out of the transcript. Only the
+   connect-time prime uses it; otherwise every fresh REPL channel opened with
+   `(try (require 'clj-reload.core) ...)` and a bare `nil`.
+3. A reload that fails before it reaches a namespace (`:failed nil`) reports
+   the last line clj-reload printed instead of its own exception message, whose
+   text is `Cannot throw exception because "exception" is null`. The printed
+   line names the file: `Failed to read src/app/core.clj ... EOF while reading,
+   starting at line 3`. The notification drops the namespace clause in that
+   case. Found only by running it for real.
+4. `api.warnedNoReload(session)` is exposed for the re-arm test, per the plan's
+   own suggestion.
+5. The connect helpers in `customCommands.integration.test.ts` and the `evals`
+   helper in `replManager.integration.test.ts` absorb the prime the same way
+   `replCommands`' helper does, and `fakeNreplServer` now skips writes to a
+   destroyed socket - a fire-and-forget prime outliving a stopped REPL surfaced
+   as an uncaught EPIPE.
+
+**Not done:** Task 6 Step 3, the let-go check. Neither `lgx` nor
+`~/Projects/let-go/lg` exists on this machine. The risk it covers is whether
+let-go's compiler accepts `RELOAD_EXPR` - the `resolve` guard follows the
+`run-test-var` probe that already works there, but the `try`/`catch Exception`
+that deviation 1 added is new and unverified on let-go. If it does not compile,
+the fix is the one the plan already describes: wrap the whole form in
+`(try ... (catch Exception _ :clojure-pulse/no-reload))`.
+
+**What the plan could have specified better:** it treated `{:throw false}` as a
+guarantee that no exception escapes `reload`, and built the whole
+failed/unavailable split on that. It does not hold for a file clj-reload cannot
+read, which is the exact case Task 6 Step 1 asks the tester to produce. One
+manual probe of the expression against a real clj-reload, written into the plan
+as a design step rather than a final task, would have caught both that and the
+useless exception message before any code was written.
