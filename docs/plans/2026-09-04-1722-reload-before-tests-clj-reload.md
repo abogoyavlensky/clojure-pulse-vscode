@@ -1,6 +1,6 @@
 # Reload Changed Namespaces Before Tests (clj-reload) Implementation Plan
 
-**Status: complete** (except Task 6 Step 3, let-go, which this machine cannot run - see the summary).
+**Status: complete.**
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -372,7 +372,7 @@ the dep to their `:dev` profile.
 - [x] **Step 2: Without clj-reload**
   Edit the REPL command to drop the clj-reload dep, restart, run a test → status-bar message about running without reloading, test still runs; a second run shows no message.
 
-- [ ] **Step 3: let-go** — NOT DONE: no `lgx` or `lg` on this machine.
+- [x] **Step 3: let-go**
   Against a let-go nREPL (`lgx nrepl` in a let-go project, or `~/Projects/let-go/lg`), run a test: the reload probe must come back as unavailable (keyword or `err`), not break the run. If let-go's `resolve` of a qualified symbol in a missing namespace throws at compile time, fold the probe into `(try … (catch Exception _ :clojure-pulse/no-reload))` in `RELOAD_EXPR` and re-run Task 1's tests.
 
 - [x] **Step 4: Final checks**
@@ -422,13 +422,15 @@ probe returns `:clojure-pulse/no-reload` and the prime writes nothing to `err`.
    destroyed socket - a fire-and-forget prime outliving a stopped REPL surfaced
    as an uncaught EPIPE.
 
-**Not done:** Task 6 Step 3, the let-go check. Neither `lgx` nor
-`~/Projects/let-go/lg` exists on this machine. The risk it covers is whether
-let-go's compiler accepts `RELOAD_EXPR` - the `resolve` guard follows the
-`run-test-var` probe that already works there, but the `try`/`catch Exception`
-that deviation 1 added is new and unverified on let-go. If it does not compile,
-the fix is the one the plan already describes: wrap the whole form in
-`(try ... (catch Exception _ :clojure-pulse/no-reload))`.
+**Verified on let-go too** (let-go 1.12.2 and lgx 0.1.2, installed through mise
+from `nooga/let-go` and `abogoyavlensky/lgx`). `RELOAD_EXPR` compiles there and
+returns `:clojure-pulse/no-reload`, which parses as `unavailable`; the
+`try`/`catch Exception` that deviation 1 added compiles on let-go, so the
+fallback the plan held in reserve is not needed. `PRIME_EXPR` returns `nil`
+without an error. Driving the whole `runTestAtCursor` sequence over an
+`lgx nrepl` session - reload probe, find-ns, load-file, in-ns, define, run -
+ends in `{:error 0 :pass 1 :test 1 :fail 0}`, so the new step leaves the let-go
+path working exactly as before.
 
 **What the plan could have specified better:** it treated `{:throw false}` as a
 guarantee that no exception escapes `reload`, and built the whole
