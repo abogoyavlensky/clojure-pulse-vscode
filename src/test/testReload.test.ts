@@ -80,6 +80,16 @@ suite("parseReloadOutcome", () => {
     );
   });
 
+  test("a nil namespace means clj-reload threw before it named one", () => {
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value: '{:failed nil, :message "Unmatched delimiter: )"}',
+        namespaceNotFound: false,
+      }),
+      { kind: "failed", ns: "?", message: "Unmatched delimiter: )" },
+    );
+  });
+
   test("a failed value the regexes cannot read falls back", () => {
     assert.deepStrictEqual(
       parseReloadOutcome({ value: "{:failed}", namespaceNotFound: false }),
@@ -99,6 +109,8 @@ suite("reload expressions", () => {
   test("the reload expression resolves clj-reload and does not throw", () => {
     assert.ok(RELOAD_EXPR.includes("(resolve 'clj-reload.core/reload)"));
     assert.ok(RELOAD_EXPR.includes("{:throw false}"));
+    // A scan failure has to come back as a value, not as an err.
+    assert.ok(RELOAD_EXPR.includes("(catch Exception e"));
   });
 
   test("the prime expression requires clj-reload", () => {

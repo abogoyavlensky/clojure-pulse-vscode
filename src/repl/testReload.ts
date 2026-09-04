@@ -7,15 +7,22 @@ import { EvalOutcome } from "./connectionManager";
  * classpath (and on non-JVM runtimes such as let-go), the same guard the
  * `clojure.test/run-test-var` probe uses. `{:throw false}` makes clj-reload
  * hand back the load failure in its result map instead of throwing, so the
- * extension reads a small map rather than parsing a printed Throwable.
+ * extension reads a small map rather than parsing a printed Throwable. The
+ * `catch` covers what `:throw false` does not: clj-reload throws out of its
+ * own scan when a changed file cannot even be read, and that has to abort the
+ * run like any other reload failure rather than look like a missing library.
  */
 export const RELOAD_EXPR =
   "(if-let [f (resolve 'clj-reload.core/reload)] " +
+  "(try " +
   "(let [r (f {:throw false})] " +
   "(if-some [ex (:exception r)] " +
   "{:failed (:failed r) " +
   ":message (str (ex-message ex) (some->> (ex-cause ex) ex-message (str \": \")))} " +
   "{:loaded (count (:loaded r))})) " +
+  "(catch Exception e " +
+  "{:failed nil " +
+  ":message (str (ex-message e) (some->> (ex-cause e) ex-message (str \": \")))})) " +
   ":clojure-pulse/no-reload)";
 
 /**
@@ -45,7 +52,9 @@ export function parseReloadOutcome(outcome: EvalOutcome): ReloadResult {
     return { kind: "unavailable" };
   }
   if (value.includes(":failed")) {
-    const ns = /:failed\s+([^\s,}]+)/.exec(value)?.[1] ?? "?";
+    // `:failed nil` is the scan failure above: no namespace was reached.
+    const named = /:failed\s+([^\s,}]+)/.exec(value)?.[1];
+    const ns = named === undefined || named === "nil" ? "?" : named;
     const message = /:message\s+"((?:[^"\\]|\\.)*)"/.exec(value)?.[1];
     return {
       kind: "failed",
