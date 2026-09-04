@@ -1,5 +1,7 @@
 # Head-Position Keyword Highlighting Implementation Plan
 
+**Status: completed** (2026-09-04).
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A local named `defenders` (or `use`, `cond`, `when-ready`) stops being highlighted as a definition or control keyword — the bundled TextMate grammar recognises those words only in head position.
@@ -249,12 +251,56 @@ local modification.
 
 ### Task 5: Verify
 
-- [ ] **Step 1: Full check**
+- [x] **Step 1: Full check**
   Run: `make check`
   Expected: lint, type-check and the whole suite pass.
 
-- [ ] **Step 2: Confirm in the editor**
+- [x] **Step 2: Confirm in the editor**
   `make install-extension`, reload VS Code, open a Clojure file containing
   `(let [defenders 1] defenders)` next to a `(defn foo [] 1)`. `defenders` reads
   as a plain symbol in both positions; `defn` and `foo` are unchanged. Check a
   `(when ...)`, a `#(when ...)` and an `(ns ...)` form still highlight.
+
+> Deviation: no GUI was available, so this ran as a differential tokenization
+> instead — a realistic namespace (ns/require, `def`, `defn-`, `defmulti`,
+> `defmethod`, let, `when`, `case`, `cond`, try/catch/throw, `#(...)`, quoted
+> data) tokenized through the real TextMate engine under the old and the new
+> grammar, comparing every token's scopes. Exactly 11 of 169 tokens changed,
+> all of them intended: the locals `defenders`, `when-ready` and `use`, and the
+> quoted `'[if when def defn]`. Every keyword in head position kept its scope.
+
+---
+
+## Completion Summary
+
+The `keyfn` rule's two lookbehinds now require head position, so a local named
+`defenders` — or `use`, `cond`, `when-ready` — is scoped `meta.symbol.clojure`
+instead of `keyword.control.clojure` / `storage.control.clojure`. Definition and
+control forms are unaffected, because `(defn foo ...)` gets its keyword from the
+`sexp` rule's `meta.definition.global` pattern, which already required head
+position.
+
+`src/test/grammar.test.ts` now tokenizes the shipped grammar with
+`vscode-textmate` + `vscode-oniguruma` (test-only dependencies) and asserts
+scopes for seven cases: the three bug reports, quoted data, and three regression
+guards. All four new-behaviour cases failed before the grammar change and pass
+after. `make check` is green: 793 passing, 1 pending, 0 failing.
+
+`syntaxes/NOTICE` records the local modification to the upstream
+atom/language-clojure patterns, `CHANGELOG.md` has an `Unreleased` entry, and
+`docs/backlog/def-prefixed-call-highlighted-as-definition.md` records the one
+case left open — calling a *function* named `def*` still reads as a definition,
+which needs semantic tokens from `clj-pulse` rather than a grammar change.
+
+Codex reviewed each code task. On the test commit it objected to the red state
+of a TDD commit, which is what the plan asked for and what the next commit
+resolves; on the grammar commit it found nothing.
+
+**Deviations:** two, both noted above — a `scopesOf` wrapper in the test file,
+and tokenizer-level rather than GUI verification.
+
+**What the plan could have specified better:** the end-to-end step assumed a GUI
+that was not available. A plan for a grammar change should name the differential
+tokenization as the verification, with the editor check as a nicety — it is the
+stronger check anyway, since it compares every token rather than the few a human
+notices.
