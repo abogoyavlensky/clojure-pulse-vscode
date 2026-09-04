@@ -22,6 +22,7 @@ interface ExtensionApi {
   testStatusBar: TestStatusBar;
   commandStatusBar: CommandStatusBar;
   warnedNoReload: (session: ReplSessionLike) => boolean;
+  warnedNoTracking: (session: ReplSessionLike) => boolean;
 }
 
 async function waitUntil(
@@ -519,6 +520,98 @@ suite("REPL commands", () => {
         false,
         "a fresh connection may warn again",
       );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("a clj-reload watching no files is pointed out once per connection", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      // What an init whose :files regex matches nothing reports: the reload
+      // succeeds and does nothing, forever.
+      server.respond((msg, reply) => {
+        if (msg.op === "clone") {
+          reply({ "new-session": "sess-1", status: ["done"] });
+          return;
+        }
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: "{:loaded 0, :tracked 0}" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      assert.strictEqual(api.warnedNoTracking(session), false);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoTracking(session), true, "said once");
+      // Watching nothing is not a missing clj-reload, so that hint stays put.
+      assert.strictEqual(api.warnedNoReload(session), false);
+      // The run itself continues.
+      assert.ok(
+        server.received.some((m) => String(m.code ?? "").includes("run-test-var")),
+        "a useless reload config must not stop the run",
+      );
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoTracking(session), true, "and not again");
+
+      await vscode.commands.executeCommand("clojurePulse.stopRepl", REPL_NAME);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME)?.state === "stopped",
+        5000,
+        "the REPL to stop",
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      const restarted = api.repls.get(REPL_NAME);
+      assert.ok(restarted, "the configuration still has its session");
+      assert.strictEqual(
+        api.warnedNoTracking(restarted),
+        false,
+        "a fresh connection may point it out again",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("a clj-reload that is watching files says nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: "{:loaded 0, :tracked 19}" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // Nothing changed on disk is the ordinary case, not a misconfiguration.
+      assert.strictEqual(api.warnedNoTracking(session), false);
     } finally {
       await server?.close();
     }

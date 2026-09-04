@@ -133,6 +133,8 @@ export interface ExtensionApi {
   /** True while the active session has already been told that clj-reload is
    *  missing — the one-time hint's state, which only a test reads. */
   warnedNoReload: (session: ReplSessionLike) => boolean;
+  /** The same, for the hint about clj-reload watching no files. */
+  warnedNoTracking: (session: ReplSessionLike) => boolean;
   /** The one-shot request behind Show ClojureDocs — lets the end-to-end test
    *  prove the command's ask reached the hover provider. */
   clojureDocsRequests: PendingClojureDocsRequest;
@@ -686,9 +688,10 @@ function setupRepl(
         if (state !== "connected") {
           return;
         }
-        // A session object survives a stop/start, so the one-time "no
-        // clj-reload" hint is re-armed here rather than never shown again.
+        // A session object survives a stop/start, so the one-time reload
+        // hints are re-armed here rather than never shown again.
         warnedNoReload.delete(session);
+        warnedNoTracking.delete(session);
         if (reloadSetting() !== "clj-reload") {
           return;
         }
@@ -901,6 +904,7 @@ function setupRepl(
     testStatusBar,
     commandStatusBar: commandBar,
     warnedNoReload: (session) => warnedNoReload.has(session),
+    warnedNoTracking: (session) => warnedNoTracking.has(session),
   };
 }
 
@@ -1475,6 +1479,10 @@ function reloadSetting(): "clj-reload" | "none" {
  */
 const warnedNoReload = new Set<ReplSessionLike>();
 
+/** Sessions already told that clj-reload is watching nothing. Same once-per-
+ *  connection rule as {@link warnedNoReload}. */
+const warnedNoTracking = new Set<ReplSessionLike>();
+
 /** Writes the dirty Clojure buffers to disk: clj-reload reads files, not
  *  editors. An untitled buffer has no file to reload and is skipped, as is a
  *  save the editor refuses — the run continues with what is on disk. */
@@ -1506,6 +1514,21 @@ async function reloadBeforeTests(
     void vscode.window.setStatusBarMessage(
       "Clojure Pulse: clj-reload is not on the REPL classpath — tests run without reloading",
       4000,
+    );
+  }
+  // clj-reload watching nothing reloads nothing, and reports it exactly like
+  // a project with nothing to reload. Usually an `init` whose `:files` regex
+  // matches no file: clj-reload matches the whole name, so tools.namespace's
+  // `#"\.clj"` idiom silently matches none.
+  if (
+    result.kind === "reloaded" &&
+    result.tracked === 0 &&
+    !warnedNoTracking.has(session)
+  ) {
+    warnedNoTracking.add(session);
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: clj-reload is watching no files — check the :dirs and :files it was initialized with",
+      6000,
     );
   }
   return result;

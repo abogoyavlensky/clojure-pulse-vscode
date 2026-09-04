@@ -19,7 +19,11 @@ All notable changes to the Clojure Pulse extension are documented in this file.
   form now injects `io.github.tonsky/clj-reload` beside nREPL; REPLs you
   configured earlier keep their command until you add the dependency
   yourself. `clojurePulse.test.reloadBeforeRun` set to `"none"` turns the step
-  off entirely.
+  off entirely. When clj-reload is on the classpath but watching no files -
+  usually an `init` whose `:files` regex matches nothing, since clj-reload
+  matches the whole file name and tools.namespace's `#"\.clj"` idiom therefore
+  matches none - the status bar points that out once per connection, instead
+  of every reload silently doing nothing.
 - **Indent on paste**: pasting a multi-line Clojure form re-indents it to
   where it lands, instead of keeping the columns it had at the source. The
   form's own layout is preserved — every line moves by the same amount, so

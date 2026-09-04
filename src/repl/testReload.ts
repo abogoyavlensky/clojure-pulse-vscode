@@ -11,6 +11,12 @@ import { EvalOutcome } from "./connectionManager";
  * `catch` covers what `:throw false` does not: clj-reload throws out of its
  * own scan when a changed file cannot even be read, and that has to abort the
  * run like any other reload failure rather than look like a missing library.
+ *
+ * `:tracked` is how many namespaces clj-reload is watching. A project whose
+ * `init` ends up matching no files reloads nothing, forever, and says so in
+ * exactly the same way as a project with nothing to reload; the count is what
+ * tells the two apart. Reading `*state` is reaching into clj-reload, so its
+ * own `try` keeps a version that moved the var from breaking the reload.
  */
 export const RELOAD_EXPR =
   "(if-let [f (resolve 'clj-reload.core/reload)] " +
@@ -19,7 +25,9 @@ export const RELOAD_EXPR =
   "(if-some [ex (:exception r)] " +
   "{:failed (:failed r) " +
   ":message (str (ex-message ex) (some->> (ex-cause ex) ex-message (str \": \")))} " +
-  "{:loaded (count (:loaded r))})) " +
+  "{:loaded (count (:loaded r)) " +
+  ":tracked (try (count (:namespaces @@(resolve 'clj-reload.core/*state)))" +
+  " (catch Exception _ nil))})) " +
   "(catch Exception e " +
   "{:failed nil " +
   ":message (str (ex-message e) (some->> (ex-cause e) ex-message (str \": \")))})) " +
@@ -35,7 +43,7 @@ export const PRIME_EXPR =
 
 export type ReloadResult =
   | { kind: "unavailable" }
-  | { kind: "reloaded"; loaded: number }
+  | { kind: "reloaded"; loaded: number; tracked?: number }
   | { kind: "failed"; ns: string; message: string };
 
 const NO_RELOAD = ":clojure-pulse/no-reload";
@@ -65,7 +73,12 @@ export function parseReloadOutcome(outcome: EvalOutcome): ReloadResult {
     return { kind: "failed", ns, message: printed ?? message };
   }
   const loaded = /:loaded\s+(\d+)/.exec(value)?.[1];
-  return { kind: "reloaded", loaded: loaded === undefined ? 0 : Number(loaded) };
+  const tracked = /:tracked\s+(\d+)/.exec(value)?.[1];
+  return {
+    kind: "reloaded",
+    loaded: loaded === undefined ? 0 : Number(loaded),
+    ...(tracked === undefined ? {} : { tracked: Number(tracked) }),
+  };
 }
 
 /** The last non-empty line clj-reload printed, if it printed anything. */

@@ -593,6 +593,13 @@ reloads uses clj-reload's own `before-ns-unload` and `after-ns-reload` hooks,
 plus `defonce` and `^:clj-reload/keep`; those fire inside `reload` and work
 here unchanged.
 
+If clj-reload is watching no files, the status bar says so once per
+connection. That is almost always an `init` whose `:files` regex matches
+nothing: clj-reload matches the *whole* file name, so tools.namespace's
+`#"\.clj"` idiom matches none of them, and every reload quietly does nothing.
+Use `#".*\.cljc?"` instead. (`integrant.repl`'s `set-reload-options!` passes
+its `:file-pattern` straight through to clj-reload as `:files`.)
+
 Three limits worth knowing:
 
 - clj-reload reads files from disk. Dirty editors are saved first, but an

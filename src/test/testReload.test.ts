@@ -37,6 +37,35 @@ suite("parseReloadOutcome", () => {
     );
   });
 
+  test("the tracked count comes through when clj-reload reports one", () => {
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value: "{:loaded 2, :tracked 19}",
+        namespaceNotFound: false,
+      }),
+      { kind: "reloaded", loaded: 2, tracked: 19 },
+    );
+  });
+
+  test("watching nothing is a tracked count of zero, not a missing one", () => {
+    // What an init whose :files regex matches no file looks like.
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value: "{:loaded 0, :tracked 0}",
+        namespaceNotFound: false,
+      }),
+      { kind: "reloaded", loaded: 0, tracked: 0 },
+    );
+    // A runtime that could not report one leaves it out entirely.
+    assert.deepStrictEqual(
+      parseReloadOutcome({
+        value: "{:loaded 0, :tracked nil}",
+        namespaceNotFound: false,
+      }),
+      { kind: "reloaded", loaded: 0 },
+    );
+  });
+
   test("a value without a count still reads as reloaded", () => {
     assert.deepStrictEqual(
       parseReloadOutcome({ value: "nil", namespaceNotFound: false }),
@@ -141,6 +170,9 @@ suite("reload expressions", () => {
     assert.ok(RELOAD_EXPR.includes("{:throw false}"));
     // A scan failure has to come back as a value, not as an err.
     assert.ok(RELOAD_EXPR.includes("(catch Exception e"));
+    // Reaching into clj-reload's state must not break the reload itself.
+    assert.ok(RELOAD_EXPR.includes("clj-reload.core/*state"));
+    assert.ok(RELOAD_EXPR.includes("(catch Exception _ nil)"));
   });
 
   test("the prime expression requires clj-reload", () => {
