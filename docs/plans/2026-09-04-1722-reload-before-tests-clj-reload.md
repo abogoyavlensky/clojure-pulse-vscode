@@ -209,7 +209,7 @@ the dep to their `:dev` profile.
 - Create: `src/repl/testReload.ts`
 - Test: `src/test/testReload.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   In `src/test/testReload.test.ts` (mocha tdd, like `src/test/testStatusBar.test.ts`), cover `parseReloadOutcome`:
   - `{ value: ":clojure-pulse/no-reload", namespaceNotFound: false }` → `{ kind: "unavailable" }`.
   - `{ err: "Unable to resolve symbol", namespaceNotFound: false }` → `unavailable`.
@@ -219,19 +219,24 @@ the dep to their `:dev` profile.
   - `{ value: "{:failed app.core}" }` (no message) → `failed` with `message: "{:failed app.core}"` and `ns: "app.core"`.
   Also assert `RELOAD_EXPR` contains `(resolve 'clj-reload.core/reload)` and `{:throw false}`, and `PRIME_EXPR` contains `(require 'clj-reload.core)` — cheap guards against a refactor changing what the integration tests grep for.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `npm test -- --grep "testReload"` (or `npm run compile-tests && npx vscode-test --grep testReload`)
   Expected: FAIL — module `../repl/testReload` not found.
 
-- [ ] **Step 3: Implement `src/repl/testReload.ts`**
+- [x] **Step 3: Implement `src/repl/testReload.ts`**
   Export `RELOAD_EXPR` (the exact expression from the Design, as one line), `PRIME_EXPR`, `ReloadResult`, and `parseReloadOutcome(outcome: EvalOutcome): ReloadResult` per the parsing rules in the Design. Import `EvalOutcome` from `./connectionManager`. Keep the module free of `vscode`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `npm test -- --grep "testReload"`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add clj-reload reload expression and outcome parser"`
+
+> Deviation: `RELOAD_EXPR` also wraps the reload call in `(try … (catch Exception e {:failed nil :message …}))`.
+> `{:throw false}` only converts *namespace load* failures into the result map; clj-reload still throws out of
+> its own scan when a changed file cannot be read, which would have come back as `err` and read as "unavailable",
+> letting tests run against stale code. `:failed nil` parses to `ns: "?"`.
 
 ### Task 2: Setting and command template
 
@@ -240,24 +245,24 @@ the dep to their `:dev` profile.
 - Modify: `src/repl/replConfig.ts`
 - Test: `src/test/replConfig.test.ts`
 
-- [ ] **Step 1: Update the template test**
+- [x] **Step 1: Update the template test**
   In `src/test/replConfig.test.ts` (around line 225 and 232), change the expected deps-CLI command to the new template from the Design, and assert it contains `io.github.tonsky/clj-reload {:mvn/version "1.0.0"}`. Windows-quoting assertion: include the escaped form as well.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
   Run: `npm test -- --grep "replConfig"`
   Expected: FAIL on the template string.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `src/repl/replConfig.ts` add `const CLJ_RELOAD_VERSION = "1.0.0";` beside `NREPL_VERSION` and extend the `:extra-deps` map in `defaultCreateCommand`. Update the doc comment: the alias now injects nREPL *and* clj-reload, the latter for reload-before-tests.
   In `package.json`:
   - Add `clojurePulse.test.reloadBeforeRun` after `clojurePulse.inlineEvalResults`: `"type": "string"`, `"enum": ["clj-reload", "none"]`, `"default": "clj-reload"`, `enumDescriptions`, and a `markdownDescription` saying the test commands save dirty Clojure files and reload changed namespaces with clj-reload when it is on the REPL classpath; `none` turns it off. Link to the README section.
   - Replace both template strings (the `replConfigurations` `markdownDescription` example and the default example under it) with the new command, keeping the existing JSON escaping style.
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
   Run: `npm test -- --grep "replConfig"`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Add reloadBeforeRun setting and clj-reload to the REPL command template"`
 
 ### Task 3: Reload step in the test cores
@@ -266,21 +271,21 @@ the dep to their `:dev` profile.
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Update the existing op-order assertions**
+- [x] **Step 1: Update the existing op-order assertions**
   Every assertion in `replCommands.integration.test.ts` that lists `eval`/`load-file` ops for `runTestAtCursor`, `runNsTests`, `rerunLastTest` (e.g. lines 484, 527 and the ns/rerun equivalents) gets a leading `"eval"`. Where a test inspects "the first eval" or counts evals, adjust accordingly; the reload eval is recognizable by `code.includes("clj-reload.core/reload")`.
 
-- [ ] **Step 2: Add the new integration tests**
+- [x] **Step 2: Add the new integration tests**
   Following the existing `connect(server)` + `server.respond` pattern:
   - **failed reload aborts:** respond to an eval whose code contains `clj-reload.core/reload` with `value: '{:failed app.core, :message "Syntax error compiling at (src/app/core.clj:3:1).: boom"}'` plus `status: ["done"]`; run `runTestAtCursor` on a deftest buffer; assert the only `eval`/`load-file` op is the reload eval and `api.testStatusBar.current()` is `undefined` (spinner cleared).
   - **unavailable continues:** respond with `value: ":clojure-pulse/no-reload"`; assert the ops are the reload eval followed by today's sequence.
   - **`none` skips:** set `clojurePulse.test.reloadBeforeRun` to `"none"` (Global target, like `setConfigurations`); assert no eval's code mentions `clj-reload`; reset the setting in `teardown`.
   - **saves before reload:** write a temp `.clj` file (the `fs`/`os`/`path` imports are already there), open it, insert a comment with `editor.edit`, run `runTestAtCursor`; in the responder, when the reload eval arrives, record `doc.isDirty`; assert it was `false`.
 
-- [ ] **Step 3: Run to verify the new tests fail**
+- [x] **Step 3: Run to verify the new tests fail**
   Run: `npm test -- --grep "REPL commands"`
   Expected: FAIL — the new tests and the updated op orders.
 
-- [ ] **Step 4: Implement in `src/extension.ts`**
+- [x] **Step 4: Implement in `src/extension.ts`**
   - `reloadSetting(): "clj-reload" | "none"` next to `inlineEnabled()`, reading `clojurePulse.test.reloadBeforeRun` with default `"clj-reload"`.
   - `saveDirtyClojureDocuments(): Promise<void>` — `vscode.workspace.textDocuments` filtered by `languageId === "clojure"`, `isDirty`, `uri.scheme === "file"`; `await doc.save()` for each; ignore `false`.
   - `reloadBeforeTests(session: ReplSessionLike): Promise<ReloadResult | undefined>` — returns `undefined` when the setting is `"none"`; otherwise saves, evals `RELOAD_EXPR` (no `ns` param), returns `parseReloadOutcome(outcome)`. On `unavailable`, shows the status-bar message unless the session is already in the module-level `warnedNoReload: Set<ReplSessionLike>`, then adds it. (Task 4's connect listener removes the session from the set on every `connected`, which is what makes it "once per connection" across in-place restarts.)
@@ -288,11 +293,11 @@ the dep to their `:dev` profile.
   - In `runTestsInDocument`: same, right after `statusBar.running(runName)` inside the `try`, with `reportRunError` and `statusBar.clear`.
   - Update the doc comments of both cores and `rerunLastTest` (the "eval it in the REPL — then re-run" sentence no longer applies).
 
-- [ ] **Step 5: Run the suite**
+- [x] **Step 5: Run the suite**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Save and reload changed namespaces before running tests"`
 
 ### Task 4: Prime clj-reload on connect
@@ -301,25 +306,34 @@ the dep to their `:dev` profile.
 - Modify: `src/extension.ts`
 - Test: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing tests, and make the `connect` helper absorb the prime**
+- [x] **Step 1: Write the failing tests, and make the `connect` helper absorb the prime**
   The prime adds an `eval` to every connection, and several existing tests assert that nothing was sent at all (`rerunLastTest before any test command sends nothing`, `evalCurrentForm with no form at the cursor sends nothing`, `runTestAtCursor outside a deftest sends nothing`, `runNsTests with no deftests in the buffer sends nothing`, `rerunLastTest after renaming the deftest sends nothing`, and every `received.find(m => m.op === "eval")`). Rather than touching each, change the `connect(server)` helper: after `startRepl` and the `connected` assertion, when the setting is not `"none"`, `waitUntil` an eval whose code contains `require 'clj-reload.core` has arrived, then `server.received.splice(0)` so tests observe only their own traffic. Then the tests:
   - Connecting sends exactly one eval whose code contains `require 'clj-reload.core`, after the handshake (`clone`/`describe`). Assert inside a test that inspects `server.received` *before* the helper's splice — simplest is a dedicated test that does the configuration + `startRepl` steps inline instead of through `connect`.
   - With the setting `"none"`, no such eval arrives: set the setting, connect through the helper (which then does not wait), run an unrelated `evalSelection`, assert none of the received evals mention `clj-reload`.
   - Restart re-arms the "unavailable" hint: connect, respond `:clojure-pulse/no-reload` to the reload eval, run a test twice (the second run must not warn — observe through a stubbed `setStatusBarMessage` or by exposing the warned set on the test API, whichever the executor finds cleaner), `stopRepl` + `startRepl` the same name, run again and assert the hint shows once more.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
   Run: `npm test -- --grep "REPL commands"`
   Expected: FAIL — no prime eval.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In the registry's `createSession` callback (`src/extension.ts` ~line 671), after constructing the `ReplSession`, register a state listener and return the session. On `connected`: `warnedNoReload.delete(session)` (re-arms the one-time hint for this connection), and when `reloadSetting() === "clj-reload"`, `void session.eval(PRIME_EXPR).catch(() => {})`. Comment why: fixes clj-reload's change baseline at connect time; never `init`.
 
-- [ ] **Step 4: Run the suite**
+- [x] **Step 4: Run the suite**
   Run: `npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Require clj-reload on connect to fix its change baseline"`
+
+> Deviation: the prime eval needed two supporting changes the plan did not foresee.
+> `EvalOptions` gained a `quiet` flag (stripped before the nREPL op is sent) so the prime
+> stays out of the transcript — otherwise `(try (require 'clj-reload.core) …)` was the first
+> line of every REPL output channel. `src/test/customCommands.integration.test.ts` and
+> `src/test/replManager.integration.test.ts` absorb the prime the same way `connect` does,
+> and `fakeNreplServer` now skips writes to a destroyed socket (a fire-and-forget prime
+> outliving a stopped REPL surfaced as an uncaught EPIPE).
+> The warned-set is exposed as `api.warnedNoReload(session)` for the re-arm test.
 
 ### Task 5: Docs
 

@@ -156,6 +156,7 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.projects` | `[]` | Per-project classpath overrides for multi-project workspaces — see [Monorepos](#monorepos). |
 | `clojurePulse.kondo.enabled` | `true` | Use clj-kondo for diagnostics when the binary is found — see [Linting](#linting). |
 | `clojurePulse.kondo.path` | `"clj-kondo"` | The clj-kondo command. A bare name is resolved from `PATH`. |
+| `clojurePulse.test.reloadBeforeRun` | `"clj-reload"` | Save dirty Clojure files and reload what changed before every test run, or `"none"` to skip it - see [Reload before tests](#reload-before-tests). |
 
 The extension also sets two editor defaults for the `clojure` language:
 `editor.formatOnType: false` (Enter is handled client-side, so the server's
@@ -362,7 +363,7 @@ travel with the project:
     {
       "name": "dev",
       "type": "create",
-      "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
+      "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"} io.github.tonsky/clj-reload {:mvn/version \"1.0.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
     },
     { "name": "local", "type": "connect", "port": ".nrepl-port" },
     { "name": "staging", "type": "connect", "host": "10.0.0.5", "port": 7888 }
@@ -398,8 +399,16 @@ The command the form prefills follows the build file at the workspace root:
 The Clojure CLI command needs nothing in your `deps.edn`:
 
 ```sh
-clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}' -M:clojure-pulse/nrepl
+clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"} io.github.tonsky/clj-reload {:mvn/version "1.0.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}' -M:clojure-pulse/nrepl
 ```
+
+Besides nREPL it injects [clj-reload](https://github.com/tonsky/clj-reload),
+which the test commands use to reload what you changed before they run
+([Reload before tests](#reload-before-tests)). Delete that dependency if you do
+not want it; everything else keeps working. A Leiningen project adds
+`[io.github.tonsky/clj-reload "1.0.0"]` to its `:dev` profile instead, and a
+REPL you configured before this version keeps the command you saved until you
+add the dependency by hand.
 
 It injects nREPL as an *alias*, so your own aliases compose with it: change the
 last argument to `-M:dev:test:clojure-pulse/nrepl` and every alias contributes
@@ -479,6 +488,19 @@ rather than land somewhere you did not intend.
 - **Evaluate Selection** — evaluate exactly the selected code. The result
   appears inline; the REPL's output channel opens only when inline results are
   off, and even then the cursor stays in the editor.
+- **Reload before tests** — every test command starts by saving the dirty
+  Clojure files and reloading the namespaces whose files changed on disk,
+  along with the namespaces that depend on them, so the code you just edited
+  is the code the test runs against. It uses
+  [clj-reload](https://github.com/tonsky/clj-reload), which the prefilled
+  Clojure CLI command puts on the classpath for you. A file that no longer
+  compiles aborts the run: a notification names the namespace and the error's
+  first line, and the full trace is in the REPL's output channel. Without
+  clj-reload on the classpath the tests run as they always did, and the status
+  bar says so once per connection. Set
+  `clojurePulse.test.reloadBeforeRun` to `"none"` to turn the whole step off.
+  See [Reload before tests](#reload-before-tests) for what the extension
+  assumes about your project.
 - **Run Test at Cursor** — with the cursor inside a top-level `deftest` (or
   right after its closing paren), re-evaluates the test in the file's namespace
   so the buffer's current version is what runs, then executes it via
@@ -518,8 +540,8 @@ rather than land somewhere you did not intend.
   single-test command uses skips fixtures entirely).
 - **Run Last Test Command** — repeats whatever test command ran last, from
   anywhere. The Cursive workflow this copies: run a `deftest`, switch to the
-  business-logic code, change something, eval it in the REPL — then re-run the
-  test without ever leaving the file you're in. The command re-reads the test
+  business-logic code, change something, then re-run the test without ever
+  leaving the file you're in. The change is saved and reloaded for you. The command re-reads the test
   file's current content (unsaved edits included), finds the test again by
   namespace and name — so it survives the deftest moving around the file — and
   runs it exactly as the original command would: same gutter marks on the test
@@ -554,6 +576,34 @@ example in `keybindings.json`:
   "when": "editorTextFocus && editorLangId == clojure"
 }
 ```
+
+### Reload before tests
+
+The test commands reload what changed before they run, through
+[clj-reload](https://github.com/tonsky/clj-reload). It reloads only the
+namespaces whose files changed on disk and the namespaces that depend on them,
+in dependency order, and `defonce` vars survive the reload.
+
+**What the extension assumes: nothing.** It calls plain
+`clj-reload.core/reload` and nothing else. It never calls `init`, so your own
+`init` in `user.clj` (with `:no-unload`, `:no-reload`, `:output`) wins. It
+never calls a project's own reset wrapper, so an Integrant, Component or Mount
+system is not restarted before your test. A project that wants state to follow
+reloads uses clj-reload's own `before-ns-unload` and `after-ns-reload` hooks,
+plus `defonce` and `^:clj-reload/keep`; those fire inside `reload` and work
+here unchanged.
+
+Three limits worth knowing:
+
+- clj-reload reads files from disk. Dirty editors are saved first, but an
+  untitled buffer has no file, so it is never reloaded.
+- clj-reload's idea of "changed" starts when `clj-reload.core` is first
+  required. Clojure Pulse requires it the moment a REPL connects. For a
+  `connect` REPL you started yourself, edits made between the JVM starting and
+  the extension connecting are missed; `(require 'clj-reload.core)` in your
+  `user.clj` closes that window.
+- It is JVM-only. On let-go the reload probe finds nothing to call and the
+  tests run without reloading.
 
 ### Custom commands
 
@@ -632,11 +682,11 @@ Run these from the Command Palette:
   reporting in the status bar rather than opening the output panel.
 - **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
   active REPL.
-- **Clojure Pulse: Run Test at Cursor** — re-evaluate and run the `deftest`
-  under the cursor in the active REPL, loading the file's namespace first if
-  needed.
-- **Clojure Pulse: Run Tests in Namespace** — load the current file and run
-  every top-level `deftest` in it, one after another.
+- **Clojure Pulse: Run Test at Cursor** — reload what changed, then
+  re-evaluate and run the `deftest` under the cursor in the active REPL,
+  loading the file's namespace first if needed.
+- **Clojure Pulse: Run Tests in Namespace** — reload what changed, load the
+  current file, and run every top-level `deftest` in it, one after another.
 - **Clojure Pulse: Run Last Test Command** — repeat the last test command
   (either of the two above) without switching to the test file.
 - **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.

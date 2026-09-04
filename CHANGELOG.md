@@ -4,6 +4,22 @@ All notable changes to the Clojure Pulse extension are documented in this file.
 
 ## [Unreleased]
 
+- **Reload before tests**: every test command now saves the dirty Clojure
+  files and reloads the namespaces whose files changed on disk, along with
+  their dependents, through
+  [clj-reload](https://github.com/tonsky/clj-reload) — so the change you just
+  made to a business-logic file is what **Run Last Test Command** exercises,
+  with no manual eval in between. A file that no longer compiles aborts the
+  run with a notification naming the namespace, and the full trace goes to the
+  REPL's output channel. Without clj-reload on the REPL's classpath the tests
+  run exactly as before, and the status bar says so once per connection. The
+  extension calls plain `clj-reload.core/reload` only: never `init`, never a
+  project's own reset wrapper, so no Integrant or Component system is
+  restarted behind your back. The prefilled Clojure CLI command in the REPL
+  form now injects `io.github.tonsky/clj-reload` beside nREPL; REPLs you
+  configured earlier keep their command until you add the dependency
+  yourself. `clojurePulse.test.reloadBeforeRun` set to `"none"` turns the step
+  off entirely.
 - **Indent on paste**: pasting a multi-line Clojure form re-indents it to
   where it lands, instead of keeping the columns it had at the source. The
   form's own layout is preserved — every line moves by the same amount, so

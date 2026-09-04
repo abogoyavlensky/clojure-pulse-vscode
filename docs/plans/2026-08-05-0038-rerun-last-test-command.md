@@ -51,6 +51,7 @@ Supporting changes:
 3. **In-memory, per-window state** — a VS Code restart clears the record. No `workspaceState` persistence (YAGNI).
 4. **Repeated reruns are stable** — the cores re-record the same semantic values on a rerun, so the record never drifts.
 5. **No auto-reload of business logic** — same semantics as the existing commands: the user evals their changes in the REPL, then reruns.
+   Superseded by docs/plans/2026-09-04-1722-reload-before-tests-clj-reload.md — test commands now reload changed namespaces first.
 6. **No default keybinding** — consistent with the existing test commands. Command palette title: "Run Last Test Command".
 
 ### Edge cases
