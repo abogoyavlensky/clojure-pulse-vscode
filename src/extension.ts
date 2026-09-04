@@ -86,6 +86,12 @@ import {
   TestStatusBar,
 } from "./repl/testStatusBar";
 import {
+  parseReloadOutcome,
+  PRIME_EXPR,
+  RELOAD_EXPR,
+  ReloadResult,
+} from "./repl/testReload";
+import {
   formAtCursor,
   nsBefore,
   testAtCursor,
@@ -1431,6 +1437,57 @@ function inlineEnabled(): boolean {
     .get<boolean>("inlineEvalResults", true);
 }
 
+/** What the test commands do before they run anything (default clj-reload). */
+function reloadSetting(): "clj-reload" | "none" {
+  return vscode.workspace
+    .getConfiguration("clojurePulse")
+    .get<"clj-reload" | "none">("test.reloadBeforeRun", "clj-reload");
+}
+
+/**
+ * Sessions already told that clj-reload is missing. The hint is worth saying
+ * once, not before every test run. A session object outlives a stop/start —
+ * `ReplSession.start` restarts in place — so the connect-time listener drops
+ * it from here, which re-arms the hint for the next connection.
+ */
+const warnedNoReload = new Set<ReplSessionLike>();
+
+/** Writes the dirty Clojure buffers to disk: clj-reload reads files, not
+ *  editors. An untitled buffer has no file to reload and is skipped, as is a
+ *  save the editor refuses — the run continues with what is on disk. */
+async function saveDirtyClojureDocuments(): Promise<void> {
+  for (const doc of vscode.workspace.textDocuments) {
+    if (doc.languageId === "clojure" && doc.isDirty && doc.uri.scheme === "file") {
+      await doc.save();
+    }
+  }
+}
+
+/**
+ * The step every test command takes first: save, then reload the namespaces
+ * whose files changed on disk and everything that depends on them, so the
+ * edit you just made is what the test exercises. Returns undefined when the
+ * setting turns the step off, and reports a missing clj-reload once per
+ * connection rather than on every run.
+ */
+async function reloadBeforeTests(
+  session: ReplSessionLike,
+): Promise<ReloadResult | undefined> {
+  if (reloadSetting() === "none") {
+    return undefined;
+  }
+  await saveDirtyClojureDocuments();
+  const result = parseReloadOutcome(await session.eval(RELOAD_EXPR));
+  if (result.kind === "unavailable" && !warnedNoReload.has(session)) {
+    warnedNoReload.add(session);
+    void vscode.window.setStatusBarMessage(
+      "Clojure Pulse: clj-reload is not on the REPL classpath — tests run without reloading",
+      4000,
+    );
+  }
+  return result;
+}
+
 /** Guards eval commands on a live connection; warns with a Start action and
  *  returns undefined when nothing is connected. */
 function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
@@ -1608,9 +1665,9 @@ function visibleEditorFor(doc: vscode.TextDocument): vscode.TextEditor | undefin
 }
 
 /**
- * Runs one `deftest` of a document: re-evaluates the form in its namespace so
- * the buffer's current version is what runs, then executes it via
- * clojure.test. Two evals share one inline decoration — pending through both,
+ * Runs one `deftest` of a document: reloads what changed on disk first (see
+ * `reloadBeforeTests`), re-evaluates the form in its namespace so the
+ * buffer's current version is what runs, then executes it via clojure.test. Two evals share one inline decoration — pending through both,
  * resolved with the runner's summary map — painted only when some visible
  * editor shows the document. The detailed report streams to the REPL's output
  * channel without stealing focus; the gutter mark's hover and the status bar
@@ -1645,6 +1702,18 @@ async function runSingleTest(
   const runId = testStatus.track(doc, range);
   const barToken = statusBar.running(found.name);
   try {
+    const reloaded = await reloadBeforeTests(session);
+    if (reloaded?.kind === "failed") {
+      // Nothing below can be trusted once a changed namespace fails to load;
+      // clj-reload has already printed the full trace to the REPL output.
+      const message = `reload failed in ${reloaded.ns}: ${reloaded.message}`;
+      if (id) {
+        inlineResults.resolve(id, { err: message, namespaceNotFound: false });
+      }
+      reportRunError(message);
+      statusBar.clear(barToken);
+      return;
+    }
     if (nsName !== undefined) {
       // The namespace-not-found status is JVM-only — let-go's nREPL neither
       // sends it nor honors the eval `ns` param. A find-ns probe detects an
@@ -1800,7 +1869,8 @@ async function runNsTests(
 
 /** The document-centric body of Run Tests in Namespace, shared with the
  *  rerun command: the active editor chooses the document above; here only
- *  the document matters. */
+ *  the document matters. Like the single-test command it reloads what
+ *  changed on disk before it loads the buffer. */
 async function runTestsInDocument(
   session: ReplSessionLike,
   doc: vscode.TextDocument,
@@ -1841,6 +1911,14 @@ async function runTestsInDocument(
   }
 
   try {
+    const reloaded = await reloadBeforeTests(session);
+    if (reloaded?.kind === "failed") {
+      // A changed namespace that no longer compiles makes the load below
+      // meaningless; clj-reload printed the full trace to the REPL output.
+      reportRunError(`reload failed in ${reloaded.ns}: ${reloaded.message}`);
+      statusBar.clear(barToken);
+      return;
+    }
     const onDisk = doc.uri.scheme === "file";
     const loaded = await session.loadFile(text, {
       filePath: onDisk ? doc.uri.fsPath : undefined,
@@ -1903,7 +1981,9 @@ async function runTestsInDocument(
  * content, so a moved or edited deftest is found again by namespace + name
  * and an ns run picks up new tests. The document is opened without showing
  * it, so focus stays wherever the user is working; when the test file is not
- * visible the status bar and REPL output carry the verdict.
+ * visible the status bar and REPL output carry the verdict. It runs through
+ * the same cores as the two test commands, so the business-logic file you
+ * just edited is saved and reloaded before the test runs.
  */
 async function rerunLastTest(
   registry: ReplRegistry,

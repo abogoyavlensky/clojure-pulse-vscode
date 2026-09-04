@@ -52,6 +52,7 @@ suite("REPL commands", () => {
       await session.stop();
     }
     await setConfigurations(undefined);
+    await setReloadBeforeRun(undefined);
     await waitUntil(
       () => api.repls.sessions.length === 0,
       5000,
@@ -69,6 +70,12 @@ suite("REPL commands", () => {
         // The test host opens no folder, so workspace settings are unavailable.
         vscode.ConfigurationTarget.Global,
       );
+  }
+
+  async function setReloadBeforeRun(value: string | undefined): Promise<void> {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("test.reloadBeforeRun", value, vscode.ConfigurationTarget.Global);
   }
 
   /** Brings up the configured REPL that points at `server`. */
@@ -403,24 +410,30 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
 
-      // Probe (ns already loaded here) → align the ns for let-go → define →
-      // run. let-go's nREPL ignores the eval `ns` param, so the explicit
-      // in-ns eval is what puts the definition in the file's namespace there.
+      // Reload what changed on disk → probe (ns already loaded here) → align
+      // the ns for let-go → define → run. let-go's nREPL ignores the eval
+      // `ns` param, so the explicit in-ns eval is what puts the definition in
+      // the file's namespace there.
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 4, "expected probe + in-ns + define + run");
-      assert.ok(String(evals[0].code).includes("find-ns 'my.app-test"));
-      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(
+        evals.length,
+        5,
+        "expected reload + probe + in-ns + define + run",
+      );
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.ok(String(evals[1].code).includes("find-ns 'my.app-test"));
+      assert.strictEqual(evals[2].code, "(in-ns 'my.app-test)");
       // The ns param keeps the JVM session's own *ns* binding untouched.
-      assert.strictEqual(evals[1].ns, "my.app-test");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[2].ns, "my.app-test");
-      assert.ok(String(evals[3].code).includes("run-test-var"));
-      assert.ok(String(evals[3].code).includes("#'my-test"));
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
+      assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("run-test-var"));
+      assert.ok(String(evals[4].code).includes("#'my-test"));
       // The fallback must reference only vars that exist on let-go too, whose
       // compiler resolves both branches eagerly.
-      assert.ok(String(evals[3].code).includes("clojure.test/*report-counters*"));
-      assert.ok(!String(evals[3].code).includes("*initial-report-counters*"));
-      assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("clojure.test/*report-counters*"));
+      assert.ok(!String(evals[4].code).includes("*initial-report-counters*"));
+      assert.strictEqual(evals[4].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -481,15 +494,23 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, [
+        "eval",
+        "eval",
+        "load-file",
+        "eval",
+        "eval",
+        "eval",
+      ]);
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(String(loadMsg?.file).includes("(deftest my-test"));
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
-      assert.strictEqual(evals[2].ns, "my.app-test");
-      assert.ok(String(evals[3].code).includes("run-test-var"));
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[2].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("run-test-var"));
+      assert.strictEqual(evals[4].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -524,7 +545,7 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["eval", "load-file"]);
+      assert.deepStrictEqual(ops, ["eval", "eval", "load-file"]);
     } finally {
       await server?.close();
     }
@@ -660,6 +681,149 @@ suite("REPL commands", () => {
     }
   });
 
+  test("runTestAtCursor aborts when the reload fails", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({
+            session: msg.session,
+            value:
+              '{:failed app.core, :message "Syntax error compiling at (src/app/core.clj:3:1).: boom"}',
+          });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // A namespace that does not compile makes every later eval meaningless.
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["eval"]);
+      assert.strictEqual(api.testStatusBar.current(), undefined);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor runs on without clj-reload on the classpath", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: ":clojure-pulse/no-reload" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.ok(
+        evals.some((m) => String(m.code).includes("run-test-var")),
+        "a missing clj-reload must not stop the run",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor sends no reload at all when the setting is none", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      await setReloadBeforeRun("none");
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      assert.ok(
+        !server.received.some((m) => String(m.code ?? "").includes("clj-reload")),
+        "none means no reload traffic",
+      );
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals.length, 4, "the old probe + in-ns + define + run");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor saves dirty Clojure files before it reloads", async () => {
+    let server: FakeNrepl | undefined;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clojure-pulse-reload-"));
+    const file = path.join(dir, "core.clj");
+    fs.writeFileSync(file, "(ns app.core)\n(defn add [a b] (+ a b))\n");
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      // clj-reload reads from disk, so an unsaved edit would be invisible
+      // to it — the save has to land before the reload eval goes out.
+      let dirtyAtReload: boolean | undefined;
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          dirtyAtReload = source.isDirty;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const source = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      const sourceEditor = await vscode.window.showTextDocument(source);
+      await sourceEditor.edit((edit) => {
+        edit.insert(new vscode.Position(1, 0), ";; edited\n");
+      });
+      assert.ok(source.isDirty, "the edit should leave the document dirty");
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      assert.strictEqual(dirtyAtReload, false, "the file must be on disk by then");
+    } finally {
+      await server?.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("runNsTests without a connection warns instead of throwing", async () => {
     await vscode.commands.executeCommand("clojurePulse.runNsTests");
   });
@@ -680,21 +844,23 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.runNsTests");
 
-      // The buffer is loaded once, the namespace aligned once (let-go ignores
-      // the eval `ns` param), then one runner eval per deftest.
+      // What changed on disk is reloaded first, then the buffer is loaded
+      // once, the namespace aligned once (let-go ignores the eval `ns`
+      // param), then one runner eval per deftest.
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(String(loadMsg?.file).includes("(deftest second-test"));
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals[0].code, "(in-ns 'my.app-test)");
-      assert.strictEqual(evals[0].ns, "my.app-test");
-      assert.ok(String(evals[1].code).includes("#'first-test"));
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
       assert.strictEqual(evals[1].ns, "my.app-test");
-      assert.ok(String(evals[2].code).includes("#'second-test"));
+      assert.ok(String(evals[2].code).includes("#'first-test"));
       assert.strictEqual(evals[2].ns, "my.app-test");
+      assert.ok(String(evals[3].code).includes("#'second-test"));
+      assert.strictEqual(evals[3].ns, "my.app-test");
 
       // One gutter mark per deftest, on its own first line.
       const marks = api.testStatus.marks();
@@ -810,7 +976,7 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file"]);
       // The pending marks never resolve, and the status bar is cleared.
       assert.deepStrictEqual(api.testStatus.marks(), []);
       assert.strictEqual(api.testStatusBar.current(), undefined);
@@ -847,9 +1013,14 @@ suite("REPL commands", () => {
       const evals = server.received
         .slice(before)
         .filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 4, "probe + in-ns + define + run again");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
-      assert.ok(String(evals[3].code).includes("#'my-test"));
+      assert.strictEqual(
+        evals.length,
+        5,
+        "reload + probe + in-ns + define + run again",
+      );
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
+      assert.ok(String(evals[4].code).includes("#'my-test"));
 
       // Focus never left the business-logic buffer.
       assert.strictEqual(
@@ -898,7 +1069,7 @@ suite("REPL commands", () => {
         .slice(before)
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
 
       const marks = api.testStatus.marks();
       assert.strictEqual(marks.length, 2);
