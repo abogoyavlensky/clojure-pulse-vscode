@@ -116,11 +116,11 @@ local modification.
 - Modify: `package.json`
 - Create: `src/test/grammar.test.ts`
 
-- [ ] **Step 1: Add the test-only dependencies**
+- [x] **Step 1: Add the test-only dependencies**
   `npm install --save-dev vscode-textmate vscode-oniguruma`
   Both land in `devDependencies`; check `package-lock.json` is updated too.
 
-- [ ] **Step 2: Write the tokenization harness**
+- [x] **Step 2: Write the tokenization harness**
   In `src/test/grammar.test.ts`, a `suiteSetup` builds the registry once:
   read `onig.wasm` from `node_modules/vscode-oniguruma/release/onig.wasm` and
   pass the `Buffer` straight to `oniguruma.loadWASM` (it accepts an
@@ -146,7 +146,7 @@ local modification.
   and returns the `scopes` of the token on `line` whose
   `startIndex <= column < endIndex`.
 
-- [ ] **Step 3: Write the failing assertions**
+- [x] **Step 3: Write the failing assertions**
   A `suite("clojure grammar")` with the cases below. The first four fail today;
   the rest are regression guards that must pass before and after.
 
@@ -164,14 +164,18 @@ local modification.
   - `(when x 1)` and `#(when % 1)` — `when` is `storage.control.clojure`
     (the second confirms `#(` still counts as head position).
 
-- [ ] **Step 4: Run the suite to verify the new cases fail**
+- [x] **Step 4: Run the suite to verify the new cases fail**
   Run: `make test`
   Expected: FAIL — the three new-behaviour cases report `defenders` /
   `when-ready` / `cond` carrying `keyword.control.clojure` or
   `storage.control.clojure`; every regression guard passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "test: tokenize the Clojure grammar in tests"`
+
+> Deviation: the test file adds a thin `scopesOf(source, line, symbol)` wrapper
+> over `scopesAt` so each case names the symbol it reads instead of computing a
+> column. Same helper, readable call sites.
 
 ---
 
