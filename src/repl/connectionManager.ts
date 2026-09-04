@@ -14,8 +14,15 @@ export interface ReplConnectionInfo {
   port: number;
 }
 
-/** Source-location params carried through to the nREPL `eval` op. */
-export type EvalOptions = EvalExtras;
+/** Source-location params carried through to the nREPL `eval` op, plus the
+ *  extension's own `quiet`, which is not sent to the server. */
+export type EvalOptions = EvalExtras & {
+  /** Keeps the whole exchange — the code and everything it prints or
+   *  returns — out of the transcript. For evals the user never asked for:
+   *  the connect-time clj-reload prime, whose bare `nil` would otherwise be
+   *  the first thing in a fresh REPL channel. */
+  quiet?: boolean;
+};
 
 /** Path params carried through to the nREPL `load-file` op. */
 export type LoadFileOptions = LoadFileExtras;
@@ -166,13 +173,16 @@ export class ConnectionManager {
    *  transcript and resolving with the distilled outcome. */
   async eval(code: string, opts?: EvalOptions): Promise<EvalOutcome> {
     const connection = this.requireConnection();
-    this.transcript.append({ kind: "in", text: code });
+    const { quiet, ...extras } = opts ?? {};
+    if (!quiet) {
+      this.transcript.append({ kind: "in", text: code });
+    }
     const outcome = newOutcome();
     await connection.client.eval(
       code,
       connection.session,
-      (msg) => this.collectEvalMessage(msg, outcome),
-      opts,
+      (msg) => this.collectEvalMessage(msg, outcome, quiet),
+      extras,
     );
     return outcome;
   }
@@ -241,10 +251,18 @@ export class ConnectionManager {
     }
   }
 
-  /** Streams a message to the transcript and accumulates it into `outcome`. */
-  private collectEvalMessage(msg: NreplMessage, outcome: EvalOutcome): void {
+  /** Streams a message to the transcript and accumulates it into `outcome`.
+   *  A `quiet` eval still resolves with its outcome; only the transcript is
+   *  spared. */
+  private collectEvalMessage(
+    msg: NreplMessage,
+    outcome: EvalOutcome,
+    quiet = false,
+  ): void {
     const clean = this.sanitizeMessage(msg);
-    this.appendEvalMessage(clean);
+    if (!quiet) {
+      this.appendEvalMessage(clean);
+    }
     if (typeof clean.value === "string") {
       outcome.value = clean.value;
     }

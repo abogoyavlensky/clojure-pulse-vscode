@@ -21,6 +21,8 @@ interface ExtensionApi {
   testStatus: TestStatusManager;
   testStatusBar: TestStatusBar;
   commandStatusBar: CommandStatusBar;
+  warnedNoReload: (session: ReplSessionLike) => boolean;
+  warnedNoTracking: (session: ReplSessionLike) => boolean;
 }
 
 async function waitUntil(
@@ -52,6 +54,7 @@ suite("REPL commands", () => {
       await session.stop();
     }
     await setConfigurations(undefined);
+    await setReloadBeforeRun(undefined);
     await waitUntil(
       () => api.repls.sessions.length === 0,
       5000,
@@ -71,7 +74,22 @@ suite("REPL commands", () => {
       );
   }
 
-  /** Brings up the configured REPL that points at `server`. */
+  function reloadBeforeRun(): string {
+    return vscode.workspace
+      .getConfiguration("clojurePulse")
+      .get<string>("test.reloadBeforeRun", "clj-reload");
+  }
+
+  async function setReloadBeforeRun(value: string | undefined): Promise<void> {
+    await vscode.workspace
+      .getConfiguration("clojurePulse")
+      .update("test.reloadBeforeRun", value, vscode.ConfigurationTarget.Global);
+  }
+
+  /** Brings up the configured REPL that points at `server`. Connecting
+   *  primes clj-reload, which every test would otherwise have to account
+   *  for, so the helper waits for that eval and then forgets it: what a test
+   *  sees in `server.received` is its own traffic. */
   async function connect(server: FakeNrepl): Promise<ReplSessionLike> {
     await setConfigurations([
       { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
@@ -87,7 +105,20 @@ suite("REPL commands", () => {
     const session = api.repls.get(REPL_NAME);
     assert.ok(session, `expected a session named "${REPL_NAME}"`);
     assert.strictEqual(session.state, "connected");
+    if (reloadBeforeRun() !== "none") {
+      await waitUntil(
+        () => server.received.some((m) => isPrime(m)),
+        5000,
+        "the clj-reload prime eval",
+      );
+    }
+    server.received.splice(0);
     return session;
+  }
+
+  /** True for the eval that fixes clj-reload's change baseline on connect. */
+  function isPrime(msg: { op?: unknown; code?: unknown }): boolean {
+    return msg.op === "eval" && String(msg.code ?? "").includes("require 'clj-reload.core");
   }
 
   test("registers the REPL commands", async () => {
@@ -383,6 +414,209 @@ suite("REPL commands", () => {
     }
   });
 
+  test("connecting primes clj-reload once, after the handshake", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      // Inline rather than through `connect`, which swallows the prime.
+      await setConfigurations([
+        { name: REPL_NAME, type: "connect", host: "127.0.0.1", port: server.port },
+      ]);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME) !== undefined,
+        5000,
+        `the "${REPL_NAME}" session to appear`,
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      await waitUntil(
+        () => server?.received.some((m) => isPrime(m)) === true,
+        5000,
+        "the clj-reload prime eval",
+      );
+
+      const primes = server.received.filter((m) => isPrime(m));
+      assert.strictEqual(primes.length, 1, "one prime per connection");
+      // The baseline is fixed once the session is usable, not before it.
+      const primeIndex = server.received.findIndex((m) => isPrime(m));
+      const cloneIndex = server.received.findIndex((m) => m.op === "clone");
+      assert.ok(cloneIndex >= 0 && cloneIndex < primeIndex, "clone comes first");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("the setting none primes nothing on connect", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      await setReloadBeforeRun("none");
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns scratch)\n(+ 1 2)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(1, 0, 1, 7);
+      await vscode.commands.executeCommand("clojurePulse.evalSelection");
+
+      assert.ok(
+        !server.received.some((m) => String(m.code ?? "").includes("clj-reload")),
+        "none means no clj-reload traffic at all",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("restarting a REPL re-arms the missing-clj-reload hint", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      // The restart below re-runs the handshake, so this responder has to
+      // answer clone/describe as well as the evals it is here for.
+      server.respond((msg, reply) => {
+        if (msg.op === "clone") {
+          reply({ "new-session": "sess-1", status: ["done"] });
+          return;
+        }
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: ":clojure-pulse/no-reload" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      assert.strictEqual(api.warnedNoReload(session), false);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoReload(session), true, "said once");
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoReload(session), true, "and not again");
+
+      // Restarting is how a user adds the dependency, so the hint has to be
+      // able to say it again — or to stop, once the dep is there.
+      await vscode.commands.executeCommand("clojurePulse.stopRepl", REPL_NAME);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME)?.state === "stopped",
+        5000,
+        "the REPL to stop",
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      const restarted = api.repls.get(REPL_NAME);
+      assert.ok(restarted, "the configuration still has its session");
+      assert.strictEqual(restarted.state, "connected");
+      assert.strictEqual(
+        api.warnedNoReload(restarted),
+        false,
+        "a fresh connection may warn again",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("a clj-reload watching no files is pointed out once per connection", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      // What an init whose :files regex matches nothing reports: the reload
+      // succeeds and does nothing, forever.
+      server.respond((msg, reply) => {
+        if (msg.op === "clone") {
+          reply({ "new-session": "sess-1", status: ["done"] });
+          return;
+        }
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: "{:loaded 0, :tracked 0}" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      assert.strictEqual(api.warnedNoTracking(session), false);
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoTracking(session), true, "said once");
+      // Watching nothing is not a missing clj-reload, so that hint stays put.
+      assert.strictEqual(api.warnedNoReload(session), false);
+      // The run itself continues.
+      assert.ok(
+        server.received.some((m) => String(m.code ?? "").includes("run-test-var")),
+        "a useless reload config must not stop the run",
+      );
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+      assert.strictEqual(api.warnedNoTracking(session), true, "and not again");
+
+      await vscode.commands.executeCommand("clojurePulse.stopRepl", REPL_NAME);
+      await waitUntil(
+        () => api.repls.get(REPL_NAME)?.state === "stopped",
+        5000,
+        "the REPL to stop",
+      );
+      await vscode.commands.executeCommand("clojurePulse.startRepl", REPL_NAME);
+      const restarted = api.repls.get(REPL_NAME);
+      assert.ok(restarted, "the configuration still has its session");
+      assert.strictEqual(
+        api.warnedNoTracking(restarted),
+        false,
+        "a fresh connection may point it out again",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("a clj-reload that is watching files says nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: "{:loaded 0, :tracked 19}" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // Nothing changed on disk is the ordinary case, not a misconfiguration.
+      assert.strictEqual(api.warnedNoTracking(session), false);
+    } finally {
+      await server?.close();
+    }
+  });
+
   test("runTestAtCursor without a connection warns instead of throwing", async () => {
     await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
   });
@@ -403,24 +637,30 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
 
-      // Probe (ns already loaded here) → align the ns for let-go → define →
-      // run. let-go's nREPL ignores the eval `ns` param, so the explicit
-      // in-ns eval is what puts the definition in the file's namespace there.
+      // Reload what changed on disk → probe (ns already loaded here) → align
+      // the ns for let-go → define → run. let-go's nREPL ignores the eval
+      // `ns` param, so the explicit in-ns eval is what puts the definition in
+      // the file's namespace there.
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 4, "expected probe + in-ns + define + run");
-      assert.ok(String(evals[0].code).includes("find-ns 'my.app-test"));
-      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(
+        evals.length,
+        5,
+        "expected reload + probe + in-ns + define + run",
+      );
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.ok(String(evals[1].code).includes("find-ns 'my.app-test"));
+      assert.strictEqual(evals[2].code, "(in-ns 'my.app-test)");
       // The ns param keeps the JVM session's own *ns* binding untouched.
-      assert.strictEqual(evals[1].ns, "my.app-test");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[2].ns, "my.app-test");
-      assert.ok(String(evals[3].code).includes("run-test-var"));
-      assert.ok(String(evals[3].code).includes("#'my-test"));
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
+      assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("run-test-var"));
+      assert.ok(String(evals[4].code).includes("#'my-test"));
       // The fallback must reference only vars that exist on let-go too, whose
       // compiler resolves both branches eagerly.
-      assert.ok(String(evals[3].code).includes("clojure.test/*report-counters*"));
-      assert.ok(!String(evals[3].code).includes("*initial-report-counters*"));
-      assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("clojure.test/*report-counters*"));
+      assert.ok(!String(evals[4].code).includes("*initial-report-counters*"));
+      assert.strictEqual(evals[4].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -481,15 +721,23 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, [
+        "eval",
+        "eval",
+        "load-file",
+        "eval",
+        "eval",
+        "eval",
+      ]);
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(String(loadMsg?.file).includes("(deftest my-test"));
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
-      assert.strictEqual(evals[2].ns, "my.app-test");
-      assert.ok(String(evals[3].code).includes("run-test-var"));
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[2].code, "(in-ns 'my.app-test)");
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
       assert.strictEqual(evals[3].ns, "my.app-test");
+      assert.ok(String(evals[4].code).includes("run-test-var"));
+      assert.strictEqual(evals[4].ns, "my.app-test");
     } finally {
       await server?.close();
     }
@@ -524,7 +772,7 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["eval", "load-file"]);
+      assert.deepStrictEqual(ops, ["eval", "eval", "load-file"]);
     } finally {
       await server?.close();
     }
@@ -660,6 +908,149 @@ suite("REPL commands", () => {
     }
   });
 
+  test("runTestAtCursor aborts when the reload fails", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({
+            session: msg.session,
+            value:
+              '{:failed app.core, :message "Syntax error compiling at (src/app/core.clj:3:1).: boom"}',
+          });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      // A namespace that does not compile makes every later eval meaningless.
+      const ops = server.received
+        .filter((m) => m.op === "eval" || m.op === "load-file")
+        .map((m) => m.op);
+      assert.deepStrictEqual(ops, ["eval"]);
+      assert.strictEqual(api.testStatusBar.current(), undefined);
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor runs on without clj-reload on the classpath", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          reply({ session: msg.session, value: ":clojure-pulse/no-reload" });
+          reply({ session: msg.session, status: ["done"] });
+          return;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.ok(
+        evals.some((m) => String(m.code).includes("run-test-var")),
+        "a missing clj-reload must not stop the run",
+      );
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor sends no reload at all when the setting is none", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      await setReloadBeforeRun("none");
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      assert.ok(
+        !server.received.some((m) => String(m.code ?? "").includes("clj-reload")),
+        "none means no reload traffic",
+      );
+      const evals = server.received.filter((m) => m.op === "eval");
+      assert.strictEqual(evals.length, 4, "the old probe + in-ns + define + run");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("runTestAtCursor saves dirty Clojure files before it reloads", async () => {
+    let server: FakeNrepl | undefined;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clojure-pulse-reload-"));
+    const file = path.join(dir, "core.clj");
+    fs.writeFileSync(file, "(ns app.core)\n(defn add [a b] (+ a b))\n");
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+      // clj-reload reads from disk, so an unsaved edit would be invisible
+      // to it — the save has to land before the reload eval goes out.
+      let dirtyAtReload: boolean | undefined;
+      server.respond((msg, reply) => {
+        if (msg.op === "eval" && String(msg.code).includes("clj-reload.core/reload")) {
+          dirtyAtReload = source.isDirty;
+        }
+        reply({ session: msg.session, value: "true" });
+        reply({ session: msg.session, status: ["done"] });
+      });
+
+      const source = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      const sourceEditor = await vscode.window.showTextDocument(source);
+      await sourceEditor.edit((edit) => {
+        edit.insert(new vscode.Position(1, 0), ";; edited\n");
+      });
+      assert.ok(source.isDirty, "the edit should leave the document dirty");
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns my.app-test)\n(deftest my-test\n  (is true))",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(2, 4, 2, 4);
+
+      await vscode.commands.executeCommand("clojurePulse.runTestAtCursor");
+
+      assert.strictEqual(dirtyAtReload, false, "the file must be on disk by then");
+    } finally {
+      await server?.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("runNsTests without a connection warns instead of throwing", async () => {
     await vscode.commands.executeCommand("clojurePulse.runNsTests");
   });
@@ -680,21 +1071,23 @@ suite("REPL commands", () => {
 
       await vscode.commands.executeCommand("clojurePulse.runNsTests");
 
-      // The buffer is loaded once, the namespace aligned once (let-go ignores
-      // the eval `ns` param), then one runner eval per deftest.
+      // What changed on disk is reloaded first, then the buffer is loaded
+      // once, the namespace aligned once (let-go ignores the eval `ns`
+      // param), then one runner eval per deftest.
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
       const loadMsg = server.received.find((m) => m.op === "load-file");
       assert.ok(String(loadMsg?.file).includes("(deftest second-test"));
       const evals = server.received.filter((m) => m.op === "eval");
-      assert.strictEqual(evals[0].code, "(in-ns 'my.app-test)");
-      assert.strictEqual(evals[0].ns, "my.app-test");
-      assert.ok(String(evals[1].code).includes("#'first-test"));
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[1].code, "(in-ns 'my.app-test)");
       assert.strictEqual(evals[1].ns, "my.app-test");
-      assert.ok(String(evals[2].code).includes("#'second-test"));
+      assert.ok(String(evals[2].code).includes("#'first-test"));
       assert.strictEqual(evals[2].ns, "my.app-test");
+      assert.ok(String(evals[3].code).includes("#'second-test"));
+      assert.strictEqual(evals[3].ns, "my.app-test");
 
       // One gutter mark per deftest, on its own first line.
       const marks = api.testStatus.marks();
@@ -810,7 +1203,7 @@ suite("REPL commands", () => {
       const ops = server.received
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file"]);
       // The pending marks never resolve, and the status bar is cleared.
       assert.deepStrictEqual(api.testStatus.marks(), []);
       assert.strictEqual(api.testStatusBar.current(), undefined);
@@ -847,9 +1240,14 @@ suite("REPL commands", () => {
       const evals = server.received
         .slice(before)
         .filter((m) => m.op === "eval");
-      assert.strictEqual(evals.length, 4, "probe + in-ns + define + run again");
-      assert.strictEqual(evals[2].code, "(deftest my-test\n  (is true))");
-      assert.ok(String(evals[3].code).includes("#'my-test"));
+      assert.strictEqual(
+        evals.length,
+        5,
+        "reload + probe + in-ns + define + run again",
+      );
+      assert.ok(String(evals[0].code).includes("clj-reload.core/reload"));
+      assert.strictEqual(evals[3].code, "(deftest my-test\n  (is true))");
+      assert.ok(String(evals[4].code).includes("#'my-test"));
 
       // Focus never left the business-logic buffer.
       assert.strictEqual(
@@ -898,7 +1296,7 @@ suite("REPL commands", () => {
         .slice(before)
         .filter((m) => m.op === "eval" || m.op === "load-file")
         .map((m) => m.op);
-      assert.deepStrictEqual(ops, ["load-file", "eval", "eval", "eval"]);
+      assert.deepStrictEqual(ops, ["eval", "load-file", "eval", "eval", "eval"]);
 
       const marks = api.testStatus.marks();
       assert.strictEqual(marks.length, 2);

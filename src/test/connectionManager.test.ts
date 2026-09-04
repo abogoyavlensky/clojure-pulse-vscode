@@ -106,6 +106,35 @@ suite("ConnectionManager", () => {
     assert.strictEqual(transcript.entries()[valueIndex].text, "42");
   });
 
+  test("a quiet eval leaves the transcript alone but still resolves", async () => {
+    server.respond((msg, reply) => {
+      if (msg.op === "clone") {
+        reply({ "new-session": "sess-1", status: ["done"] });
+        return;
+      }
+      if (msg.op === "describe") {
+        reply({ versions: {}, status: ["done"] });
+        return;
+      }
+      reply({ session: msg.session, out: "loading\n" });
+      reply({ session: msg.session, value: "nil" });
+      reply({ session: msg.session, status: ["done"] });
+    });
+    await manager.connect({ host: "127.0.0.1", port: server.port });
+    const before = transcript.entries().length;
+    const outcome = await manager.eval("(require 'clj-reload.core)", {
+      quiet: true,
+    });
+
+    assert.strictEqual(outcome.value, "nil", "the caller still sees the result");
+    assert.strictEqual(outcome.out, "loading\n");
+    assert.strictEqual(
+      transcript.entries().length,
+      before,
+      texts().slice(before).join(", "),
+    );
+  });
+
   test("eval streams out and err entries", async () => {
     server.respond((msg, reply) => {
       if (msg.op === "clone") {
