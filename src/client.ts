@@ -11,6 +11,22 @@ import { ResolvedServer } from "./serverPath";
 const LANGUAGE_ID = "clojure";
 
 /**
+ * Documents VS Code routes to the language server. `file` is the project's own
+ * code; `jar` is a dependency's source, opened read-only through the `jar:`
+ * content provider registered in `extension.ts`. Without the `jar` entry that
+ * document matches no selector, so VS Code sends no LSP request for it at all
+ * and it reads as plain text — no go to definition, hover or completion. The
+ * server already serves jar URIs: it advertises
+ * `experimental.textDocumentContentProvider.schemes: ["jar"]`, and it
+ * publishes diagnostics only for `file:` documents, so read-only sources stay
+ * free of squiggles.
+ */
+export const CLOJURE_DOCUMENT_SELECTOR = [
+  { scheme: "file", language: LANGUAGE_ID },
+  { scheme: "jar", language: LANGUAGE_ID },
+];
+
+/**
  * Builds (but does not start) a language client that talks to the clj-pulse
  * server over stdio. The client id `clojurePulse` makes the standard
  * `clojurePulse.trace.server` setting drive LSP tracing automatically.
@@ -30,7 +46,7 @@ export function createClient(
   };
 
   const clientOptions: LanguageClientOptions = {
-    documentSelector: [{ scheme: "file", language: LANGUAGE_ID }],
+    documentSelector: CLOJURE_DOCUMENT_SELECTOR,
     outputChannel,
     traceOutputChannel: outputChannel,
     initializationOptions,
