@@ -1,6 +1,6 @@
 # Language Features Inside JAR Sources Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Go to definition, hover, completion and the rest of clj-pulse's language features work inside a dependency's source opened from a `jar:` URI, not only in the project's own files.
 
@@ -110,7 +110,7 @@ that definition and hover work *inside* the jar document it landed in.
 - Modify: `src/client.ts`
 - Test: `src/test/client.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   Create `src/test/client.test.ts` (mocha tdd, like `src/test/serverPath.test.ts`).
   Import `CLOJURE_DOCUMENT_SELECTOR` from `../client` and assert it holds an
   entry for each of the `file` and `jar` schemes, both with language
@@ -118,11 +118,11 @@ that definition and hover work *inside* the jar document it landed in.
   entry: VS Code sends no LSP request at all for a dependency's source, so
   nothing resolves there.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
   Run: `npm run compile-tests`
   Expected: FAIL — `client.ts` has no export named `CLOJURE_DOCUMENT_SELECTOR`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `src/client.ts`, lift the selector out of `clientOptions` into an exported
   `CLOJURE_DOCUMENT_SELECTOR` and add the jar entry:
 
@@ -138,15 +138,15 @@ that definition and hover work *inside* the jar document it landed in.
   a matching selector entry VS Code routes no request for it, so the file reads
   as plain text. Reference it from `clientOptions`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
   Run: `npm run compile-tests && npm run compile && xvfb-run -a npx vscode-test --grep "document selector"`
   Expected: PASS.
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
   Run: `npm run lint && xvfb-run -a npm test`
   Expected: PASS, no regressions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Route jar documents to the language server"`
 
 ### Task 2: End-to-end proof against a real server
@@ -154,7 +154,7 @@ that definition and hover work *inside* the jar document it landed in.
 **Files:**
 - Create: `src/test/lspJar.e2e.test.ts`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
   Model the file header, `suiteSetup`, `suiteTeardown` and the `CLJ_PULSE_E2E_BIN`
   skip on `src/test/clojureDocs.e2e.test.ts` — same `server.path` override,
   same `clojurePulse.restart` to pick it up, same cleanup. Suite name: something
@@ -186,21 +186,21 @@ that definition and hover work *inside* the jar document it landed in.
     it survives any Clojure release moving code around, which a hard-coded line
     number would not.
 
-- [ ] **Step 2: Run it with a real server**
+- [x] **Step 2: Run it with a real server**
   Run: `CLJ_PULSE_E2E_BIN=$(command -v clj-pulse || echo ~/.local/share/mise/installs/github-abogoyavlensky-clj-pulse/0.2.0/clj-pulse) xvfb-run -a npx vscode-test --grep "jar end to end"`
   Expected: PASS. If the binary resolves to a mise shim and the run fails with
   a mise trust error, use the absolute install path instead — the shim refuses
   to run inside an untrusted project directory.
 
-- [ ] **Step 3: Confirm it skips without the binary**
+- [x] **Step 3: Confirm it skips without the binary**
   Run: `xvfb-run -a npx vscode-test --grep "jar end to end"`
   Expected: the test is pending/skipped, not failing.
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
   Run: `npm run lint && xvfb-run -a npm test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Prove language features work inside a jar source end to end"`
 
 ### Task 3: Docs
@@ -208,7 +208,7 @@ that definition and hover work *inside* the jar document it landed in.
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Use /writing-clearly.
   In the **Library navigation** bullet (around line 36), say that a `jar:`
   source opens read-only *and keeps its language features* — go to definition,
@@ -219,5 +219,66 @@ that definition and hover work *inside* the jar document it landed in.
   There is no CHANGELOG step: the file was removed from the repo in `d5ccfbe`.
   Do not recreate it.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Document language features in jar sources"`
+
+---
+
+## Completion
+
+**Status: done.** All three tasks landed on `fix-lsp-navigation-in-jar`:
+`9fd51c8` (selector), `f8c57d2` (end-to-end test), `f0c512e` (README), plus a
+follow-up fixing review nits.
+
+What shipped: `CLOJURE_DOCUMENT_SELECTOR` in `src/client.ts` now carries the
+`jar` scheme alongside `file`, a unit test guards it, an opt-in end-to-end test
+proves the feature against a real server, and the README's Library navigation
+bullet says language features come with a `jar:` source and that rename cannot
+apply there.
+
+### Verification
+
+Re-verified against **clj-pulse 0.3.0 built from the local checkout**, not the
+0.2.0 the plan was designed against. Driving the server directly over stdio
+with a real project: `textDocument/definition` on `map` returns
+`jar:…/clojure-1.12.5.jar!/clojure/core.clj`; definition and hover *inside*
+that jar document both answer (`defn` → line 293 of `clojure/core.clj`, hover
+returns its arglists); `publishDiagnostics` arrives only for the `file:` URI,
+so read-only sources stay free of squiggles on 0.3.0 too.
+
+The end-to-end test was checked to actually test the feature: with the `jar`
+selector entry removed it fails (`no definition for \`defn\` inside
+jar:…/clojure/core.clj at line 339`) and with it restored it passes. Full
+suite: 821 passing, 1 pending (the e2e test skipping itself in the `unit`
+config), both test configurations green.
+
+### Deviations
+
+> Deviation (Task 2): the e2e test uses a checked-in fixture project
+> (`src/test/fixtures/jar-project`) opened as a workspace folder by a second
+> `.vscode-test.mjs` configuration (`jar-e2e`), not a temp directory. clj-pulse
+> indexes the folders the client sends in `initialize` and resolves their
+> classpath from there; the test run opens no workspace folder, so with a temp
+> project the server had no classpath and no jar to navigate into. The test
+> skips itself when no workspace folder is present, which is how it stays
+> pending in the `unit` configuration.
+
+> Deviation (Task 2): the fixture accumulates `.cpcache/` and `.clj-pulse/`
+> when the server resolves its classpath at test time; both are gitignored.
+
+> Deviation (all tasks): the codex review checkpoint could not run — the local
+> Codex CLI is broken (`Missing optional dependency @openai/codex-linux-x64`).
+> The inline `code-review` skill was run against the branch instead. It found
+> no must-fix items; its two nits were investigated and neither was
+> actionable — `as const` on the selector does not type-check against
+> `DocumentSelector`, and `@vscode/test-cli` cannot exclude a file from a
+> configuration's `files` (globs are unioned, `ignore` comes only from the
+> CLI). The `.vscode-test.mjs` comment now records the latter.
+
+### What the plan could have specified better
+
+The plan's e2e design missed that clj-pulse needs a workspace folder to resolve
+a classpath at all, and that the VS Code test harness opens none by default —
+so "write a temp project and open a file from it" could not work as written.
+A plan that pins a test against a real server should state where the server's
+project root comes from in that harness, not just what the test asserts.
