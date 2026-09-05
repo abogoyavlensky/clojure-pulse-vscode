@@ -12,7 +12,7 @@ import * as path from "path";
 const REPO_ROOT = path.join(__dirname, "..", "..");
 
 interface Contributes {
-  commands: { command: string; title: string }[];
+  commands: { command: string; title: string; category: string }[];
   menus: { commandPalette: { command: string; when?: string }[] };
   keybindings: { command: string; key: string }[];
 }
@@ -35,6 +35,7 @@ const PALETTE = [
   "clojurePulse.evalCurrentForm",
   "clojurePulse.evalFile",
   "clojurePulse.copyEvalResult",
+  "clojurePulse.clearStatusBar",
   "clojurePulse.runTestAtCursor",
   "clojurePulse.runNsTests",
   "clojurePulse.rerunLastTest",
@@ -63,6 +64,13 @@ suite("manifest", () => {
       assert.ok(bound.has(id), `${id} should have a default keybinding`);
       assert.ok(!contributed.has(id), `${id} should not be listed under commands`);
     }
+  });
+
+  test("the clear status bar command has its palette label", () => {
+    const command = contributes().commands.find((c) => c.command === "clojurePulse.clearStatusBar");
+    assert.ok(command, "expected the Clear status bar command");
+    assert.strictEqual(command.title, "Clear status bar");
+    assert.strictEqual(command.category, "Clojure Pulse");
   });
 
   test("the language server commands say which server they mean", () => {

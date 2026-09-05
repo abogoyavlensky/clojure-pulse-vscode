@@ -139,6 +139,7 @@ suite("REPL commands", () => {
       "clojurePulse.runNsTests",
       "clojurePulse.rerunLastTest",
       "clojurePulse.clearInlineResults",
+      "clojurePulse.clearStatusBar",
       "clojurePulse.copyEvalResult",
     ]) {
       assert.ok(commands.includes(id), `missing command ${id}`);
@@ -149,6 +150,47 @@ suite("REPL commands", () => {
       "clojurePulse.evalSelection",
     ]) {
       assert.ok(!commands.includes(id), `command ${id} should be gone`);
+    }
+  });
+
+  test("clearStatusBar dismisses shared verdicts and ignores late completion", async () => {
+    const clear = () => vscode.commands.executeCommand("clojurePulse.clearStatusBar");
+    const assertHidden = () => {
+      assert.strictEqual(api.testStatusBar.current(), undefined);
+      assert.strictEqual(api.commandStatusBar.current(), undefined);
+    };
+
+    try {
+      const testToken = api.testStatusBar.running("sample-test");
+      api.testStatusBar.finish(testToken, {
+        phase: "done", name: "sample-test", status: "pass", fail: 0, error: 0,
+      });
+      assert.ok(api.testStatusBar.current());
+      await clear();
+      assertHidden();
+
+      const commandToken = api.commandStatusBar.running("sample-command");
+      assert.ok(api.commandStatusBar.current());
+      await clear();
+      assertHidden();
+      api.commandStatusBar.finish(commandToken, {
+        phase: "done", name: "sample-command", status: "ok", value: "42",
+      });
+      assertHidden();
+
+      const fresh = api.commandStatusBar.running("next-command");
+      api.commandStatusBar.finish(fresh, {
+        phase: "done", name: "next-command", status: "ok", value: "43",
+      });
+      assert.strictEqual(api.commandStatusBar.current()?.text, "$(check) next-command");
+      assert.deepStrictEqual(api.testStatusBar.current(), api.commandStatusBar.current());
+      await clear();
+      assertHidden();
+      await clear();
+      await clear();
+      assertHidden();
+    } finally {
+      await clear();
     }
   });
 
