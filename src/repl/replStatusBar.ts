@@ -51,12 +51,12 @@ export function replStatusPresentation(state: ReplStatusState): ReplStatusView {
       command: "clojurePulse.startRepl",
     };
   }
-  // Nothing configured yet: the connect flow is the way in — it offers to
-  // add a configuration when there is none.
+  // Nothing configured yet: Start REPL opens the add form when there is
+  // nothing to pick from.
   return {
     text: "$(debug-disconnect) nREPL",
-    tooltip: "Clojure Pulse: not connected — click to connect to a running nREPL",
-    command: "clojurePulse.connectRepl",
+    tooltip: "Clojure Pulse: no REPL configured — click to add one",
+    command: "clojurePulse.startRepl",
   };
 }
 

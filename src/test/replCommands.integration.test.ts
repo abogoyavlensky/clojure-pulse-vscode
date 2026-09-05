@@ -124,8 +124,6 @@ suite("REPL commands", () => {
   test("registers the REPL commands", async () => {
     const commands = await vscode.commands.getCommands(true);
     for (const id of [
-      "clojurePulse.connectRepl",
-      "clojurePulse.disconnectRepl",
       "clojurePulse.startRepl",
       "clojurePulse.stopRepl",
       "clojurePulse.restartRepl",
@@ -145,6 +143,9 @@ suite("REPL commands", () => {
       "clojurePulse.copyEvalResult",
     ]) {
       assert.ok(commands.includes(id), `missing command ${id}`);
+    }
+    for (const id of ["clojurePulse.connectRepl", "clojurePulse.disconnectRepl"]) {
+      assert.ok(!commands.includes(id), `command ${id} should be gone`);
     }
   });
 
@@ -1340,14 +1341,14 @@ suite("REPL commands", () => {
     }
   });
 
-  test("disconnecting stops the REPL and clears the eval target", async () => {
+  test("stopping a connected REPL clears the eval target", async () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
       const session = await connect(server);
       assert.strictEqual(api.repls.active?.name, session.name);
 
-      await vscode.commands.executeCommand("clojurePulse.disconnectRepl");
+      await vscode.commands.executeCommand("clojurePulse.stopRepl", session.name);
 
       assert.strictEqual(api.repls.active, undefined);
       // The row stays: it is a configuration, and configurations do not come

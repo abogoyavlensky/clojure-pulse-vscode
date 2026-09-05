@@ -819,17 +819,6 @@ function setupRepl(
     vscode.commands.registerCommand("clojurePulse.restartRepl", (arg?: unknown) =>
       restartRepl(registry, arg),
     ),
-    vscode.commands.registerCommand("clojurePulse.connectRepl", (arg?: unknown) =>
-      connectRepl(registry, arg),
-    ),
-    vscode.commands.registerCommand("clojurePulse.disconnectRepl", async () => {
-      const active = registry.active;
-      if (!active) {
-        vscode.window.showInformationMessage("No REPL is connected.");
-        return;
-      }
-      await stopSession(active);
-    }),
     vscode.commands.registerCommand("clojurePulse.addReplConfig", () =>
       replForm.open({ kind: "add" }),
     ),
@@ -988,7 +977,12 @@ async function pickSession(
   return choice?.label;
 }
 
+/** The picker's description column. Start REPL serves both configuration
+ *  types, so a stopped `connect` entry says where it would attach. */
 function describeSession(session: ReplSessionLike): string {
+  if (session.state === "stopped" && session.config.type === "connect") {
+    return `connect · ${session.config.host}:${session.config.port}`;
+  }
   const info = session.connectionInfo;
   return info ? `${session.state} · ${info.host}:${info.port}` : session.state;
 }
@@ -1116,61 +1110,6 @@ async function restartRepl(registry: ReplRegistry, arg?: unknown): Promise<void>
     return; // the configuration was deleted while we were stopping
   }
   await runSessionStart(fresh);
-}
-
-/** A connect quick-pick row: a REPL, or the offer to configure one. */
-interface ConnectPick extends vscode.QuickPickItem {
-  session?: ReplSessionLike;
-}
-
-/**
- * Connects a configured REPL. Without an argument, offers the `connect`
- * configurations that are not already up — and, when there are none, the form
- * that would make one, rather than a dead end.
- */
-async function connectRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
-  const name = resolveSessionName(arg);
-  if (name !== undefined) {
-    const session = registry.get(name);
-    if (!session) {
-      void vscode.window.showErrorMessage(
-        `Clojure Pulse: no REPL named "${name}" — check clojurePulse.replConfigurations.`,
-      );
-      return;
-    }
-    await runSessionStart(session);
-    return;
-  }
-
-  const candidates = registry.sessions.filter(
-    (session) => session.config.type === "connect" && session.state === "stopped",
-  );
-  // The session travels on the item rather than being looked up by label: a
-  // REPL may legitimately be named anything, the offer to add one included.
-  const items: ConnectPick[] =
-    candidates.length > 0
-      ? candidates.map((session) => ({
-          label: session.name,
-          description: describeSession(session),
-          session,
-        }))
-      : [
-          {
-            label: "$(add) Add a REPL configuration…",
-            description: "nothing is configured to connect to yet",
-          },
-        ];
-  const choice = await vscode.window.showQuickPick(items, {
-    placeHolder: "Connect to an nREPL server",
-  });
-  if (!choice) {
-    return;
-  }
-  if (!choice.session) {
-    await vscode.commands.executeCommand("clojurePulse.addReplConfig");
-    return;
-  }
-  await runSessionStart(choice.session);
 }
 
 async function setActiveRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
@@ -1543,24 +1482,17 @@ function reloadFailure(result: { ns: string; message: string }): string {
 }
 
 /** Guards eval commands on a live connection; warns with a Start action and
- *  returns undefined when nothing is connected. */
+ *  returns undefined when nothing is connected. Start REPL covers every case
+ *  from here: it picks a stopped configuration, connect or create alike, and
+ *  opens the form when nothing is configured at all. */
 function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
   const active = registry.active;
   if (active) {
     return active;
   }
-  // With nothing configured to start, the useful offer is the connect flow,
-  // which can reach a running server without any settings at all.
-  const startable = registry.sessions.some((session) => session.state === "stopped");
-  const action = startable ? "Start REPL" : "Connect";
   void vscode.window
-    .showWarningMessage("No REPL is connected.", action)
-    .then((choice) => {
-      if (choice === "Start REPL") {
-        return startRepl(registry);
-      }
-      return choice === "Connect" ? connectRepl(registry) : undefined;
-    });
+    .showWarningMessage("No REPL is connected.", "Start REPL")
+    .then((choice) => (choice === "Start REPL" ? startRepl(registry) : undefined));
   return undefined;
 }
 

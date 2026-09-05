@@ -338,17 +338,6 @@
         "category": "Clojure Pulse"
       },
       {
-        "command": "clojurePulse.connectRepl",
-        "title": "Connect to Running nREPL",
-        "category": "Clojure Pulse",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "clojurePulse.disconnectRepl",
-        "title": "Disconnect from nREPL",
-        "category": "Clojure Pulse"
-      },
-      {
         "command": "clojurePulse.startRepl",
         "title": "Start REPL",
         "category": "Clojure Pulse",
@@ -536,7 +525,7 @@
           "group": "inline@1"
         },
         {
-          "command": "clojurePulse.connectRepl",
+          "command": "clojurePulse.startRepl",
           "when": "view == clojurePulse.replManager && viewItem == replConnectStopped",
           "group": "inline@1"
         },
