@@ -432,8 +432,10 @@ writes, so that entry finds whatever port today's server picked.
 ### Running them
 
 Start and stop from the buttons on each row, or from the Command Palette:
-**Start REPL**, **Stop REPL**, **Connect to Running nREPL**. To bind one REPL to
-a key, pass its name as the command argument in `keybindings.json`:
+**Start REPL** and **Stop REPL**. The same commands serve both kinds of
+configuration: starting a `connect` entry attaches to the running server, and
+stopping it disconnects. To bind one REPL to a key, pass its name as the
+command argument in `keybindings.json`:
 
 ```json
 {
@@ -488,9 +490,6 @@ rather than land somewhere you did not intend.
   bar: the file name with a spinner while it loads, then green on success or a
   red background carrying the compile error's first line in its tooltip. Click
   it to open the REPL output, which has the full report either way.
-- **Evaluate Selection** — evaluate exactly the selected code. The result
-  appears inline; the REPL's output channel opens only when inline results are
-  off, and even then the cursor stays in the editor.
 - **Reload before tests** — every test command starts by saving the dirty
   Clojure files and reloading the namespaces whose files changed on disk,
   along with the namespaces that depend on them, so the code you just edited
@@ -556,8 +555,8 @@ rather than land somewhere you did not intend.
   runs, and the error's first line in red on failure. Hover the result for the
   full value and a **Copy result** link. The evaluated form flashes briefly so
   you can see what was sent. Press **Escape** to hide the results; they also
-  clear when you edit the evaluated form. **Clear Inline Results** removes them
-  all, and **Copy Evaluation Result** copies the value at the cursor. Turn the
+  clear when you edit the evaluated form. **Copy Evaluation Result** copies the
+  value at the cursor. Turn the
   hints off with the `clojurePulse.inlineEvalResults` setting — results still
   stream to the REPL's output channel.
 - **Status bar** — `nREPL <name> host:port` at the bottom left names the active
@@ -659,39 +658,29 @@ needs the new name too.
 
 Run these from the Command Palette:
 
-- **Clojure Pulse: Restart Server** — restart the language server.
-- **Clojure Pulse: Show Output** — open the server output channel.
-- **Clojure Pulse: Show ClojureDocs** — add the ClojureDocs entry for the
-  symbol under the cursor to the editor hover. See [ClojureDocs](#clojuredocs).
-- **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
-  tree (also available as a button on the view title).
-- **Clojure Pulse: Start REPL** — bring up a configured REPL. Takes a name as
-  its argument, so a keybinding can start one directly. With nothing configured
-  yet, it opens the form instead.
+- **Clojure Pulse: Restart Language Server** — restart the language server.
+- **Clojure Pulse: Show Language Server Output** — open the language server's
+  output channel.
+- **Clojure Pulse: Start REPL** — bring up a configured REPL, `create` or
+  `connect`. Takes a name as its argument, so a keybinding can start one
+  directly. With nothing configured yet, it opens the form instead.
 - **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
-  started.
+  started, or disconnect from one it attached to.
 - **Clojure Pulse: Restart REPL** — stop a REPL and start it again, applying a
   configuration edited while it was running. Takes a name as its argument, like
   Start REPL.
-- **Clojure Pulse: Connect to Running nREPL** — connect one of the configured
-  `connect` REPLs, offering to add one when none is configured yet.
-- **Clojure Pulse: Disconnect from nREPL** — disconnect the active REPL.
 - **Clojure Pulse: Add REPL Configuration** — open the form for a new REPL
   (also the **+** on the REPL view).
-- **Clojure Pulse: Edit REPL Configuration** — open the form on an existing
-  REPL (also the pencil on its row).
-- **Clojure Pulse: Delete REPL Configuration** — remove an entry, as the form's
-  **Delete** button does.
+- **Clojure Pulse: Edit REPL Configuration** — pick a REPL and open the form
+  on it (also the pencil on its row).
 - **Clojure Pulse: Set Active REPL** — choose which REPL evaluations go to.
 - **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
-- **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor
-  (or the selection) in the active REPL.
-- **Clojure Pulse: Select Current Form** — select the form Evaluate Current
-  Form would send, leaving the cursor right after its closing bracket.
+- **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor,
+  or the selection when there is one, in the active REPL.
 - **Clojure Pulse: Evaluate File** — load the whole current file into the REPL,
   reporting in the status bar rather than opening the output panel.
-- **Clojure Pulse: Evaluate Selection** — evaluate the selected code in the
-  active REPL.
+- **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
+  the cursor.
 - **Clojure Pulse: Run Test at Cursor** — reload what changed, then
   re-evaluate and run the `deftest` under the cursor in the active REPL,
   loading the file's namespace first if needed.
@@ -699,18 +688,27 @@ Run these from the Command Palette:
   current file, and run every top-level `deftest` in it, one after another.
 - **Clojure Pulse: Run Last Test Command** — repeat the last test command
   (either of the two above) without switching to the test file.
-- **Clojure Pulse: Clear Inline Results** — remove all inline result decorations.
-- **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
-  the cursor.
 - **Clojure Pulse: Run Custom REPL Command** — run a saved command in the
   active REPL. Takes a name as its argument, so a keybinding can run one
   directly; with nothing configured yet, it opens the form instead.
 - **Clojure Pulse: Add Custom REPL Command** — open the form for a new command
   (also the **+** on the REPL Commands view).
-- **Clojure Pulse: Edit Custom REPL Command** — open the form on an existing
-  command (also a click on its row).
-- **Clojure Pulse: Delete Custom REPL Command** — remove a command, as the
-  form's **Delete** button does.
+- **Clojure Pulse: Edit Custom REPL Command** — pick a command and open the
+  form on it (also a click on its row).
+- **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
+  tree (also available as a button on the view title).
+- **Clojure Pulse: Show ClojureDocs** — add the ClojureDocs entry for the
+  symbol under the cursor to the editor hover. See [ClojureDocs](#clojuredocs).
+
+A few actions stay out of the palette because they already have a better home.
+Enter and Escape are bound to `clojurePulse.newline` and
+`clojurePulse.clearInlineResults`; rebind them in Keyboard Shortcuts if you
+want other keys. **Select Current Form** (`clojurePulse.selectCurrentForm`)
+ships without a binding — add one in Keyboard Shortcuts to use it. Deleting a
+REPL configuration or a custom command is the **Delete** button on its Edit
+form, or the row's context menu. Adding a project to External Libraries is
+the **+** on that view's title, and the status-bar `nREPL` item opens a menu
+of REPL actions.
 
 ## Using it on its own
 
