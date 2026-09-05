@@ -324,17 +324,12 @@
     "commands": [
       {
         "command": "clojurePulse.restart",
-        "title": "Restart Server",
+        "title": "Restart Language Server",
         "category": "Clojure Pulse"
       },
       {
         "command": "clojurePulse.showOutput",
-        "title": "Show Output",
-        "category": "Clojure Pulse"
-      },
-      {
-        "command": "clojurePulse.newline",
-        "title": "Insert Newline and Indent",
+        "title": "Show Language Server Output",
         "category": "Clojure Pulse"
       },
       {
@@ -413,11 +408,6 @@
       {
         "command": "clojurePulse.rerunLastTest",
         "title": "Run Last Test Command",
-        "category": "Clojure Pulse"
-      },
-      {
-        "command": "clojurePulse.clearInlineResults",
-        "title": "Clear Inline Results",
         "category": "Clojure Pulse"
       },
       {
@@ -631,6 +621,26 @@
         {
           "command": "clojurePulse.showClojureDocs",
           "when": "editorLangId == clojure"
+        },
+        {
+          "command": "clojurePulse.replMenu",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.deleteReplConfig",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.deleteCustomReplCommand",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.addProject",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.selectCurrentForm",
+          "when": "false"
         }
       ]
     },
