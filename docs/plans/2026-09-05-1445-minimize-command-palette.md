@@ -1,5 +1,7 @@
 # Minimize Command Palette Implementation Plan
 
+**Status: completed** (2026-09-05, commits a4ca01d..5d005ed)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Cut the Clojure Pulse command palette from 30 entries to 20 by removing redundant commands, unlisting keybinding-only commands, and hiding sidebar-only commands, without losing any reachable behaviour.
@@ -223,7 +225,7 @@ compiles and lints first, so a failing lint shows up before any test runs.
 - Test: `src/test/replCommands.integration.test.ts`
 - Test: `src/test/replManager.integration.test.ts`
 
-- [ ] **Step 1: Move the tests to Evaluate Current Form**
+- [x] **Step 1: Move the tests to Evaluate Current Form**
   In `src/test/replCommands.integration.test.ts`:
   - Remove `clojurePulse.evalSelection` from the present list in "registers
     the REPL commands" and add it to the absent list from Task 1.
@@ -239,29 +241,29 @@ compiles and lints first, so a failing lint shows up before any test runs.
   In `src/test/replManager.integration.test.ts`, `selectAndEval`: execute
   `clojurePulse.evalCurrentForm`.
 
-- [ ] **Step 2: Run to see the registration test fail**
+- [x] **Step 2: Run to see the registration test fail**
   Run: `make test 2>&1 | grep -E "passing|failing|[0-9]+\)" | head -10`
   Expected: "registers the REPL commands" fails because
   `clojurePulse.evalSelection` is still registered; the moved eval tests pass
   already.
 
-- [ ] **Step 3: Remove the command**
+- [x] **Step 3: Remove the command**
   - `src/extension.ts`: delete the `clojurePulse.evalSelection` registration
     and `async function evalSelection`.
   - `package.json`: delete the `clojurePulse.evalSelection` object from
     `contributes.commands`.
 
-- [ ] **Step 4: Grep for leftovers**
+- [x] **Step 4: Grep for leftovers**
   Run: `grep -rn "evalSelection\|Evaluate Selection" src package.json README.md`
   Expected: only the absence assertion in
   `src/test/replCommands.integration.test.ts` and README hits (fixed in
   Task 4).
 
-- [ ] **Step 5: Lint, compile, test**
+- [x] **Step 5: Lint, compile, test**
   Run: `make check 2>&1 | tail -15`
   Expected: clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -am "Remove Evaluate Selection; Evaluate Current Form already covers it"`
 
 ### Task 3: Unlist, hide, rename, and pin the palette set
@@ -270,7 +272,7 @@ compiles and lints first, so a failing lint shows up before any test runs.
 - Modify: `package.json`
 - Create: `src/test/manifest.test.ts`
 
-- [ ] **Step 1: Write the manifest test**
+- [x] **Step 1: Write the manifest test**
   Create `src/test/manifest.test.ts` (plain Mocha `suite`/`test`, no `vscode`
   import). Resolve `package.json` from the compiled test's location the way
   `src/test/grammar.test.ts` resolves the grammar file, then compute the
@@ -314,11 +316,11 @@ compiles and lints first, so a failing lint shows up before any test runs.
   `clojurePulse.showOutput` are "Restart Language Server" and "Show Language
   Server Output".
 
-- [ ] **Step 2: Run to see it fail**
+- [x] **Step 2: Run to see it fail**
   Run: `make test 2>&1 | grep -E "manifest|passing|failing" | head -10`
   Expected: all three manifest tests fail against the current manifest.
 
-- [ ] **Step 3: Edit `package.json`**
+- [x] **Step 3: Edit `package.json`**
   - Remove the `clojurePulse.newline` and `clojurePulse.clearInlineResults`
     objects from `contributes.commands`. Leave `contributes.keybindings`
     untouched.
@@ -330,16 +332,16 @@ compiles and lints first, so a failing lint shows up before any test runs.
   - Retitle `clojurePulse.restart` to "Restart Language Server" and
     `clojurePulse.showOutput` to "Show Language Server Output".
 
-- [ ] **Step 4: Confirm the runtime registrations are untouched**
+- [x] **Step 4: Confirm the runtime registrations are untouched**
   Run: `grep -n '"clojurePulse.newline"\|"clojurePulse.clearInlineResults"' src/extension.ts`
   Expected: both `registerCommand` lines still present.
 
-- [ ] **Step 5: Lint, compile, test**
+- [x] **Step 5: Lint, compile, test**
   Run: `make check 2>&1 | tail -15`
   Expected: clean, including `newline.integration.test.ts`, which executes
   the command by ID.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git add src/test/manifest.test.ts package.json && git commit -m "Trim the command palette to the commands users reach for by name"`
 
 ### Task 4: Update the README
@@ -347,24 +349,24 @@ compiles and lints first, so a failing lint shows up before any test runs.
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: "Running them" paragraph (around line 432)**
+- [x] **Step 1: "Running them" paragraph (around line 432)**
   Replace the sentence naming **Start REPL**, **Stop REPL**, **Connect to
   Running nREPL** so it names **Start REPL** and **Stop REPL** only, and add
   one sentence saying the same commands serve both `create` and `connect`
   configurations: starting a `connect` entry attaches to the running server,
   stopping it disconnects.
 
-- [ ] **Step 2: Evaluate Selection bullet (around line 491)**
+- [x] **Step 2: Evaluate Selection bullet (around line 491)**
   Delete the **Evaluate Selection** bullet. In the Evaluate Current Form
   bullet nearby, make sure the selection behaviour is stated: with a
   non-empty selection, exactly the selected code is sent.
 
-- [ ] **Step 3: Inline results bullet (around line 559)**
+- [x] **Step 3: Inline results bullet (around line 559)**
   Remove "**Clear Inline Results** removes them all, and" so the sentence
   reads that Escape hides the results and **Copy Evaluation Result** copies
   the value at the cursor.
 
-- [ ] **Step 4: Commands section (around line 660)**
+- [x] **Step 4: Commands section (around line 660)**
   Rewrite the list to match the 20 visible commands, in the table order from
   the Design section. Rename the first two entries. Drop Connect, Disconnect,
   Evaluate Selection, Clear Inline Results, Delete REPL Configuration, Delete
@@ -376,11 +378,11 @@ compiles and lints first, so a failing lint shows up before any test runs.
   delete actions (the Edit form's Delete button and the row's context menu),
   Add Project (the External Libraries view title), the status-bar REPL menu.
 
-- [ ] **Step 5: Check no stale names remain**
+- [x] **Step 5: Check no stale names remain**
   Run: `grep -n "Connect to Running\|Disconnect from nREPL\|Evaluate Selection\|Clear Inline Results\|Restart Server\|\*\*Show Output\*\*" README.md`
   Expected: no output.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -am "Document the trimmed command palette"`
 
 ### Task 5: Backlog the activation gate
@@ -388,7 +390,7 @@ compiles and lints first, so a failing lint shows up before any test runs.
 **Files:**
 - Create: `docs/backlog/palette-activation-gate.md`
 
-- [ ] **Step 1: Write the backlog entry**
+- [x] **Step 1: Write the backlog entry**
   Follow the shape of `docs/backlog/def-prefixed-call-highlighted-as-definition.md`:
   a title line, `**Status: open**`, then Problem, Proposed fix, Origin.
   - Problem: `contributes.commands` are static, so every Clojure Pulse
@@ -404,15 +406,40 @@ compiles and lints first, so a failing lint shows up before any test runs.
   - Origin: deferred from the command palette trim
     (`docs/plans/2026-09-05-1445-minimize-command-palette.md`).
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git add docs/backlog/palette-activation-gate.md && git commit -m "Backlog: gate palette commands on extension activation"`
 
 ### Task 6: Final verification
 
-- [ ] **Step 1: Full check**
+- [x] **Step 1: Full check**
   Run: `make check 2>&1 | tail -15`
   Expected: lint and compile clean, all tests passing.
 
-- [ ] **Step 2: Package and inspect the manifest**
+- [x] **Step 2: Package and inspect the manifest**
   Run: `npx vsce ls --tree 2>/dev/null | head -5; node -e "const c=require('./package.json').contributes; const hidden=new Set(c.menus.commandPalette.filter(m=>m.when==='false').map(m=>m.command)); console.log(c.commands.filter(x=>!hidden.has(x.command)).length)"`
   Expected: the count prints `20`.
+
+## Completion summary
+
+Implemented as planned, in five commits plus this document. The palette went
+from 30 entries to 20:
+
+- `a4ca01d` folded Connect and Disconnect into Start and Stop REPL and
+  retargeted the tree button, status bar, and no-connection warning.
+- `ce6bd8c` removed Evaluate Selection; its tests moved to Evaluate Current
+  Form with a selection.
+- `d2ffa8a` unlisted the two keybinding-only commands, hid five sidebar-only
+  commands, renamed the two language-server commands, and added
+  `src/test/manifest.test.ts` pinning the visible set.
+- `bfe9f5f` updated the README; `5d005ed` added the activation-gate backlog
+  entry.
+
+Verification: `make check` passes (822 tests). A packaged VSIX ships 28
+contributed commands, 8 hidden, 20 visible, with both Enter and Escape
+keybindings intact and the connect row's button pointing at Start REPL. Each
+task commit had a clean Codex review.
+
+Deviations: none. Session task tracking (TaskCreate) was unavailable, so this
+document was the only progress record.
+
+What the plan could have specified better: nothing.
