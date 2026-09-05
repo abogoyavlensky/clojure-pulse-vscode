@@ -34,7 +34,10 @@ do not need any other Clojure extension.
   data ships with the extension, so it works offline with nothing to
   download. See [ClojureDocs](#clojuredocs).
 - **Library navigation** — jumping into a `jar:` source (a dependency or
-  `clojure.core`) opens the real file, read-only.
+  `clojure.core`) opens the real file, read-only, and its language features
+  come with it: go to definition, hover and completion work inside a dependency
+  exactly as they do in your own code. Refactorings that would edit the file —
+  rename — cannot apply there.
 - **External Libraries panel** — a Cursive-style tree, in its own activity-bar
   container, lists every dependency `clj-pulse` resolved for the project:
   deps.edn's full transitive classpath, an lgx project's git/`:local/root`

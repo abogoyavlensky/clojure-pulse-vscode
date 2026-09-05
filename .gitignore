@@ -18,3 +18,7 @@ node_modules/
 .tmp/
 .DS_Store
 screenshots/
+
+# Server-side caches the jar e2e fixture project accumulates at test time
+src/test/fixtures/jar-project/.cpcache/
+src/test/fixtures/jar-project/.clj-pulse/
