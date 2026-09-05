@@ -293,6 +293,35 @@ suite("REPL manager with several sessions", () => {
     assert.strictEqual(api.replForm.state, undefined, "no form for a REPL that exists");
   });
 
+  test("starting with several configured REPLs asks even when only one is stopped", async () => {
+    await setConfigurations(api, [
+      { name: "a", type: "connect", host: "127.0.0.1", port: a.port },
+      { name: "b", type: "connect", host: "127.0.0.1", port: b.port },
+    ]);
+
+    await vscode.commands.executeCommand("clojurePulse.startRepl", "a");
+    assert.strictEqual(api.repls.get("a")?.state, "connected");
+
+    // Not awaited: a command sitting on a quick pick never settles, which is
+    // exactly what this test is asserting.
+    let settled = false;
+    const pending = vscode.commands.executeCommand("clojurePulse.startRepl").then(() => {
+      settled = true;
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.strictEqual(settled, false, "the command should be waiting on a picker");
+      assert.strictEqual(api.repls.get("b")?.state, "stopped", "nothing auto-started");
+    } finally {
+      // So a failed assertion cannot leave the picker open for the next test.
+      await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+      await pending;
+    }
+
+    assert.strictEqual(api.repls.get("b")?.state, "stopped");
+    assert.strictEqual(api.replForm.state, undefined, "no form for REPLs that exist");
+  });
+
   test("the add command opens an empty form with the project's command", async () => {
     await vscode.commands.executeCommand("clojurePulse.addReplConfig");
 
