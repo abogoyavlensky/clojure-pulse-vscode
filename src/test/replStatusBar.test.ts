@@ -2,11 +2,11 @@ import * as assert from "assert";
 import { replStatusPresentation } from "../repl/replStatusBar";
 
 suite("replStatusPresentation", () => {
-  test("no configurations at all: offers to connect", () => {
+  test("no configurations at all: offers to add one", () => {
     const view = replStatusPresentation({ busy: false, total: 0 });
     assert.strictEqual(view.text, "$(debug-disconnect) nREPL");
-    assert.strictEqual(view.command, "clojurePulse.connectRepl");
-    assert.ok(/connect/i.test(view.tooltip), view.tooltip);
+    assert.strictEqual(view.command, "clojurePulse.startRepl");
+    assert.ok(/add/i.test(view.tooltip), view.tooltip);
   });
 
   test("configurations but none running: offers to start one", () => {

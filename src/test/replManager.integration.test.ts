@@ -59,7 +59,7 @@ async function selectAndEval(code: string): Promise<void> {
   });
   const editor = await vscode.window.showTextDocument(doc);
   editor.selection = new vscode.Selection(0, 0, 0, doc.lineAt(0).text.length);
-  await vscode.commands.executeCommand("clojurePulse.evalSelection");
+  await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
 }
 
 /** The evals a test asked for. Connecting also primes clj-reload, which is

@@ -324,28 +324,12 @@
     "commands": [
       {
         "command": "clojurePulse.restart",
-        "title": "Restart Server",
+        "title": "Restart Language Server",
         "category": "Clojure Pulse"
       },
       {
         "command": "clojurePulse.showOutput",
-        "title": "Show Output",
-        "category": "Clojure Pulse"
-      },
-      {
-        "command": "clojurePulse.newline",
-        "title": "Insert Newline and Indent",
-        "category": "Clojure Pulse"
-      },
-      {
-        "command": "clojurePulse.connectRepl",
-        "title": "Connect to Running nREPL",
-        "category": "Clojure Pulse",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "clojurePulse.disconnectRepl",
-        "title": "Disconnect from nREPL",
+        "title": "Show Language Server Output",
         "category": "Clojure Pulse"
       },
       {
@@ -397,11 +381,6 @@
         "icon": "$(output)"
       },
       {
-        "command": "clojurePulse.evalSelection",
-        "title": "Evaluate Selection",
-        "category": "Clojure Pulse"
-      },
-      {
         "command": "clojurePulse.evalCurrentForm",
         "title": "Evaluate Current Form",
         "category": "Clojure Pulse"
@@ -429,11 +408,6 @@
       {
         "command": "clojurePulse.rerunLastTest",
         "title": "Run Last Test Command",
-        "category": "Clojure Pulse"
-      },
-      {
-        "command": "clojurePulse.clearInlineResults",
-        "title": "Clear Inline Results",
         "category": "Clojure Pulse"
       },
       {
@@ -536,7 +510,7 @@
           "group": "inline@1"
         },
         {
-          "command": "clojurePulse.connectRepl",
+          "command": "clojurePulse.startRepl",
           "when": "view == clojurePulse.replManager && viewItem == replConnectStopped",
           "group": "inline@1"
         },
@@ -647,6 +621,26 @@
         {
           "command": "clojurePulse.showClojureDocs",
           "when": "editorLangId == clojure"
+        },
+        {
+          "command": "clojurePulse.replMenu",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.deleteReplConfig",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.deleteCustomReplCommand",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.addProject",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.selectCurrentForm",
+          "when": "false"
         }
       ]
     },
