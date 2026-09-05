@@ -150,7 +150,7 @@ compiles and lints first, so a failing lint shows up before any test runs.
 - Test: `src/test/replCommands.integration.test.ts`
 - Test: `src/test/replStatusBar.test.ts`
 
-- [ ] **Step 1: Update the tests first**
+- [x] **Step 1: Update the tests first**
   In `src/test/replCommands.integration.test.ts`:
   - In "registers the REPL commands", remove `clojurePulse.connectRepl` and
     `clojurePulse.disconnectRepl` from the present list. Add a second loop
@@ -166,12 +166,12 @@ compiles and lints first, so a failing lint shows up before any test runs.
   "no configurations at all: offers to add one", assert `view.command` is
   `clojurePulse.startRepl`, and assert the tooltip matches `/add/i`.
 
-- [ ] **Step 2: Run the two test files to see them fail**
+- [x] **Step 2: Run the two test files to see them fail**
   Run: `make test 2>&1 | grep -E "passing|failing|✗|[0-9]+\)" | head -20`
   Expected: failures in "registers the REPL commands" (connectRepl still
   registered) and the replStatusBar zero-config case.
 
-- [ ] **Step 3: Remove the handlers and registrations in `src/extension.ts`**
+- [x] **Step 3: Remove the handlers and registrations in `src/extension.ts`**
   - Delete the `registerCommand` calls for `clojurePulse.connectRepl` and
     `clojurePulse.disconnectRepl`.
   - Delete `async function connectRepl` and the `ConnectPick` interface above
@@ -183,36 +183,36 @@ compiles and lints first, so a failing lint shows up before any test runs.
   - Keep `stopSession` and `runSessionStart`; they still serve the remaining
     verbs and the status-bar menu.
 
-- [ ] **Step 4: Retarget the status bar**
+- [x] **Step 4: Retarget the status bar**
   In `src/repl/replStatusBar.ts`, the `total === 0` branch: command
   `clojurePulse.startRepl`, tooltip
   `"Clojure Pulse: no REPL configured — click to add one"`. Rewrite the
   comment: Start REPL opens the add form when nothing is configured.
 
-- [ ] **Step 5: Retarget the tree button in `package.json`**
+- [x] **Step 5: Retarget the tree button in `package.json`**
   In `contributes.menus["view/item/context"]`, change the entry with
   `viewItem == replConnectStopped` from `clojurePulse.connectRepl` to
   `clojurePulse.startRepl`. Remove the `clojurePulse.connectRepl` and
   `clojurePulse.disconnectRepl` objects from `contributes.commands`.
 
-- [ ] **Step 6: Extend `describeSession` for stopped connect configs**
+- [x] **Step 6: Extend `describeSession` for stopped connect configs**
   In `src/extension.ts`, when `session.state === "stopped"` and
   `session.config.type === "connect"`, return
   `` `connect · ${config.host}:${config.port}` ``. Every other case keeps the
   existing text. Add a one-line doc comment saying why: Start REPL covers
   both config types, so the picker row says which it is.
 
-- [ ] **Step 7: Grep for leftovers**
+- [x] **Step 7: Grep for leftovers**
   Run: `grep -rn "connectRepl\|disconnectRepl\|ConnectPick" src package.json README.md`
   Expected: only the absence assertions in
   `src/test/replCommands.integration.test.ts` and README hits (fixed in
   Task 4).
 
-- [ ] **Step 8: Lint, compile, test**
+- [x] **Step 8: Lint, compile, test**
   Run: `make check 2>&1 | tail -15`
   Expected: lint and compile clean, all tests passing.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
   `git commit -am "Fold Connect and Disconnect into Start and Stop REPL"`
 
 ### Task 2: Remove Evaluate Selection

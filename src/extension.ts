@@ -838,9 +838,6 @@ function setupRepl(
       "clojurePulse.showReplOutput",
       (arg?: unknown) => showReplOutput(registry, arg),
     ),
-    vscode.commands.registerCommand("clojurePulse.evalSelection", () =>
-      evalSelection(registry, inlineResults),
-    ),
     vscode.commands.registerCommand("clojurePulse.evalCurrentForm", () =>
       evalCurrentForm(registry, inlineResults),
     ),
@@ -1494,33 +1491,6 @@ function activeSession(registry: ReplRegistry): ReplSessionLike | undefined {
     .showWarningMessage("No REPL is connected.", "Start REPL")
     .then((choice) => (choice === "Start REPL" ? startRepl(registry) : undefined));
   return undefined;
-}
-
-async function evalSelection(
-  registry: ReplRegistry,
-  inlineResults: InlineResultsManager,
-): Promise<void> {
-  const session = activeSession(registry);
-  if (!session) {
-    return;
-  }
-  const editor = vscode.window.activeTextEditor;
-  const code = editor?.document.getText(editor.selection);
-  if (!editor || !code || code.trim().length === 0) {
-    vscode.window.showWarningMessage("Select an expression to evaluate.");
-    return;
-  }
-  // Inline results make the value visible in place; reveal the REPL's output
-  // channel only when they are off, and never take focus from the editor.
-  if (!inlineEnabled()) {
-    session.showOutput(true);
-  }
-  await runEval(session, inlineResults, {
-    editor,
-    range: editor.selection,
-    code,
-    opts: sourceParams(editor, editor.selection.start),
-  });
 }
 
 async function evalCurrentForm(

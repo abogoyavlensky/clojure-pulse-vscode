@@ -386,11 +386,6 @@
         "icon": "$(output)"
       },
       {
-        "command": "clojurePulse.evalSelection",
-        "title": "Evaluate Selection",
-        "category": "Clojure Pulse"
-      },
-      {
         "command": "clojurePulse.evalCurrentForm",
         "title": "Evaluate Current Form",
         "category": "Clojure Pulse"

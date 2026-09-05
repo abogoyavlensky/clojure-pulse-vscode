@@ -132,7 +132,6 @@ suite("REPL commands", () => {
       "clojurePulse.deleteReplConfig",
       "clojurePulse.setActiveRepl",
       "clojurePulse.showReplOutput",
-      "clojurePulse.evalSelection",
       "clojurePulse.replMenu",
       "clojurePulse.evalCurrentForm",
       "clojurePulse.evalFile",
@@ -144,7 +143,11 @@ suite("REPL commands", () => {
     ]) {
       assert.ok(commands.includes(id), `missing command ${id}`);
     }
-    for (const id of ["clojurePulse.connectRepl", "clojurePulse.disconnectRepl"]) {
+    for (const id of [
+      "clojurePulse.connectRepl",
+      "clojurePulse.disconnectRepl",
+      "clojurePulse.evalSelection",
+    ]) {
       assert.ok(!commands.includes(id), `command ${id} should be gone`);
     }
   });
@@ -167,10 +170,6 @@ suite("REPL commands", () => {
     } finally {
       await server?.close();
     }
-  });
-
-  test("evalSelection without a connection warns instead of throwing", async () => {
-    await vscode.commands.executeCommand("clojurePulse.evalSelection");
   });
 
   test("evalCurrentForm without a connection warns instead of throwing", async () => {
@@ -390,7 +389,7 @@ suite("REPL commands", () => {
     }
   });
 
-  test("connect + evalSelection round-trips through a running nREPL", async () => {
+  test("connect + evaluating a selection round-trips through a running nREPL", async () => {
     let server: FakeNrepl | undefined;
     try {
       server = await startFakeNrepl();
@@ -403,7 +402,7 @@ suite("REPL commands", () => {
       const editor = await vscode.window.showTextDocument(doc);
       editor.selection = new vscode.Selection(0, 0, 0, doc.lineAt(0).text.length);
 
-      await vscode.commands.executeCommand("clojurePulse.evalSelection");
+      await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
 
       const entries = session.transcript.entries();
       const inEntry = entries.find((e) => e.kind === "in");
@@ -459,7 +458,7 @@ suite("REPL commands", () => {
       });
       const editor = await vscode.window.showTextDocument(doc);
       editor.selection = new vscode.Selection(1, 0, 1, 7);
-      await vscode.commands.executeCommand("clojurePulse.evalSelection");
+      await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
 
       assert.ok(
         !server.received.some((m) => String(m.code ?? "").includes("clj-reload")),
