@@ -1,6 +1,6 @@
 # Clear Status Bar Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a Command Palette command that dismisses the shared Clojure Pulse run indicator and keeps it hidden until another run starts.
 
@@ -57,6 +57,9 @@ description to explain the command and what it dismisses.
 
 ## Implementation
 
+> Tracking deviation: This session has no TaskCreate/TaskUpdate tools. Progress
+> is tracked through commentary updates and this plan.
+
 Work on `clear-status-bar`, created from master at `58a2b6a`. Use
 `/writing-clearly` for documentation and comments. Install dependencies with
 `npm ci` if they are missing. The repository's `make test` supplies a virtual
@@ -67,7 +70,7 @@ the npm pretest hook. On headless Linux, ensure `xvfb-run` is available.
 
 **Files:** `src/repl/statusSlot.ts`, `src/test/statusSlot.test.ts`.
 
-- [ ] **Step 1: Add lifecycle regression tests.**
+- [x] **Step 1: Add lifecycle regression tests.**
   Extend the existing `StatusSlot` suite to exercise `dismiss()` while empty
   and after `show`, including repeated dismissal. Assert that `current()`
   becomes `undefined`. Keep the dismissed token, call `update` with a result,
@@ -76,31 +79,37 @@ the npm pretest hook. On headless Linux, ensure `xvfb-run` is available.
   cannot affect it. These deterministic tests cover the late-completion race
   without timers or a real REPL.
 
-- [ ] **Step 2: Verify the tests expose the missing API.**
+- [x] **Step 2: Verify the tests expose the missing API.**
   Run `npm run compile-tests`.
   Expected: TypeScript reports that `dismiss` does not exist on `StatusSlot`.
 
-- [ ] **Step 3: Implement dismissal.**
+- [x] **Step 3: Implement dismissal.**
   Add the documented `dismiss(): void` interface member and implement the
   token invalidation and hide operation described in Design. Preserve the
   existing `show`, `update`, and token-scoped `clear` behavior.
 
-- [ ] **Step 4: Verify the slot change.**
+- [x] **Step 4: Verify the slot change.**
   Run `make test`.
   Expected: exit 0, including the new lifecycle cases and existing presenter
   tests. Report environmental failures separately from feature regressions;
   do not remove unrelated checks or count skipped tests as verified.
 
-- [ ] **Step 5: Commit the slot change.**
+- [x] **Step 5: Commit the slot change.**
   Run `git add src/repl/statusSlot.ts src/test/statusSlot.test.ts`, then
   `git commit -m "Add dismissal to the shared run status slot"`.
+
+> Verification: `npm run compile-tests` failed on the missing `dismiss` API as
+> expected. After implementation, `make test` passed: 825 tests in the unit
+> host, with 2 optional tests pending; the jar host had 1 optional test
+> pending. `CLJ_PULSE_E2E_BIN` was unset. Commit: `db48932`.
+> Codex reviewed this commit and found no actionable defects.
 
 ### Task 2: Expose and document the command
 
 **Files:** `src/extension.ts`, `package.json`, `src/test/manifest.test.ts`,
 `src/test/replCommands.integration.test.ts`, `README.md`.
 
-- [ ] **Step 1: Add command regression coverage.**
+- [x] **Step 1: Add command regression coverage.**
   Add `clojurePulse.clearStatusBar` to the integration suite's registration
   list and the manifest suite's `PALETTE` list. Assert its contributed title
   is exactly `Clear status bar` and its category is `Clojure Pulse`, extending
@@ -118,35 +127,76 @@ the npm pretest hook. On headless Linux, ensure `xvfb-run` is available.
   cases do not leak state into later tests. Use existing presenter run shapes;
   no fake server or new exported API is required.
 
-- [ ] **Step 2: Verify the tests fail for the missing command.**
+- [x] **Step 2: Verify the tests fail for the missing command.**
   Run `make test`.
   Expected: the new manifest and registration/dispatch checks fail because
   the command has not yet been contributed or registered.
 
-- [ ] **Step 3: Contribute and register the command.**
+- [x] **Step 3: Contribute and register the command.**
   Add the command entry to `package.json` and register its callback inside
   `setupRepl`, using the existing subscription group. Leave it palette-visible
   under the existing conventions, without a `when`, enablement condition,
   default keybinding, notification, or confirmation prompt.
 
-- [ ] **Step 4: Document the behavior.**
+- [x] **Step 4: Document the behavior.**
   In the README's REPL **Status bar** bullet, describe the shared run indicator
   and the **Clojure Pulse: Clear status bar** command. Explain that clearing
   dismisses the current spinner or result, the underlying run continues, and
   the next run shows a new status. State that connection indicators remain
   visible. Keep this addition short.
 
-- [ ] **Step 5: Run final verification.**
+- [x] **Step 5: Run final verification.**
   Run `make check`, then `git diff --check`.
   Expected: both exit 0; the palette includes the new command and all slot,
   presenter, and command tests pass. Inspect the diff to confirm the callback
   only dismisses `runSlot`. No version bump or dependency change is needed.
   Repeat checks only if subsequent changes or failures justify doing so.
 
-- [ ] **Step 6: Commit and report.**
+- [x] **Step 6: Commit and report.**
   Run `git add src/extension.ts package.json src/test/manifest.test.ts src/test/replCommands.integration.test.ts README.md`,
   then `git commit -m "Add Clear status bar command"`.
   Mark completed steps in this plan and record verification results and any
   deviations. Commit the updated plan separately with
   `git add docs/plans/2026-09-05-2252-clear-status-bar.md` and
   `git commit -m "Record clear status bar implementation results"`.
+
+> Verification: Before wiring, `make test` failed on exactly four command
+> registration/dispatch and manifest checks. After wiring, `make check`
+> passed with 827 tests, 2 optional tests pending in the unit host, and
+> 1 optional test pending in the jar host. `git diff --check` passed.
+> Implementation commit: `f7e10a1`.
+
+> End-to-end: `xvfb-run -a node_modules/.bin/vscode-test --config .tmp/clear-status-bar-smoke.config.mjs`
+> passed (1 test). In the built extension, the smoke test connected a TCP
+> nREPL stand-in, ran Evaluate File, and selected the new command through
+> the actual Command Palette. It cleared a completed verdict and an
+> in-flight spinner, confirmed the delayed reply stayed hidden and the
+> REPL stayed connected, then verified a new evaluation displayed normally.
+
+> Review: Codex reviewed `f7e10a1` and found no actionable defects. Both task
+> review checkpoints are complete; no fixup commits were needed.
+
+## Completed
+
+**Status: done.** Implemented on `clear-status-bar` in `db48932` and `f7e10a1`.
+
+**What changed:** Added `clojurePulse.clearStatusBar` to the Command Palette.
+The command dismisses the shared run indicator and invalidates its token.
+Late completion stays hidden, and the next run displays normally. Added
+lifecycle and command regression coverage and documented the behavior.
+
+**Verification:** `make check` passed with 827 extension-host tests, and the
+Command Palette smoke test passed. The optional language-server end-to-end
+tests were skipped because `CLJ_PULSE_E2E_BIN` was unset (2 pending in the
+unit host, 1 in the jar host). Both Codex reviews found no actionable defects.
+
+**Issues encountered:** None beyond the expected failures before implementation.
+
+**Deviations:** TaskCreate/TaskUpdate are unavailable in this session, so
+commentary and plan checkboxes provided progress tracking. No design changes.
+The required end-to-end check used a temporary script in `.tmp/` to drive
+the Command Palette against the built extension and a TCP nREPL stand-in.
+
+**What the plan could have specified better:** Include the concrete Command
+Palette smoke-test procedure and note that the optional language-server
+tests need `CLJ_PULSE_E2E_BIN`.
