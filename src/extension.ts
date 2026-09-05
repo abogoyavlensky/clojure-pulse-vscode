@@ -949,19 +949,21 @@ function resolveSessionName(arg: unknown): string | undefined {
   return typeof node?.name === "string" ? node.name : undefined;
 }
 
-/** Quick-picks one of the sessions matching `predicate`. */
+/** Quick-picks one of the sessions matching `predicate`. A single match is
+ *  taken without asking unless `alwaysAsk` is set. */
 async function pickSession(
   registry: ReplRegistry,
   predicate: (session: ReplSessionLike) => boolean,
   placeHolder: string,
   emptyMessage: string,
+  options: { alwaysAsk?: boolean } = {},
 ): Promise<string | undefined> {
   const matches = registry.sessions.filter(predicate);
   if (matches.length === 0) {
     vscode.window.showInformationMessage(emptyMessage);
     return undefined;
   }
-  if (matches.length === 1) {
+  if (matches.length === 1 && !options.alwaysAsk) {
     return matches[0].name;
   }
   const choice = await vscode.window.showQuickPick(
@@ -1013,11 +1015,16 @@ async function startRepl(registry: ReplRegistry, arg?: unknown): Promise<void> {
       await vscode.commands.executeCommand("clojurePulse.addReplConfig");
       return undefined;
     }
+    // Ask when choosing among equals: every stopped configuration is a
+    // candidate, so with more than one configured the user picks, even if only
+    // one is stopped. Stop and Restart keep the shortcut because "the only one
+    // running" is not a choice.
     return pickSession(
       registry,
       (candidate) => candidate.state === "stopped",
       "Start a REPL",
       "Every configured REPL is already running.",
+      { alwaysAsk: registry.sessions.length > 1 },
     );
   });
   if (!session) {
