@@ -61,6 +61,34 @@ suite("StatusSlot", () => {
     assert.strictEqual(slot.current(), undefined);
   });
 
+  test("dismiss is safe while empty and hides the current run", () => {
+    slot.dismiss();
+    assert.strictEqual(slot.current(), undefined);
+
+    slot.show(view("running"));
+    slot.dismiss();
+    assert.strictEqual(slot.current(), undefined);
+    slot.dismiss();
+    assert.strictEqual(slot.current(), undefined);
+  });
+
+  test("dismiss prevents late updates and allows a fresh run", () => {
+    const dismissed = slot.show(view("old running"));
+    slot.dismiss();
+    slot.update(dismissed, view("old done"));
+    assert.strictEqual(slot.current(), undefined);
+
+    const fresh = slot.show(view("new running"));
+    assert.notStrictEqual(fresh, dismissed);
+    assert.deepStrictEqual(slot.current(), view("new running"));
+    slot.update(fresh, view("new done"));
+    assert.deepStrictEqual(slot.current(), view("new done"));
+
+    slot.update(dismissed, view("old done"));
+    slot.clear(dismissed);
+    assert.deepStrictEqual(slot.current(), view("new done"));
+  });
+
   test("dispose is idempotent", () => {
     slot.show(view("running"));
     slot.dispose();
