@@ -28,6 +28,8 @@ export interface StatusSlot {
   /** Hides the item — for runs abandoned before a verdict. A no-op for
    *  superseded tokens. */
   clear(token: string): void;
+  /** Hides the item and invalidates its token so late updates stay hidden. */
+  dismiss(): void;
   /** The rendered view, for tests; undefined while hidden. */
   current(): StatusSlotView | undefined;
   dispose(): void;
@@ -79,6 +81,10 @@ export function createStatusSlot(options: {
       if (token !== currentToken) {
         return;
       }
+      render(undefined);
+    },
+    dismiss() {
+      currentToken = undefined;
       render(undefined);
     },
     current() {

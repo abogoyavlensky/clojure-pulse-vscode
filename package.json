@@ -411,6 +411,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.clearStatusBar",
+        "title": "Clear status bar",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.copyEvalResult",
         "title": "Copy Evaluation Result",
         "category": "Clojure Pulse"

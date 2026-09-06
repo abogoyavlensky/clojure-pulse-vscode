@@ -563,7 +563,11 @@ rather than land somewhere you did not intend.
   REPL. Click it to show its output, switch the active REPL, add a
   configuration, or disconnect. If a server goes away, its REPL returns to
   *stopped*, the channel notes the lost connection, and a `create` REPL's
-  process is cleaned up with it.
+  process is cleaned up with it. Tests, file evaluations, and custom REPL
+  commands share a run indicator beside it. Use **Clojure Pulse: Clear status
+  bar** in the Command Palette to dismiss its spinner or result. An active run
+  continues, and its completion stays hidden; the next run shows a new status.
+  Connection indicators remain visible.
 
 The REPL connection is independent of the `clj-pulse` language server — either
 works without the other.

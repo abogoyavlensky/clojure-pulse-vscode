@@ -859,6 +859,9 @@ function setupRepl(
     vscode.commands.registerCommand("clojurePulse.clearInlineResults", () =>
       inlineResults.clearAll(),
     ),
+    vscode.commands.registerCommand("clojurePulse.clearStatusBar", () =>
+      runSlot.dismiss(),
+    ),
     vscode.commands.registerCommand(
       "clojurePulse.copyEvalResult",
       (id?: string) => copyEvalResult(inlineResults, id),
