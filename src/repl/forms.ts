@@ -347,7 +347,11 @@ function commentHeadEnd(text: string, form: ReadForm): number | null {
     return null;
   }
   const head = readForm(text, form.bracketOffset + 1, form.closerOffset!);
-  if (head.kind !== "form" || head.form.bracketOffset !== null) {
+  if (
+    head.kind !== "form" ||
+    head.form.bracketOffset !== null ||
+    head.form.baseStart !== head.form.start // `'comment` / `#_comment` is not the macro
+  ) {
     return null;
   }
   return text.slice(head.form.baseStart, head.form.end) === "comment" ? head.form.end : null;

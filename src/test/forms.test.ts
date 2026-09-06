@@ -432,6 +432,11 @@ suite("topFormAtCursor", () => {
     assert.strictEqual(top("(clojure.core/comment |x)"), "(clojure.core/comment x)");
   });
 
+  test("a prefixed head token is not the comment macro", () => {
+    assert.strictEqual(top("('comment (fo|o))"), "('comment (foo))");
+    assert.strictEqual(top("(#_comment vector (fo|o))"), "(#_comment vector (foo))");
+  });
+
   test("discarded body forms in a comment are unwrapped like any form", () => {
     assert.strictEqual(top("(comment #_(a |b))"), "(a b)");
   });
