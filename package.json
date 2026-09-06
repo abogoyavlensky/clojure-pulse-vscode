@@ -386,6 +386,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.evalTopForm",
+        "title": "Evaluate Top Form",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.evalFile",
         "title": "Evaluate File",
         "category": "Clojure Pulse"

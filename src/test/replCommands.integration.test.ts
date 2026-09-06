@@ -134,6 +134,7 @@ suite("REPL commands", () => {
       "clojurePulse.showReplOutput",
       "clojurePulse.replMenu",
       "clojurePulse.evalCurrentForm",
+      "clojurePulse.evalTopForm",
       "clojurePulse.evalFile",
       "clojurePulse.runTestAtCursor",
       "clojurePulse.runNsTests",
@@ -244,6 +245,85 @@ suite("REPL commands", () => {
       editor.selection = new vscode.Selection(0, 0, 0, 0);
 
       await vscode.commands.executeCommand("clojurePulse.evalCurrentForm");
+
+      assert.ok(!server.received.some((m) => m.op === "eval"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("evalTopForm without a connection warns instead of throwing", async () => {
+    await vscode.commands.executeCommand("clojurePulse.evalTopForm");
+  });
+
+  test("evalTopForm evaluates the enclosing top-level form in its namespace", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns scratch)\n(defn f [x]\n  (+ x 41))\n(f 1)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      // Cursor inside `41`, deep in the defn body.
+      editor.selection = new vscode.Selection(2, 8, 2, 8);
+
+      await vscode.commands.executeCommand("clojurePulse.evalTopForm");
+
+      const entries = session.transcript.entries();
+      assert.ok(
+        entries.some((e) => e.kind === "in" && e.text === "(defn f [x]\n  (+ x 41))"),
+        "expected an in entry for the whole defn",
+      );
+      const evalMsg = server.received.find((m) => m.op === "eval");
+      assert.strictEqual(evalMsg?.ns, "scratch");
+      assert.strictEqual(api.inlineResults.latest(), "42");
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("evalTopForm ignores the selection", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      const session = await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "(ns scratch)\n(defn f [x]\n  (+ x 41))\n(f 1)",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      // `41` selected: Evaluate Current Form would send it, this command
+      // still sends the enclosing defn.
+      editor.selection = new vscode.Selection(2, 7, 2, 9);
+
+      await vscode.commands.executeCommand("clojurePulse.evalTopForm");
+
+      const entries = session.transcript.entries();
+      assert.ok(entries.some((e) => e.kind === "in" && e.text === "(defn f [x]\n  (+ x 41))"));
+      assert.ok(!entries.some((e) => e.kind === "in" && e.text === "41"));
+    } finally {
+      await server?.close();
+    }
+  });
+
+  test("evalTopForm with no form at the cursor sends nothing", async () => {
+    let server: FakeNrepl | undefined;
+    try {
+      server = await startFakeNrepl();
+      await connect(server);
+
+      const doc = await vscode.workspace.openTextDocument({
+        language: "clojure",
+        content: "   ",
+      });
+      const editor = await vscode.window.showTextDocument(doc);
+      editor.selection = new vscode.Selection(0, 0, 0, 0);
+
+      await vscode.commands.executeCommand("clojurePulse.evalTopForm");
 
       assert.ok(!server.received.some((m) => m.op === "eval"));
     } finally {
