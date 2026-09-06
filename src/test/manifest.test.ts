@@ -15,6 +15,7 @@ interface Contributes {
   commands: { command: string; title: string; category: string }[];
   menus: { commandPalette: { command: string; when?: string }[] };
   keybindings: { command: string; key: string }[];
+  configuration: { properties: Record<string, { enum?: string[]; default?: unknown }> };
 }
 
 function contributes(): Contributes {
@@ -72,6 +73,13 @@ suite("manifest", () => {
     assert.ok(command, "expected the Clear status bar command");
     assert.strictEqual(command.title, "Clear status bar");
     assert.strictEqual(command.category, "Clojure Pulse");
+  });
+
+  test("the line comment setting offers ; and ;; with ; as default", () => {
+    const setting = contributes().configuration.properties["clojurePulse.lineComment"];
+    assert.ok(setting, "expected the clojurePulse.lineComment setting");
+    assert.deepStrictEqual(setting.enum, [";", ";;"]);
+    assert.strictEqual(setting.default, ";");
   });
 
   test("the language server commands say which server they mean", () => {
