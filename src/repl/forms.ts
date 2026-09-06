@@ -417,30 +417,23 @@ export interface TestAtCursor {
 }
 
 /**
- * The top-level `deftest` form the cursor is in — or, when the cursor sits in
- * top-level whitespace, the one ending right before it (matching
- * `formAtCursor`'s rule 6, so "right after the closing paren" works too).
- *
- * The resolved form must be a `(deftest …)` list, head bare or qualified
- * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
- * range strips them like `formAtCursor` does — and so is `^meta` on the list,
- * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
- * define a test var, so it does not resolve. Null when the cursor's form is
- * not a deftest, the name is missing, or the code is unbalanced — never a
- * silent fallback to an earlier deftest.
+ * The top-level form the cursor is in (start <= offset <= end) — or, when
+ * the cursor sits in top-level whitespace, the one ending right before it
+ * (matching `formAtCursor`'s rule 6, so "right after the closing paren"
+ * works too). Null before the first form, on blank text, or when the
+ * cursor's own form never completes. Un-stripped; callers decide what part
+ * of the form they need.
  */
-export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+function readTopFormAtCursor(text: string, offset: number): ReadForm | null {
   const clamped = Math.max(0, Math.min(offset, text.length));
   let prev: ReadForm | null = null;
-  let target: ReadForm | null = null;
   let p = 0;
   for (;;) {
     // As in resolveIn: decide gaps from the next form's start before parsing
     // it, so unbalanced code after the cursor cannot block resolution.
     const nextStart = skipTrivia(text, p, text.length);
     if (nextStart >= text.length || nextStart > clamped) {
-      target = prev;
-      break;
+      return prev;
     }
     const result = readForm(text, nextStart, text.length);
     if (result.kind === "closer") {
@@ -455,11 +448,26 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
       p = result.form.end;
       continue;
     }
-    target = result.form; // start <= offset <= end: the containing form
-    break;
+    return result.form; // start <= offset <= end: the containing form
   }
+}
 
-  return target === null ? null : resolveDeftest(text, target);
+/**
+ * The top-level `deftest` form the cursor is in — or, when the cursor sits in
+ * top-level whitespace, the one ending right before it (see
+ * `readTopFormAtCursor`).
+ *
+ * The resolved form must be a `(deftest …)` list, head bare or qualified
+ * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
+ * range strips them like `formAtCursor` does — and so is `^meta` on the list,
+ * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
+ * define a test var, so it does not resolve. Null when the cursor's form is
+ * not a deftest, the name is missing, or the code is unbalanced — never a
+ * silent fallback to an earlier deftest.
+ */
+export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+  const form = readTopFormAtCursor(text, offset);
+  return form === null ? null : resolveDeftest(text, form);
 }
 
 /**
