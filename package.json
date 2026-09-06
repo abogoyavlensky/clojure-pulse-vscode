@@ -107,6 +107,19 @@
           "maximum": 1,
           "markdownDescription": "Opacity for dimmed `#_`/`(comment …)` forms — lower is more faded. Reload the window to apply."
         },
+        "clojurePulse.lineComment": {
+          "type": "string",
+          "enum": [
+            ";",
+            ";;"
+          ],
+          "default": ";",
+          "enumDescriptions": [
+            "One semicolon, the Clojure convention for a comment at the end of a line of code.",
+            "Two semicolons, the Clojure convention for a comment on its own line."
+          ],
+          "markdownDescription": "The token Toggle Line Comment (`Ctrl+/`) and Add Line Comment insert in Clojure files. Toggling matches the token exactly: with `;;` chosen, a line commented with a single `;` counts as code and gets `;;` in front of it. Applies immediately."
+        },
         "clojurePulse.inlineEvalResults": {
           "type": "boolean",
           "default": true,

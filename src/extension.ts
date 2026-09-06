@@ -11,6 +11,7 @@ import { CLOJUREDOCS_REQUEST, ClojureDocsResult } from "./clojureDocs";
 import { createClojureDocsHoverProvider } from "./clojureDocsHover";
 import { PendingClojureDocsRequest } from "./clojureDocsRequest";
 import { configuredValue } from "./configValue";
+import { createLineCommentApplier, lineCommentToken } from "./lineComment";
 import {
   parseProjects,
   ProjectNodeInfo,
@@ -194,6 +195,29 @@ export async function activate(
           : Promise.reject(new Error("clj-pulse language server is not running")),
       ),
     ),
+  );
+
+  // The token Toggle Line Comment inserts. Registering a language
+  // configuration carrying `comments` alone merges over the contributed
+  // `language-configuration.json`, which keeps the default and everything else
+  // it defines.
+  const lineComment = createLineCommentApplier((token) =>
+    vscode.languages.setLanguageConfiguration("clojure", {
+      comments: { lineComment: token },
+    }),
+  );
+  const applyLineComment = (): void =>
+    lineComment.apply(
+      lineCommentToken(vscode.workspace.getConfiguration("clojurePulse").get("lineComment")),
+    );
+  applyLineComment();
+  context.subscriptions.push(
+    lineComment,
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("clojurePulse.lineComment")) {
+        applyLineComment();
+      }
+    }),
   );
 
   // Bracket highlight that follows Evaluate Current Form's resolution, pure
