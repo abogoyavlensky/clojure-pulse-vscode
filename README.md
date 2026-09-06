@@ -160,6 +160,7 @@ location or pass extra arguments in your `settings.json`:
 | `clojurePulse.kondo.enabled` | `true` | Use clj-kondo for diagnostics when the binary is found — see [Linting](#linting). |
 | `clojurePulse.kondo.path` | `"clj-kondo"` | The clj-kondo command. A bare name is resolved from `PATH`. |
 | `clojurePulse.test.reloadBeforeRun` | `"clj-reload"` | Save dirty Clojure files and reload what changed before every test run, or `"none"` to skip it - see [Reload before tests](#reload-before-tests). |
+| `clojurePulse.lineComment` | `";"` | The token Toggle Line Comment inserts in Clojure files, either `";"` or `";;"`. |
 
 The extension also sets two editor defaults for the `clojure` language:
 `editor.formatOnType: false` (Enter is handled client-side, so the server's
