@@ -302,6 +302,97 @@ export function formAtCursor(text: string, offset: number): FormRange | null {
   return form === null ? null : stripped(form);
 }
 
+/**
+ * The form "Evaluate Top Form" should send for a cursor at `offset`: the
+ * top-level form the cursor is in, or the one ending right before it when the
+ * cursor sits in top-level whitespace (see `readTopFormAtCursor`). Leading
+ * `#_` markers are stripped like `formAtCursor` does; other prefixes stay.
+ *
+ * A top-level `(comment …)` — bare head, no reader prefix — is a rich
+ * comment block, so its body forms count as top level: with the cursor
+ * between its brackets (the spot right before the `)` included), the body
+ * form containing the cursor, else the previous body form, is the result.
+ * The head is never a candidate, so a cursor on `comment` or anywhere before
+ * the first body form yields the whole comment form. One level only: a
+ * nested comment is sent whole. Null before the first form, on blank text,
+ * or when the cursor's form never completes.
+ */
+export function topFormAtCursor(text: string, offset: number): FormRange | null {
+  const form = readTopFormAtCursor(text, offset);
+  if (form === null) {
+    return null;
+  }
+  const clamped = Math.max(0, Math.min(offset, text.length));
+  const headEnd = commentHeadEnd(text, form);
+  if (headEnd === null || clamped <= form.bracketOffset! || clamped > form.closerOffset!) {
+    return stripped(form);
+  }
+  const body = resolveCommentBody(text, headEnd, form.closerOffset!, clamped);
+  if (body === undefined) {
+    return null;
+  }
+  return stripped(body ?? form);
+}
+
+/**
+ * The end offset of the `comment` head token when `form` is a bare,
+ * unprefixed `(comment …)` list, or null otherwise.
+ */
+function commentHeadEnd(text: string, form: ReadForm): number | null {
+  if (
+    form.bracketOffset === null ||
+    text[form.bracketOffset] !== "(" ||
+    form.baseStart !== form.start
+  ) {
+    return null;
+  }
+  const head = readForm(text, form.bracketOffset + 1, form.closerOffset!);
+  if (
+    head.kind !== "form" ||
+    head.form.bracketOffset !== null ||
+    head.form.baseStart !== head.form.start // `'comment` / `#_comment` is not the macro
+  ) {
+    return null;
+  }
+  return text.slice(head.form.baseStart, head.form.end) === "comment" ? head.form.end : null;
+}
+
+/**
+ * The body form of a comment block for a cursor at `offset`, walking the
+ * siblings in [contentStart, contentEnd): the one containing the cursor,
+ * else the previous one, else null when the cursor precedes every body
+ * form. Undefined when the cursor's own body form never completes.
+ */
+function resolveCommentBody(
+  text: string,
+  contentStart: number,
+  contentEnd: number,
+  offset: number,
+): ReadForm | null | undefined {
+  let prev: ReadForm | null = null;
+  let p = contentStart;
+  for (;;) {
+    const nextStart = skipTrivia(text, p, contentEnd);
+    if (nextStart >= contentEnd || nextStart > offset) {
+      return prev;
+    }
+    const result = readForm(text, nextStart, contentEnd);
+    if (result.kind === "closer") {
+      p = result.offset + 1; // stray closer: skip
+      continue;
+    }
+    if (result.kind !== "form") {
+      return undefined;
+    }
+    if (result.form.end < offset) {
+      prev = result.form;
+      p = result.form.end;
+      continue;
+    }
+    return result.form;
+  }
+}
+
 /** Offsets of the opening and closing bracket of the form at the cursor. */
 export interface BracketPair {
   open: number;
@@ -417,30 +508,23 @@ export interface TestAtCursor {
 }
 
 /**
- * The top-level `deftest` form the cursor is in — or, when the cursor sits in
- * top-level whitespace, the one ending right before it (matching
- * `formAtCursor`'s rule 6, so "right after the closing paren" works too).
- *
- * The resolved form must be a `(deftest …)` list, head bare or qualified
- * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
- * range strips them like `formAtCursor` does — and so is `^meta` on the list,
- * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
- * define a test var, so it does not resolve. Null when the cursor's form is
- * not a deftest, the name is missing, or the code is unbalanced — never a
- * silent fallback to an earlier deftest.
+ * The top-level form the cursor is in (start <= offset <= end) — or, when
+ * the cursor sits in top-level whitespace, the one ending right before it
+ * (matching `formAtCursor`'s rule 6, so "right after the closing paren"
+ * works too). Null before the first form, on blank text, or when the
+ * cursor's own form never completes. Un-stripped; callers decide what part
+ * of the form they need.
  */
-export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+function readTopFormAtCursor(text: string, offset: number): ReadForm | null {
   const clamped = Math.max(0, Math.min(offset, text.length));
   let prev: ReadForm | null = null;
-  let target: ReadForm | null = null;
   let p = 0;
   for (;;) {
     // As in resolveIn: decide gaps from the next form's start before parsing
     // it, so unbalanced code after the cursor cannot block resolution.
     const nextStart = skipTrivia(text, p, text.length);
     if (nextStart >= text.length || nextStart > clamped) {
-      target = prev;
-      break;
+      return prev;
     }
     const result = readForm(text, nextStart, text.length);
     if (result.kind === "closer") {
@@ -455,11 +539,26 @@ export function testAtCursor(text: string, offset: number): TestAtCursor | null 
       p = result.form.end;
       continue;
     }
-    target = result.form; // start <= offset <= end: the containing form
-    break;
+    return result.form; // start <= offset <= end: the containing form
   }
+}
 
-  return target === null ? null : resolveDeftest(text, target);
+/**
+ * The top-level `deftest` form the cursor is in — or, when the cursor sits in
+ * top-level whitespace, the one ending right before it (see
+ * `readTopFormAtCursor`).
+ *
+ * The resolved form must be a `(deftest …)` list, head bare or qualified
+ * (`t/deftest`, `clojure.test/deftest`). Leading `#_` markers are fine — the
+ * range strips them like `formAtCursor` does — and so is `^meta` on the list,
+ * but a quote-like prefix (`'`, `` ` ``, `#'`) means the form would not
+ * define a test var, so it does not resolve. Null when the cursor's form is
+ * not a deftest, the name is missing, or the code is unbalanced — never a
+ * silent fallback to an earlier deftest.
+ */
+export function testAtCursor(text: string, offset: number): TestAtCursor | null {
+  const form = readTopFormAtCursor(text, offset);
+  return form === null ? null : resolveDeftest(text, form);
 }
 
 /**

@@ -97,6 +97,7 @@ import {
   testAtCursor,
   TestAtCursor,
   testsInText,
+  topFormAtCursor,
 } from "./repl/forms";
 
 const INSTALL_URL = "https://github.com/abogoyavlensky/clj-pulse#installation";
@@ -841,6 +842,9 @@ function setupRepl(
     vscode.commands.registerCommand("clojurePulse.evalCurrentForm", () =>
       evalCurrentForm(registry, inlineResults),
     ),
+    vscode.commands.registerCommand("clojurePulse.evalTopForm", () =>
+      evalTopForm(registry, inlineResults),
+    ),
     vscode.commands.registerCommand("clojurePulse.evalFile", () =>
       evalFile(registry, commandBar),
     ),
@@ -1536,6 +1540,53 @@ async function evalCurrentForm(
     );
   }
 
+  await evalRange(session, inlineResults, editor, range);
+}
+
+/**
+ * Evaluates the top-level form around the cursor — from anywhere inside it,
+ * or right after its closing paren — in the file's namespace. Inside a
+ * `(comment …)` block the form directly under `comment` counts as top level
+ * (see `topFormAtCursor`). The selection is deliberately ignored: this
+ * command always resolves from the active cursor, and Evaluate Current Form
+ * is the one that sends a selection as-is.
+ */
+async function evalTopForm(
+  registry: ReplRegistry,
+  inlineResults: InlineResultsManager,
+): Promise<void> {
+  const session = activeSession(registry);
+  if (!session) {
+    return;
+  }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const text = editor.document.getText();
+  const found = topFormAtCursor(text, editor.document.offsetAt(editor.selection.active));
+  if (!found) {
+    void vscode.window.setStatusBarMessage("Clojure Pulse: no form found at cursor", 3000);
+    return;
+  }
+  const range = new vscode.Range(
+    editor.document.positionAt(found.start),
+    editor.document.positionAt(found.end),
+  );
+  await evalRange(session, inlineResults, editor, range);
+}
+
+/**
+ * Sends `range` of the editor's document to the session in the namespace of
+ * the nearest preceding `ns` form — the tail shared by the form-evaluating
+ * commands once they have decided what to send.
+ */
+async function evalRange(
+  session: ReplSessionLike,
+  inlineResults: InlineResultsManager,
+  editor: vscode.TextEditor,
+  range: vscode.Range,
+): Promise<void> {
   const code = editor.document.getText(range);
   const nsName = nsBefore(editor.document.getText(), editor.document.offsetAt(range.start));
   // Inline results make the value visible in place; reveal the REPL's output

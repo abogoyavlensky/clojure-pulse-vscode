@@ -6,6 +6,7 @@ import {
   testAtCursor,
   testRunFailed,
   testsInText,
+  topFormAtCursor,
 } from "../repl/forms";
 
 /** Splits a source with a single `|` cursor marker into text + offset. */
@@ -19,6 +20,13 @@ function at(source: string): { text: string; offset: number } {
 function form(source: string): string | null {
   const { text, offset } = at(source);
   const range = formAtCursor(text, offset);
+  return range === null ? null : text.slice(range.start, range.end);
+}
+
+/** The text of the form `topFormAtCursor` resolves for the `|` cursor, or null. */
+function top(source: string): string | null {
+  const { text, offset } = at(source);
+  const range = topFormAtCursor(text, offset);
   return range === null ? null : text.slice(range.start, range.end);
 }
 
@@ -355,6 +363,86 @@ suite("bracketPairAtCursor", () => {
     assert.ok(range && found);
     assert.strictEqual(found.open, range.start);
     assert.strictEqual(found.close, range.end - 1);
+  });
+});
+
+suite("topFormAtCursor", () => {
+  test("cursor deep inside a form resolves the whole top-level form", () => {
+    assert.strictEqual(top("(defn f [x]\n  (+ x |1))"), "(defn f [x]\n  (+ x 1))");
+    assert.strictEqual(top("(a)\n(defn f [x] (let [y |x] y))\n(b)"), "(defn f [x] (let [y x] y))");
+  });
+
+  test("cursor right after the closing paren resolves that form", () => {
+    assert.strictEqual(top("(defn f [x] 1)|\n(g)"), "(defn f [x] 1)");
+  });
+
+  test("top-level whitespace resolves the previous form", () => {
+    assert.strictEqual(top("(a)\n  |\n(b)"), "(a)");
+  });
+
+  test("before the first form, or on blank text, nothing resolves", () => {
+    assert.strictEqual(top("  |  (a)"), null);
+    assert.strictEqual(top("|"), null);
+    assert.strictEqual(top("  |  "), null);
+  });
+
+  test("unbalanced code yields nothing", () => {
+    assert.strictEqual(top("(a) (b |"), null);
+    assert.strictEqual(top("(defn f [x]\n  (+ x |1)"), null);
+  });
+
+  test("leading discard markers are stripped", () => {
+    assert.strictEqual(top("#_(defn f [] |1)"), "(defn f [] 1)");
+    assert.strictEqual(top("#_ #_(a) (b |c)"), "(b c)");
+  });
+
+  test("quote-like prefixes and metadata stay part of the form", () => {
+    assert.strictEqual(top("'(a |b)"), "'(a b)");
+    assert.strictEqual(top("^:private (a |b)"), "^:private (a b)");
+  });
+
+  test("a body form of a top-level comment is the top form", () => {
+    assert.strictEqual(top("(comment\n  (+ 1 |2)\n  (foo))"), "(+ 1 2)");
+    assert.strictEqual(top("(comment (+ 1 2)| (foo))"), "(+ 1 2)");
+    assert.strictEqual(top("(comment |(foo))"), "(foo)");
+    assert.strictEqual(top("(comment (a) |)"), "(a)");
+    assert.strictEqual(top("(comment x|)"), "x");
+  });
+
+  test("whitespace inside a comment resolves the previous body form", () => {
+    assert.strictEqual(top("(comment (+ 1 2)\n  |\n  (foo))"), "(+ 1 2)");
+  });
+
+  test("on the comment head or before the first body form: the whole form", () => {
+    assert.strictEqual(top("(comm|ent (foo))"), "(comment (foo))");
+    assert.strictEqual(top("(comment |  (foo))"), "(comment   (foo))");
+    assert.strictEqual(top("(comment\n  |\n  (foo))"), "(comment\n  \n  (foo))");
+    assert.strictEqual(top("(|comment (foo))"), "(comment (foo))");
+    assert.strictEqual(top("(comment)|"), "(comment)");
+  });
+
+  test("descent is one level only and never recursive", () => {
+    assert.strictEqual(top("(comment (a (b |c)))"), "(a (b c))");
+    assert.strictEqual(top("(comment (comment |x))"), "(comment x)");
+  });
+
+  test("a prefixed or qualified comment is not descended", () => {
+    assert.strictEqual(top("#_(comment |x)"), "(comment x)");
+    assert.strictEqual(top("'(comment |x)"), "'(comment x)");
+    assert.strictEqual(top("(clojure.core/comment |x)"), "(clojure.core/comment x)");
+  });
+
+  test("a prefixed head token is not the comment macro", () => {
+    assert.strictEqual(top("('comment (fo|o))"), "('comment (foo))");
+    assert.strictEqual(top("(#_comment vector (fo|o))"), "(#_comment vector (foo))");
+  });
+
+  test("discarded body forms in a comment are unwrapped like any form", () => {
+    assert.strictEqual(top("(comment #_(a |b))"), "(a b)");
+  });
+
+  test("an unbalanced body form in a comment yields nothing", () => {
+    assert.strictEqual(top("(comment (a) (b |"), null);
   });
 });
 

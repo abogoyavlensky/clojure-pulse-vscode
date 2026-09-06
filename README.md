@@ -480,6 +480,13 @@ rather than land somewhere you did not intend.
   and neither does anything below an unclosed bracket. To get VS Code's matcher
   back, set `"[clojure]": { "editor.matchBrackets": "always" }` in your
   settings — the extension's highlight steps aside.
+- **Evaluate Top Form** — evaluates the top-level form around the cursor from
+  anywhere inside it, or the one ending just before the cursor, so a `defn`
+  can be re-evaluated without leaving its body. A `#_` discard is unwrapped
+  and the form runs in the file's namespace, as above. Inside a `(comment …)`
+  block, the forms directly under `comment` count as top level, so a rich
+  comment evaluates one form at a time. The selection is ignored; use
+  **Evaluate Current Form** to send a selection.
 - **Select Current Form** — selects exactly what **Evaluate Current Form**
   would send, so it doubles as a preview: select, look, then evaluate the
   selection.
@@ -681,6 +688,9 @@ Run these from the Command Palette:
 - **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor,
   or the selection when there is one, in the active REPL.
+- **Clojure Pulse: Evaluate Top Form** — evaluate the top-level form around
+  the cursor in the active REPL; inside a `(comment …)` block, the form
+  directly under `comment`.
 - **Clojure Pulse: Evaluate File** — load the whole current file into the REPL,
   reporting in the status bar rather than opening the output panel.
 - **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at

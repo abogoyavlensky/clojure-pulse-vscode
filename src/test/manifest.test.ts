@@ -33,6 +33,7 @@ const PALETTE = [
   "clojurePulse.setActiveRepl",
   "clojurePulse.showReplOutput",
   "clojurePulse.evalCurrentForm",
+  "clojurePulse.evalTopForm",
   "clojurePulse.evalFile",
   "clojurePulse.copyEvalResult",
   "clojurePulse.clearStatusBar",
