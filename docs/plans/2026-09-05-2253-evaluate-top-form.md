@@ -1,5 +1,7 @@
 # Evaluate Top Form Implementation Plan
 
+**Status: completed** (2026-09-06)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a command, **Evaluate Top Form**, that evaluates the top-level form containing the cursor in the active REPL, descending one level into `(comment …)` forms.
@@ -139,7 +141,7 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
 - Modify: `src/repl/forms.ts`
 - Test: `src/test/forms.test.ts` (existing suites)
 
-- [ ] **Step 1: Extract `readTopFormAtCursor`**
+- [x] **Step 1: Extract `readTopFormAtCursor`**
   Move the loop body of `testAtCursor` (clamp, walk top-level forms, skip
   stray closers, return null on unbalanced, pick containing-or-previous) into
   a private `readTopFormAtCursor(text: string, offset: number): ReadForm | null`.
@@ -149,11 +151,11 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   above (containing form, else previous form, null before the first form or
   on unbalanced code).
 
-- [ ] **Step 2: Run the existing form tests**
+- [x] **Step 2: Run the existing form tests**
   Run: `npm run compile-tests && npx vscode-test --grep "testAtCursor|testsInText|formAtCursor"`
   Expected: PASS, no change in count.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -am "Extract the top-level form walker from testAtCursor"`
 
 ### Task 2: `topFormAtCursor` resolver
@@ -162,7 +164,7 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
 - Modify: `src/repl/forms.ts`
 - Test: `src/test/forms.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Add a `suite("topFormAtCursor", …)` with a `top(text)` helper mirroring
   the file's `form(text)` helper (cursor at `|`, returns the sliced text or
   null). Cases:
@@ -188,11 +190,11 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   - `(clojure.core/comment |x)` → whole form (head must be bare `comment`)
   - `(comment (a |` → null (unbalanced child)
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
   Run: `npm run compile-tests && npx vscode-test --grep "topFormAtCursor"`
   Expected: compile error, `topFormAtCursor` is not exported.
 
-- [ ] **Step 3: Implement `topFormAtCursor`**
+- [x] **Step 3: Implement `topFormAtCursor`**
   Export it right after `formAtCursor`. Read the top form via
   `readTopFormAtCursor`; if it is a comment list (see design) and
   `bracketOffset < offset <= closerOffset`, walk the body forms from the end
@@ -203,12 +205,17 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   fallback work for a cursor on or right after `comment`. Return `stripped(...)` of whatever resolved. Doc
   comment states the rules and points to the README.
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
   Run: `npm run compile-tests && npx vscode-test --grep "topFormAtCursor|testAtCursor|formAtCursor"`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -am "Resolve the top-level form at the cursor"`
+
+> Deviation: the Codex review of this commit found that a prefixed head
+> (`('comment …)`, `(#_comment vector …)`) was treated as the comment macro.
+> Fixed in a follow-up commit by requiring the head token itself to carry no
+> reader prefix, with two tests.
 
 ### Task 3: The command
 
@@ -218,7 +225,7 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
 - Modify: `src/test/manifest.test.ts`
 - Modify: `src/test/replCommands.integration.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   In `manifest.test.ts`, add `"clojurePulse.evalTopForm"` to `PALETTE` after
   `evalCurrentForm`. In `replCommands.integration.test.ts`, add the id to the
   "registers the REPL commands" list, then two tests modelled on the
@@ -235,15 +242,15 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   - "evalTopForm with no form at the cursor sends nothing": blank buffer,
     assert no `eval` op was received.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
   Run: `npm run compile-tests && npx vscode-test --grep "manifest|REPL commands"`
   Expected: FAIL, the palette assertion and the command registration test.
 
-- [ ] **Step 3: Contribute the command**
+- [x] **Step 3: Contribute the command**
   In `package.json`, add after `clojurePulse.evalCurrentForm`:
   `{ "command": "clojurePulse.evalTopForm", "title": "Evaluate Top Form", "category": "Clojure Pulse" }`.
 
-- [ ] **Step 4: Extract `evalRange` and add `evalTopForm`**
+- [x] **Step 4: Extract `evalRange` and add `evalTopForm`**
   In `src/extension.ts`, import `topFormAtCursor`. Move the tail of
   `evalCurrentForm` (from `const code = …` to the `runEval` call) into
   `evalRange` with the signature in the design. `evalCurrentForm` keeps its
@@ -254,19 +261,22 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   it next to `evalCurrentForm` in the command registrations. Doc comment on
   `evalTopForm` names the selection decision.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
   Run: `npm run compile-tests && npx vscode-test --grep "manifest|REPL commands"`
   Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -am "Add Evaluate Top Form command"`
+
+> Deviation: a fourth integration test, "evalTopForm without a connection
+> warns instead of throwing", mirrors the existing evalCurrentForm one.
 
 ### Task 4: README
 
 **Files:**
 - Modify: `README.md`
 
-- [ ] **Step 1: Document the command**
+- [x] **Step 1: Document the command**
   In the *Evaluating* section, add an **Evaluate Top Form** bullet after
   **Evaluate Current Form**: the top-level form around the cursor (or the one
   ending just before it), `#_` unwrapped, evaluated in the file's namespace;
@@ -276,13 +286,43 @@ npm run compile-tests && npx vscode-test --grep "<pattern>"
   **Clojure Pulse: Evaluate Top Form** after Evaluate Current Form with a
   one-line description. Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -am "Document Evaluate Top Form"`
 
 ### Task 5: Full verification
 
-- [ ] **Step 1: Run the whole suite**
+- [x] **Step 1: Run the whole suite**
   Run: `npm test`
   Expected: scripts tests, tsc, esbuild, eslint and vscode-test all pass.
 
-- [ ] **Step 2: Fix anything that fails and commit**
+- [x] **Step 2: Fix anything that fails and commit**
+
+## Completion summary
+
+Implemented `clojurePulse.evalTopForm` ("Evaluate Top Form") across five
+commits on `feat/evaluate-top-form`:
+
+- `readTopFormAtCursor` extracted from `testAtCursor` in `src/repl/forms.ts`;
+  `topFormAtCursor` built on it with one-level descent into bare
+  `(comment …)` blocks, head excluded from the body walk, the position right
+  before `)` counted as inside.
+- `evalRange` extracted from `evalCurrentForm` in `src/extension.ts` and
+  shared with the new `evalTopForm`, which ignores the selection.
+- Command contributed in `package.json`, pinned in the manifest test, covered
+  by 16 unit tests and 4 integration tests, documented in the README.
+
+Full suite: 842 passing, 2 pending, lint clean. A single `Error: Unexpected
+SIGPIPE` line in the run output also appears on master and is unrelated. No
+real REPL was available headless; the resolver was driven over a realistic
+namespace file with a rich comment block and resolved every cursor position
+as designed.
+
+Deviations, gathered:
+
+- Fixup after Task 2: a prefixed head token (`'comment`, `#_comment`) no
+  longer counts as the comment macro (Codex finding).
+- Task 3 gained a no-connection integration test mirroring the existing one.
+
+What the plan could have specified better: the comment-head check should
+have said the head token must be unprefixed, not only the list; the rest held
+up.
