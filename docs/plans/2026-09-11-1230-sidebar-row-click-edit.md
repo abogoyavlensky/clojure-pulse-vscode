@@ -179,7 +179,7 @@ and looking at the pane.
 
 ### Task 4: Open the pull request
 
-- [ ] **Step 1: Push and open the PR**
+- [x] **Step 1: Push and open the PR**
   Title must name the behaviour change, since it becomes the release note,
   e.g. "Sidebar row click opens the edit form; output moves to an inline icon".
   Body: two sentences on what changed and why (consistency between panes),
@@ -190,7 +190,7 @@ and looking at the pane.
 
 ## Completion summary
 
-**Status: Tasks 1–3 completed; Task 4 (push + PR) pending confirmation.**
+**Status: completed.** PR: https://github.com/abogoyavlensky/clojure-pulse-vscode/pull/31
 
 Implemented, in three commits on `sidebar-row-click-edit`:
 
