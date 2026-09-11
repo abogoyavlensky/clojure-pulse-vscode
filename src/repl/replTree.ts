@@ -3,6 +3,9 @@
  * pure function of a session's config and state
  * so it can be unit-tested; `ReplTreeProvider` only maps that onto VS Code's
  * tree API and repaints when the registry changes.
+ *
+ * A row's click opens the *edit form*, as a REPL Commands row does; the
+ * output channel is the inline output action (see package.json menus).
  */
 
 import * as vscode from "vscode";
@@ -122,8 +125,8 @@ export class ReplTreeProvider implements vscode.TreeDataProvider<ReplTreeNode> {
     item.iconPath = new vscode.ThemeIcon(view.icon);
     item.contextValue = view.contextValue;
     item.command = {
-      command: "clojurePulse.showReplOutput",
-      title: "Show REPL Output",
+      command: "clojurePulse.editReplConfig",
+      title: "Edit REPL Configuration",
       arguments: [session.name],
     };
     return item;
