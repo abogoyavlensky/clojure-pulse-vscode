@@ -6,7 +6,8 @@
  * `presentCustomCommand`, so this class only maps it onto VS Code's tree API.
  *
  * A row's click opens the *edit form*; running is the inline play action
- * only, so a misclick can never evaluate stateful code.
+ * only, so a misclick can never evaluate stateful code. The play icon is the
+ * row's only inline action — edit is the click and the context menu.
  */
 
 import * as vscode from "vscode";

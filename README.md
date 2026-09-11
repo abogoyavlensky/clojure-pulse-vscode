@@ -375,8 +375,8 @@ travel with the project:
 }
 ```
 
-The **+** on the view title opens a form in an editor tab, and so does the
-pencil on any row. The selector at the top chooses the kind and the fields
+The **+** on the view title opens a form in an editor tab, and so does a
+click on any row. The selector at the top chooses the kind and the fields
 below it follow, all on one page: the command comes prefilled for the project's
 build file, and **Delete** removes the REPL from the same place. Switching the
 kind keeps what you typed for the other one. Drag the tab into a floating
@@ -452,10 +452,10 @@ started with, and the edit is applied on the way back up. Right-click a running
 row for it, or pick *Restart* from the status-bar REPL menu.
 
 Each REPL streams into its own **Output** channel, named `REPL: <name>` — a
-real editor buffer with Clojure highlighting, search, and scrollback. Click a
-row to open it. A configured REPL keeps its channel across disconnects and
-restarts, so the history stays readable; an unsaved host/port connection is
-transient, and its channel goes away when it disconnects.
+real editor buffer with Clojure highlighting, search, and scrollback. The
+output icon on a row opens it. A configured REPL keeps its channel across
+disconnects and restarts, so the history stays readable; an unsaved host/port
+connection is transient, and its channel goes away when it disconnects.
 
 When several REPLs are connected, one is **active** and receives every
 evaluation. Connecting a REPL makes it active; **Set Active REPL** (the row
@@ -684,9 +684,10 @@ Run these from the Command Palette:
 - **Clojure Pulse: Add REPL Configuration** — open the form for a new REPL
   (also the **+** on the REPL view).
 - **Clojure Pulse: Edit REPL Configuration** — pick a REPL and open the form
-  on it (also the pencil on its row).
+  on it (also a click on its row).
 - **Clojure Pulse: Set Active REPL** — choose which REPL evaluations go to.
-- **Clojure Pulse: Show REPL Output** — open a REPL's output channel.
+- **Clojure Pulse: Show REPL Output** — open a REPL's output channel (also
+  the output icon on its row).
 - **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor,
   or the selection when there is one, in the active REPL.
 - **Clojure Pulse: Evaluate Top Form** — evaluate the top-level form around

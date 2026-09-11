@@ -123,7 +123,7 @@ suite("ReplTreeProvider", () => {
     );
   });
 
-  test("tree items open the session's output on click", async () => {
+  test("tree items open the edit form on click", async () => {
     const provider = new ReplTreeProvider(source([view(createConfig, "stopped")]));
 
     const [node] = await provider.getChildren();
@@ -132,7 +132,7 @@ suite("ReplTreeProvider", () => {
     assert.strictEqual(item.label, "dev");
     assert.strictEqual(item.description, "stopped");
     assert.strictEqual(item.contextValue, "replCreateStopped");
-    assert.strictEqual(item.command?.command, "clojurePulse.showReplOutput");
+    assert.strictEqual(item.command?.command, "clojurePulse.editReplConfig");
     assert.deepStrictEqual(item.command?.arguments, ["dev"]);
   });
 

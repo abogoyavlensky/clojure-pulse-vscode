@@ -548,7 +548,7 @@
           "group": "inline@2"
         },
         {
-          "command": "clojurePulse.editReplConfig",
+          "command": "clojurePulse.showReplOutput",
           "when": "view == clojurePulse.replManager",
           "group": "inline@3"
         },
@@ -576,11 +576,6 @@
           "command": "clojurePulse.runCustomReplCommand",
           "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
           "group": "inline@1"
-        },
-        {
-          "command": "clojurePulse.editCustomReplCommand",
-          "when": "view == clojurePulse.customCommands && viewItem == customReplCommand",
-          "group": "inline@2"
         },
         {
           "command": "clojurePulse.runCustomReplCommand",
