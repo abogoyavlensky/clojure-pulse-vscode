@@ -320,7 +320,7 @@ export async function activate(
       panel.iconPath = vscode.Uri.joinPath(
         context.extensionUri,
         "images",
-        "activity-icon.svg",
+        "activity-icon-v2.svg",
       );
       return panel;
     },

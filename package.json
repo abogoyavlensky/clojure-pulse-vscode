@@ -300,7 +300,7 @@
         {
           "id": "clojurePulseSidebar",
           "title": "Clojure Pulse",
-          "icon": "images/activity-icon.svg"
+          "icon": "images/activity-icon-v2.svg"
         }
       ]
     },
