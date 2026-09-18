@@ -4,7 +4,7 @@
 
 ## Setup
 
-The toolchain is pinned with [mise](https://mise.jdx.dev/) (see `.mise.toml`):
+The toolchain is pinned with [mise](https://mise.jdx.dev/) (see [`.mise.toml`](../.mise.toml)):
 Node.js plus the `clj-pulse` server for end-to-end testing. With mise installed,
 from a fresh clone:
 
@@ -12,7 +12,7 @@ from a fresh clone:
 make setup       # mise install (Node + clj-pulse) + npm install
 ```
 
-On Linux the test suite launches a real VS Code, which needs a virtual display  - 
+On Linux the test suite launches a real VS Code, which needs a virtual display  -
 install `xvfb` (`sudo apt-get install -y xvfb`). macOS needs nothing extra.
 
 ## Tasks
@@ -64,3 +64,13 @@ An extension release carries exactly one `clj-pulse` version, pinned as
 The release workflow builds one `.vsix` per platform, each with that
 `clj-pulse` inside, plus the universal build, and publishes them all to
 GitHub Releases.
+
+## Documentation and recordings
+
+Keep the README short and link to the task guides in [Documentation](README.md).
+Settings and command IDs come from `package.json`; update the
+[reference](reference.md) when contributions change. VS Code generates its
+Features tab from that manifest.
+
+See [Recording feature demos](recording-demos.md) for the capture sequences.
+Use real captures of the extension when adding screenshots or GIFs.

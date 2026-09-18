@@ -87,7 +87,7 @@ with the [keybinding examples](docs/keybindings.md), including shortcuts for
 named REPL commands and rerunning the last test. Enter and Escape have editor
 bindings out of the box.
 
-## Install
+## Installation
 
 Requires **VS Code 1.97+**. Download your platform's `.vsix` from
 [GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest),

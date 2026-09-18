@@ -4,9 +4,12 @@
 
 ## Install
 
+Platform-specific packages include clj-pulse starting with 0.6.0. With an
+older release, follow the universal-build server instructions below.
+
 Until the extension reaches the VS Code Marketplace, install it from
 [GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest).
-Each release has one `.vsix` per platform, with the `clj-pulse` server
+Starting with 0.6.0, releases have one `.vsix` per platform, with the `clj-pulse` server
 inside, plus a universal one without it:
 
 | File | Platform |
@@ -18,7 +21,8 @@ inside, plus a universal one without it:
 | `clojure-pulse-win32-x64-<version>.vsix` | Windows, x86-64 |
 | `clojure-pulse-<version>.vsix` | Universal: any platform, `clj-pulse` from your `PATH` |
 
-1. Download the `.vsix` for your platform. It includes `clj-pulse`; no separate language-server installation is needed.
+1. Download the `.vsix` for your platform. It includes `clj-pulse`;
+   no separate language-server installation is needed.
 2. Install it from the command line (requires the `code` command on your `PATH`):
 
    ```sh
@@ -68,7 +72,8 @@ clj-pulse --version
    command for your build tool, add any project aliases, and save.
 3. Click the play button on `dev`. Its output shows startup progress. The
    status bar names the active REPL when it connects.
-4. In your file, add `(comment (+ 20 22))`. Put the cursor immediately after
+4. Run **Clojure Pulse: Evaluate File** to load the namespace.
+   In your file, add `(comment (+ 20 22))`. Put the cursor immediately after
    `(+ 20 22)` and run **Clojure Pulse: Evaluate Current Form** from the
    Command Palette. The inline result is `42`.
 5. Add [your own shortcuts](keybindings.md) for the actions you use.

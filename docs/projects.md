@@ -8,8 +8,10 @@
 
 - Go to definition in project files, JAR sources, git/`:local/root`
   dependencies, and `clojure.core`.
-- Completion, hover documentation, and signature help.
-- Find references and rename across indexed sources.
+- Fuzzy and keyword completion, auto-require on completion, hover
+  documentation, and signature help.
+- Find references and rename symbols or qualified keywords across indexed sources.
+- Highlight symbol occurrences and expand selection through enclosing forms.
 - Document outlines and workspace symbol search.
 - Namespace code actions, including Add require and Clean namespace.
 - Keyword and Integrant-key navigation, plus JDK interop support.
@@ -21,8 +23,11 @@ The REPL and language server work independently.
 
 The extension recognizes `.clj`, `.cljs`, `.cljc`, `.edn`, `.bb`, and `.lg`.
 Recognizing a file extension does not imply full runtime support. See the
-[server's feature reference](https://github.com/abogoyavlensky/clj-pulse/blob/master/docs/features.md)
-for language coverage and limitations.
+[server's feature reference](https://github.com/abogoyavlensky/clj-pulse/blob/master/docs/FEATURES.md)
+for language coverage and limitations. ClojureScript indexing is best effort;
+`:require-macros` and shadow-cljs classpaths are not supported. JDK support
+covers classes, static members, and constructors; it excludes instance methods,
+library classes, and decompilation.
 
 ## External Libraries
 
@@ -32,9 +37,10 @@ directory dependencies open from disk. Go to definition, hover, and completion
 also work within JAR sources. Rename cannot edit read-only dependency files.
 
 For deps.edn projects the tree includes the resolved transitive classpath;
-lgx projects show git/`:local/root` dependencies. Leiningen dependency discovery
-is best effort and direct-dependencies-only. The empty state explains how to
-generate a classpath for each project type. The tree updates after re-indexing,
+lgx projects show git/`:local/root` dependencies. Leiningen resolves its full
+classpath through `lein classpath`. If that command is disabled or fails, it
+falls back to direct dependencies with explicit versions already in `~/.m2`.
+The empty state offers classpath setup guidance. The tree updates after re-indexing,
 and the refresh button rescans projects and their enabled classpaths.
 
 ## Monorepos
@@ -51,7 +57,7 @@ project: each row names the project, its build tool, and its classpath
 status, with the resolved libraries underneath. While any project's
 classpath is resolving, a progress bar runs across the view (and the server
 reports the same work in the status bar). The refresh button asks the server
-to rescan: it re-detects projects and re-resolves every enabled classpath  - 
+to rescan: it re-detects projects and re-resolves every enabled classpath -
 the way to retry after an error, or to pick up a newly created subproject.
 (Detection honors `.gitignore`, so a subproject in a gitignored directory
 still needs a `clojurePulse.projects` entry; rescan then picks it up. Against
@@ -65,7 +71,7 @@ command). The first run may download dependencies, so only the root project
 runs it by default. To enable it for a subproject, click the play button on
 the project's row (the stop button disables it again). The button writes the
 `clojurePulse.projects` setting in workspace settings; the panel follows the
-setting, so editing `settings.json` by hand works too. For the full edit  - 
+setting, so editing `settings.json` by hand works too. For the full edit -
 the classpath command, or adding a project clj-pulse didn't detect - use the
 pencil on a project's row, or the `+` on the view title. Both open a form
 that writes the same setting; its "Remove from settings" button drops the
@@ -91,7 +97,7 @@ re-resolves without a restart.
 
 The same overrides can live in `.clj-pulse/config.edn` at the workspace root
 (see
-[clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse#configuration)),
+[clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse/blob/master/docs/SETTINGS.md)),
 which works in every editor; where both name the same key, the VS Code
 setting wins. To reset everything to the auto-detected defaults, remove the
 `clojurePulse.projects` setting - it applies live, no restart needed (a
@@ -104,21 +110,21 @@ the subproject's directory - see [REPL](repl.md).
 
 Diagnostics come from two tiers. The server's own lints always run and need
 nothing installed: unresolved, unused, and duplicate namespace requires,
-updated as you type, powering the "Add require" and "Clean namespace"
-quickfixes.
+unused bindings, and unused private vars. They update as you type and power
+the "Add require" and "Clean namespace" quickfixes.
 
 Install [clj-kondo](https://github.com/clj-kondo/clj-kondo/blob/master/doc/install.md)
 and its full linter set joins them: unresolved symbols, arities, syntax errors,
 unused bindings, and the rest. Those findings are marked `clj-kondo` in the
 Problems panel, and your `.clj-kondo/config.edn` applies unchanged, so linter
-levels and excludes carry over from the command line. When clj-kondo also
-reports one of the server's three codes, the server's copy is dropped so
-nothing is listed twice. If clj-kondo is missing or fails, the built-in lints
+levels and excludes carry over from the command line. After a successful
+clj-kondo pass, its diagnostics replace the overlapping native codes so
+findings are not duplicated. If clj-kondo is missing or fails, the built-in lints
 are published exactly as before.
 
 Hover the `clj-pulse` status-bar item to see which tier is live; the tooltip
-reads `Linting: clj-kondo + native (v2026.08.04)` or `Linting: native lints
-only`.
+shows `Linting: clj-kondo + native` with its version, or
+`Linting: native lints only`.
 
 Two settings control it, both applied live with no restart:
 
@@ -135,7 +141,7 @@ built-in lints only.
 
 **Cross-file linters need a `.clj-kondo` directory.** clj-kondo caches the
 signatures your project and its dependencies define, and it writes that cache
-into a `.clj-kondo` directory it will not create itself. Run `mkdir .clj-kondo`
+into a `.clj-kondo` directory it will not create itself. Run `mkdir -p .clj-kondo`
 once per project and `invalid-arity` and `unresolved-var` start working; the
 server scans your classpath in the background to fill the cache, showing
 "Linting classpath (clj-kondo)" in the status bar while it does.

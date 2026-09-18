@@ -17,8 +17,8 @@ Control it with `clojurePulse.maintainIndentation` (default `true`).
 
 ## Formatting engines
 
-Two engines sit behind `clojurePulse.formatting.engine`, driving both
-indent-on-Enter and Format Document / Format Selection:
+Two engines sit behind `clojurePulse.formatting.engine`, supplying indentation
+for Enter and paste, plus Format Document and Format Selection:
 
 - **`cljfmt`** (default) formats exactly like the cljfmt CLI - the extension
   bundles cljfmt 0.16.5 compiled to JavaScript
@@ -32,7 +32,7 @@ indent-on-Enter and Format Document / Format Selection:
   flag.
 - **`structural`** is the fixed rule this extension started with: two spaces
   inside symbol-headed lists, alignment to the first element everywhere else,
-  no configuration. With this engine Format Document only **re-indents**  - 
+  no configuration. With this engine Format Document only **re-indents** -
   it never strips whitespace, sorts `ns` references, or otherwise rewrites
   code.
 

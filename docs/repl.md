@@ -67,7 +67,7 @@ add the dependency by hand.
 It injects nREPL as an *alias*, so your own aliases compose with it: change the
 last argument to `-M:dev:test:clojure-pulse/nrepl` and every alias contributes
 its `:extra-deps`, while `:main-opts` (last alias wins) still starts nREPL. The
-namespaced name cannot collide with an alias of your own. The field is yours
+namespaced alias keeps it separate from common project aliases. The field is yours
 either way: any command that starts an nREPL server will do, a `bb` task or a
 Makefile target included.
 
@@ -113,12 +113,11 @@ button, or *Switch active REPL* in the status-bar menu) moves the target. Stop
 the active REPL and there is no target until you choose one - evaluations warn
 rather than land somewhere you did not intend.
 
-
 ## Evaluating
 
 ### Evaluate Current Form
 
-with no selection, evaluates the form at the
+With no selection, evaluates the form at the
 cursor. It picks the token under (or just before) the cursor, the form that
 ends just before the cursor, or the innermost enclosing form - so putting the
 cursor right after a closing paren evaluates that whole form. A `#_` discard
@@ -137,7 +136,7 @@ settings - the extension's highlight steps aside.
 
 ### Evaluate Top Form
 
-evaluates the top-level form around the cursor from
+Evaluates the top-level form around the cursor from
 anywhere inside it, or the one ending just before the cursor, so a `defn`
 can be re-evaluated without leaving its body. A `#_` discard is unwrapped
 and the form runs in the file's namespace, as above. Inside a `(comment …)`
@@ -147,13 +146,13 @@ comment evaluates one form at a time. The selection is ignored; use
 
 ### Select Current Form
 
-selects exactly what **Evaluate Current Form**
+Selects exactly what **Evaluate Current Form**
 would send, so it doubles as a preview: select, look, then evaluate the
 selection.
 
 ### Evaluate File
 
-compiles the whole buffer (unsaved changes included) via
+Compiles the whole buffer (unsaved changes included) via
 nREPL's `load-file`, so the file's own `ns` form takes effect and stack
 traces carry real file/line locations. The run is silent - no output panel
 opening on top of your code, no focus lost - with the verdict in the status
@@ -163,7 +162,7 @@ it to open the REPL output, which has the full report either way.
 
 ### Inline results
 
-by default the value appears at the **end of the line**
+By default the value appears at the **end of the line**
 in a muted, Cursive-style hint (never wedged between brackets): faint while it
 runs, and the error's first line in red on failure. Hover the result for the
 full value and a **Copy result** link. The evaluated form flashes briefly so
@@ -188,16 +187,8 @@ Connection indicators remain visible.
 The REPL connection is independent of the `clj-pulse` language server - either
 works without the other.
 
-The eval commands ship without default keybindings. Bind the ones you use, for
-example in `keybindings.json`:
-
-```json
-{
-"key": "cmd+enter",
-"command": "clojurePulse.evalCurrentForm",
-"when": "editorTextFocus && editorLangId == clojure"
-}
-```
+Evaluation commands have no default shortcuts. Use the
+[keybinding examples](keybindings.md) to choose your own.
 
 ## Custom commands
 
@@ -229,9 +220,11 @@ The commands live in the `clojurePulse.customReplCommands` setting, saved to
 workspace settings when a folder is open:
 
 ```json
-[
-  { "name": "reset", "code": "(user/reset)" }
-]
+{
+  "clojurePulse.customReplCommands": [
+    { "name": "reset", "code": "(user/reset)" }
+  ]
+}
 ```
 
 The code is sent to the active REPL exactly as written, in the session's

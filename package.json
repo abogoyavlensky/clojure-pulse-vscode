@@ -335,7 +335,7 @@
       },
       {
         "view": "clojurePulse.externalLibraries",
-        "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: direct dependencies only (best effort).\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
+        "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: resolve with `lein classpath`; if unavailable, only cached direct dependencies are shown.\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
       }
     ],
     "commands": [

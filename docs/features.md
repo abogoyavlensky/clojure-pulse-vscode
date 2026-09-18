@@ -46,8 +46,9 @@
 ## Language intelligence and dependencies
 
 - Fast-starting clj-pulse bundled in platform-specific extension packages.
-- Definition navigation, completion, hover, signature help, references,
-  rename, outlines, and workspace symbol search.
+- Definition navigation, fuzzy/keyword completion, auto-require, hover,
+  signature help, references, symbol/keyword rename, outlines, and symbol search.
+- Symbol-occurrence highlighting and structural selection expansion.
 - Namespace quick fixes, built-in diagnostics, and optional clj-kondo linting.
 - Keyword and Integrant-key navigation; JDK interop support.
 - External Libraries tree with read-only JAR sources and directory dependencies.

@@ -12,109 +12,103 @@ runs. Bind it once and keep testing from the code you are working on.
 Tests use the active REPL. Start or connect to one in the [REPL manager](repl.md)
 first. For JVM Clojure, single-test execution requires Clojure 1.11 or newer.
 
-## Run Last Test Command
-
-repeats whatever test command ran last, from
-anywhere. The Cursive workflow this copies: run a `deftest`, switch to the
-business-logic code, change something, then re-run the test without ever
-leaving the file you're in. The change is saved and reloaded for you. The command re-reads the test
-file's current content (unsaved edits included), finds the test again by
-namespace and name - so it survives the deftest moving around the file - and
-runs it exactly as the original command would: same gutter marks on the test
-file, same status-bar verdict. Focus stays where you are; the test file is
-never opened or revealed. If the recorded test has since been renamed or
-deleted, a status-bar message says so instead of guessing.
-
 ## Run Test at Cursor
 
-with the cursor inside a top-level `deftest` (or
-right after its closing paren), re-evaluates the test in the file's namespace
-so the buffer's current version is what runs, then executes it via
-`clojure.test`. If the namespace isn't loaded yet, the file is loaded
-automatically first - no manual **Evaluate File** needed. The summary map
-(`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
-report streams to the REPL's output channel without moving focus there
-(when inline results are off, the channel is shown up front, as for every
-eval command - revealed, never focused). The gutter marks the deftest with a green check circle on
-pass or a red cross circle on fail - hover the deftest's first line for the
-failure report - and the status bar shows the verdict at a glance: the test
-name in green when it passed, on a red background with fail/error counts
-when it didn't; click it to open the REPL output. Marks always show the
-result of the **last test command** only: a new run wipes the previous
-report, and an edit to a marked deftest removes its (now stale) gutter
-verdict. The status bar's verdict spot is shared with custom REPL commands
-and **Evaluate File** - it shows the last run of any kind, so a newer run
-replaces what is on display (the gutter marks keep the test report either
-way). Works against JVM Clojure (1.11+) and
-let-go REPLs - with one let-go caveat: until let-go gains `run-test-var`, a
-single-test run there calls the test function directly, skipping
-`use-fixtures` fixtures.
+Place the cursor inside a top-level `deftest`, or immediately after its closing
+paren. The command re-evaluates the test in the file's namespace, then runs it
+through `clojure.test`. If the namespace is not loaded yet, it loads the file
+first. The test summary appears inline; the full report goes to the REPL output.
+
+```clojure
+(ns demo.core-test
+  (:require [clojure.test :refer [deftest is]]))
+
+(deftest addition
+  (is (= 4 (+ 2 2))))
+```
+
+Run the command with the cursor inside `addition` to see its verdict.
 
 ## Run Tests in Namespace
 
-runs every top-level `deftest` in the current
-buffer. The buffer is loaded first (as **Evaluate File** does), so helpers
-and tests are refreshed and what runs is exactly what you see; then each
-test runs in turn, and its gutter mark appears as it finishes. A failing
-test does not stop the run. The status bar shows the namespace name - a
-spinner while it runs, then green on pass, or a red background with the
-summed fail/error counts. Results live in the gutter and the REPL's output
-channel: bulk runs paint no inline decorations, so an error that aborts the
-run (a file that doesn't compile) is reported as a notification. Two
-deliberate limits: a discarded `#_(deftest …)` is skipped (discarding a
-test is how you disable it, and the load never defines it), as is one
-wrapped in a reader conditional (`#?(:clj (deftest …))`); and because each
-test runs on its own, `:once` fixtures run once *per test*, not once per
-namespace (and on a let-go without `run-test-var`, the same fallback the
-single-test command uses skips fixtures entirely).
+This command loads the current buffer, including unsaved changes, then runs
+its top-level `deftest` forms one at a time. Helpers and tests are refreshed
+before execution. Each gutter mark appears as its test finishes; a failing test
+does not stop the remaining tests. Namespace runs leave results in the gutter,
+status bar, and REPL output rather than adding inline results to every form.
+
+A compilation error aborts the run and produces a notification.
+
+## Run Last Test Command
+
+Repeat the last cursor or namespace run from any file. The command re-reads the
+test file, including unsaved edits, and finds a single test by namespace and
+name. It keeps working when that test moves within the file. If the test was
+renamed or deleted, the status bar explains why it cannot run.
+
+The test file receives the same gutter marks and the status bar shows the same
+verdict. Your focus stays in the implementation file. The
+[reload step](#reload-before-tests) brings changed code into the REPL when
+clj-reload is available.
+
+## Reading results
+
+- A green gutter check means pass; a red cross means failure or error.
+  Hover the test's first line for the failure report.
+- The status bar shows a spinner during execution, then the test or namespace
+  name with its verdict. Click it for the full REPL output.
+- Single-test runs also show an inline summary. If inline results are disabled,
+  the output channel is revealed without receiving keyboard focus.
+- Gutter marks describe the **last test command**. A new run clears the previous
+  report; editing a marked test removes its stale verdict.
+- Tests, file evaluation, and custom commands share a status-bar slot. A newer
+  operation replaces that indicator; test gutter marks remain.
+
+**Clear status bar** dismisses the indicator without cancelling a run.
 
 ## Reload before tests
 
-every test command starts by saving the dirty
-Clojure files and reloading the namespaces whose files changed on disk,
-along with the namespaces that depend on them, so the code you just edited
-is the code the test runs against. It uses
-[clj-reload](https://github.com/tonsky/clj-reload), which the prefilled
-Clojure CLI command puts on the classpath for you. A file that no longer
-compiles aborts the run: a notification names the namespace and the error's
-first line, and the full trace is in the REPL's output channel. Without
-clj-reload on the classpath the tests run as they always did, and the status
-bar says so once per connection. Set
-`clojurePulse.test.reloadBeforeRun` to `"none"` to turn the whole step off.
-See [Reload before tests](testing.md#reload-before-tests) for what the extension
-assumes about your project.
+With `clojurePulse.test.reloadBeforeRun` set to `"clj-reload"` (the default),
+every test command saves dirty Clojure files and reloads changed namespaces and
+their dependents through [clj-reload](https://github.com/tonsky/clj-reload).
+Reloads follow dependency order and preserve `defonce` vars. A compilation
+failure aborts the test run; a notification names the namespace and the first
+error line, with the full trace in the REPL output.
 
-The test commands reload what changed before they run, through
-[clj-reload](https://github.com/tonsky/clj-reload). It reloads only the
-namespaces whose files changed on disk and the namespaces that depend on them,
-in dependency order, and `defonce` vars survive the reload.
+The REPL manager's prefilled Clojure CLI command includes clj-reload. For
+Leiningen, add `[io.github.tonsky/clj-reload "1.0.0"]` to your `:dev` profile.
+Existing saved configurations retain their commands until you edit them.
+Without clj-reload on the classpath, tests run without reloading and the status
+bar explains this once per connection. Set the setting to `"none"` to skip
+saving and reloading before tests.
 
-**What the extension assumes: nothing.** It calls plain
-`clj-reload.core/reload` and nothing else. It never calls `init`, so your own
-`init` in `user.clj` (with `:no-unload`, `:no-reload`, `:output`) wins. It
-never calls a project's own reset wrapper, so an Integrant, Component or Mount
-system is not restarted before your test. A project that wants state to follow
-reloads uses clj-reload's own `before-ns-unload` and `after-ns-reload` hooks,
-plus `defonce` and `^:clj-reload/keep`; those fire inside `reload` and work
-here unchanged.
+### Project state and reload hooks
 
-If clj-reload is watching no files, the status bar says so once per
-connection. That is almost always an `init` whose `:files` regex matches
-nothing: clj-reload matches the *whole* file name, so tools.namespace's
-`#"\.clj"` idiom matches none of them, and every reload quietly does nothing.
-Use `#".*\.cljc?"` instead. (`integrant.repl`'s `set-reload-options!` passes
-its `:file-pattern` straight through to clj-reload as `:files`.)
+The extension calls `clj-reload.core/reload`; it does not call `init` or your
+project's reset function. Your own initialization in `user.clj` controls
+`:no-unload`, `:no-reload`, and other options. Integrant, Component, or Mount
+systems are not automatically restarted. Use your project's reload hooks or a
+[custom REPL command](repl.md#custom-commands) when state needs to be reset.
+clj-reload's `before-ns-unload`, `after-ns-reload`, and `^:clj-reload/keep`
+continue to work.
 
-Three limits worth knowing:
+If clj-reload watches no files, the status bar reports it once per connection.
+Check your `init` file pattern: it must match the whole file name. Use
+`#".*\.cljc?"`, not the tools.namespace-style `#"\.clj"`.
+`integrant.repl`'s `set-reload-options!` passes `:file-pattern` through as `:files`.
 
-- clj-reload reads files from disk. Dirty editors are saved first, but an
-  untitled buffer has no file, so it is never reloaded.
-- clj-reload's idea of "changed" starts when `clj-reload.core` is first
-  required. Clojure Pulse requires it the moment a REPL connects. For a
-  `connect` REPL you started yourself, edits made between the JVM starting and
-  the extension connecting are missed; `(require 'clj-reload.core)` in your
-  `user.clj` closes that window.
-- It is JVM-only. On let-go the reload probe finds nothing to call and the
-  tests run without reloading.
+### Limits
+
+- clj-reload reads files from disk. Untitled buffers have no file to reload.
+- Change tracking starts when `clj-reload.core` is first required. The extension
+  requires it on connection. For an externally started REPL, edits made before
+  connection can be missed; require it in `user.clj` to start tracking earlier.
+- Reloading through clj-reload is JVM-only; let-go runs tests without this step.
+- Namespace runs skip discarded `#_(deftest …)` forms and tests wrapped in
+  reader conditionals such as `#?(:clj (deftest …))`.
+- Namespace runs execute tests individually, so `:once` fixtures run once per
+  test, not once per namespace.
+- On let-go without `run-test-var`, the fallback calls the test function
+  directly and skips `use-fixtures` fixtures.
 
 See [Keybindings](keybindings.md) for cursor, namespace, and rerun shortcuts.
