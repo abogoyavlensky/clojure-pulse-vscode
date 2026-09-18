@@ -97,27 +97,42 @@ version supports — see the [clj-pulse README](https://github.com/abogoyavlensk
 ## Installation
 
 Until the extension reaches the VS Code Marketplace, install it from
-[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest):
+[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest).
+Each release has one `.vsix` per platform, with the `clj-pulse` server
+inside, plus a universal one without it:
 
-1. Download `clojure-pulse-<version>.vsix` from the latest release.
+| File | Platform |
+| --- | --- |
+| `clojure-pulse-darwin-arm64-<version>.vsix` | macOS, Apple Silicon |
+| `clojure-pulse-darwin-x64-<version>.vsix` | macOS, Intel |
+| `clojure-pulse-linux-x64-<version>.vsix` | Linux, x86-64 |
+| `clojure-pulse-linux-arm64-<version>.vsix` | Linux, ARM64 |
+| `clojure-pulse-win32-x64-<version>.vsix` | Windows, x86-64 |
+| `clojure-pulse-<version>.vsix` | Universal: any platform, `clj-pulse` from your `PATH` |
+
+1. Download the `.vsix` for your platform. It includes `clj-pulse`; there is
+   nothing else to install.
 2. Install it from the command line (requires the `code` command on your `PATH`):
 
    ```sh
-   code --install-extension clojure-pulse-<version>.vsix
+   code --install-extension clojure-pulse-<platform>-<version>.vsix
    ```
 
    Or from the UI: Extensions view → **⋯** → **Install from VSIX…**.
 
 3. Reload VS Code.
 
-Then install the `clj-pulse` server (next section) to get the language
-features.
-
 ## Requirements
 
-VS Code 1.97 or newer.
+VS Code 1.97 or newer. A platform build needs nothing else.
 
-Install the `clj-pulse` server and make sure it is on your `PATH`.
+**Remote hosts.** The extension runs where your files are, so under
+Remote-SSH, WSL or a dev container it runs on the remote host. Install the
+`.vsix` that matches the *remote* machine's platform there: while connected,
+Extensions view → **⋯** → **Install from VSIX…**.
+
+**Universal build.** The universal `.vsix` runs `clj-pulse` from your `PATH`
+(or the path in `clojurePulse.server.path`), so install the server yourself:
 
 ```sh
 # Homebrew (macOS, Linux)
@@ -137,8 +152,10 @@ clj-pulse --version
 
 ## Configuration
 
-By default the extension runs `clj-pulse` from your `PATH`. Override the
-location or pass extra arguments in your `settings.json`:
+By default the extension runs the `clj-pulse` bundled with a platform build,
+or `clj-pulse` from your `PATH` in the universal build. To run a different
+server (a local build, say), set the path in your `settings.json`; any
+non-empty value overrides the bundled one:
 
 ```json
 {
@@ -150,7 +167,7 @@ location or pass extra arguments in your `settings.json`:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `clojurePulse.server.path` | `"clj-pulse"` | Path to the server binary. A bare name is resolved from `PATH`; an absolute or relative path is used as-is. |
+| `clojurePulse.server.path` | `""` | Path to the server binary. Empty uses the bundled server, then `clj-pulse` on `PATH`. A bare name is resolved from `PATH`; an absolute or relative path is used as-is. Any non-empty value overrides the bundle. |
 | `clojurePulse.server.args` | `[]` | Extra arguments passed to the server on startup. |
 | `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
 | `clojurePulse.formatting.engine` | `"cljfmt"` | `"cljfmt"` (community rules, `.cljfmt.edn`-aware) or `"structural"` (the fixed 2-space rule) — see [Formatting](#formatting). |
@@ -759,7 +776,9 @@ Run `make` to list every task:
 | `make lint` | Run ESLint |
 | `make test` | Run the test suite (uses `xvfb` on Linux) |
 | `make check` | Lint, compile, and test |
-| `make package` | Build the installable `.vsix` |
+| `make fetch-server` | Download the pinned `clj-pulse` for this machine into `server/` |
+| `make package` | Build the `.vsix` for this machine, with `clj-pulse` bundled |
+| `make package-universal` | Build the `.vsix` without a bundled server |
 | `make install-extension` | Build the `.vsix` and install it into VS Code |
 
 Press <kbd>F5</kbd> in VS Code to launch an Extension Development Host with the
@@ -775,10 +794,26 @@ local — build and install the `.vsix` (requires the `code` command on your
 make install-extension
 ```
 
-That runs `code --install-extension clojure-pulse-<version>.vsix --force`. You
-can also install it from the UI: Extensions view → **⋯** → **Install from
+That fetches the pinned `clj-pulse` for your platform and runs
+`code --install-extension clojure-pulse-<platform>-<version>.vsix --force`.
+You can also install it from the UI: Extensions view → **⋯** → **Install from
 VSIX…**. Reload VS Code afterwards, and rerun the command to update after
 changes (bump `version` in `package.json` for clean version tracking).
+
+### Releasing
+
+An extension release carries exactly one `clj-pulse` version, pinned as
+`cljPulseVersion` in `package.json`. To release:
+
+1. Bump `version` in `package.json`.
+2. Bump `cljPulseVersion` to the
+   [clj-pulse release](https://github.com/abogoyavlensky/clj-pulse/releases)
+   to ship.
+3. Commit, then `make tag`.
+
+The release workflow builds one `.vsix` per platform, each with that
+`clj-pulse` inside, plus the universal build, and publishes them all to
+GitHub Releases.
 
 ## License
 
