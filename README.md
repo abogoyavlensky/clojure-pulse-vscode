@@ -1,824 +1,113 @@
 # Clojure Pulse
 
-<img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse icon" width="128" />
+<img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse" width="96" />
 
-A lightweight, powerful VS Code extension for Clojure and
-[let-go](https://github.com/nooga/let-go), powered by the
-[clj-pulse](https://github.com/abogoyavlensky/clj-pulse) language server.
+**Clojure editing, REPLs, and tests. Together in VS Code.**
 
-Clojure Pulse is self-contained: it ships its own Clojure syntax highlighting
-and file associations, then connects to `clj-pulse` for the IDE features. You
-do not need any other Clojure extension.
+Supports Clojure and [let-go](https://github.com/nooga/let-go), with language
+intelligence from [clj-pulse](https://github.com/abogoyavlensky/clj-pulse).
 
-> **Status:** early-stage and under active development. Expect the occasional
-> rough edge, and please file [issues](https://github.com/abogoyavlensky/clojure-pulse-vscode/issues).
+Move whole forms while preserving their layout. Evaluate code and see results
+inline. Keep named REPLs in the sidebar and rerun tests from the file you are
+editing. Platform builds include the fast-starting clj-pulse language server.
 
-## Features
+[Get started](docs/getting-started.md) · [All features](docs/features.md) ·
+[Documentation](docs/README.md) · [Keybindings](docs/keybindings.md)
 
-- **Syntax highlighting** and bracket/comment editing for `.clj`, `.cljs`,
-  `.cljc`, `.edn`, `.bb`, and `.lg` files. Bracket highlighting follows the
-  form **Evaluate Current Form** would send, so you see what a keypress will
-  evaluate before pressing it.
-- **Language intelligence** from `clj-pulse`:
-  - Go to definition — project files, JAR libraries, git/`:local/root` deps,
-    and `clojure.core`.
-  - Autocomplete, hover, and signature help.
-  - Find references and rename across the project.
-  - Document symbols (outline) and workspace symbol search.
-  - Code actions, including "Add require", and live diagnostics from the
-    server plus [clj-kondo](#linting) when it is installed.
-  - Keyword and Integrant-key navigation, and built-in Java interop.
-- **ClojureDocs, offline** — **Show ClojureDocs** on a symbol adds its
-  [ClojureDocs](https://clojuredocs.org) entry (community examples, see-also
-  links) to the editor hover, opened focused so the arrow keys scroll it. The
-  data ships with the extension, so it works offline with nothing to
-  download. See [ClojureDocs](#clojuredocs).
-- **Library navigation** — jumping into a `jar:` source (a dependency or
-  `clojure.core`) opens the real file, read-only, and its language features
-  come with it: go to definition, hover and completion work inside a dependency
-  exactly as they do in your own code. Refactorings that would edit the file —
-  rename — cannot apply there.
-- **External Libraries panel** — a Cursive-style tree, in its own activity-bar
-  container, lists every dependency `clj-pulse` resolved for the project:
-  deps.edn's full transitive classpath, an lgx project's git/`:local/root`
-  deps, or a Leiningen project's direct dependencies (best effort — Leiningen
-  resolution is direct-deps-only). Expand a library to browse its contents —
-  jar entries open read-only via the same `jar:` provider, and directory-based
-  deps are browsed straight from disk. The panel refreshes itself whenever the
-  classpath is re-indexed, and a refresh button is on the view title. If
-  nothing is resolved yet, the empty state tells you how to generate a
-  classpath for your project type (e.g. `clojure -Spath` for deps.edn). In a
-  multi-project workspace the tree is grouped by project, with a per-project
-  classpath toggle — see [Monorepos](#monorepos).
-- **cljfmt formatting** — Format Document produces output byte-identical to
-  the [cljfmt](https://github.com/weavejester/cljfmt) CLI, and Enter indents
-  the new line to the column cljfmt would choose (bundled cljfmt 0.16.5,
-  compiled to JavaScript — no JVM, no binary on your PATH), honoring the
-  nearest `.cljfmt.edn` / `cljfmt.edn` up the directory tree. See
-  [Formatting](#formatting).
-- **Indent on Enter** — pressing Enter indents the new line to the correct
-  column, atomically. The extension owns the Enter key for Clojure and inserts
-  newline + indent as one edit, so the cursor lands exactly right with no
-  visible hop. clj-pulse still serves `textDocument/onTypeFormatting` for
-  other editors; the extension sets `editor.formatOnType` to `false` for
-  Clojure so the two never both fire. Enter falls through to VS Code whenever
-  a suggest widget, snippet, rename box, or code-action menu is active — and
-  the new line is still reindented a moment later, so it never keeps the
-  column VS Code copied from the line above.
-- **Indent on paste** — a pasted multi-line form lands at the column its new
-  position calls for, keeping its own internal layout: every line moves by the
-  same amount, so hand-aligned map values and nested forms survive. The active
-  formatting engine picks the column, exactly as it does for Enter. Paste a
-  `def` into a `comment` block and its body follows along instead of keeping
-  the columns it had where you copied it. For a full reformat of what you
-  paste, turn on `editor.formatOnPaste`; `editor.pasteAs.enabled` turns paste
-  providers off altogether.
-- **Maintained relative indentation** (Cursive-style) — when an edit moves
-  code that later lines of a multiline form are anchored to, those lines
-  follow automatically: add spaces before `(defn`, press Enter right before a
-  form, or rename `->` to `cond->` in an argument-aligned thread, and the
-  body lines shift by the same amount. It only *translates* lines (never
-  reformats them), merges into the same undo step as your keystroke, and
-  stays away from multiline strings, tab-indented lines, unbalanced forms,
-  and multi-cursor edits.
-- **Status bar indicator** — the server's state (starting, running, stopped,
-  error) shows at the bottom left; click it to open the server log.
-- **REPL manager** — name your project's REPLs in a form, start them (or
-  connect to running ones) from the sidebar, and evaluate code from the editor.
-  Several REPLs can run at once. See [REPL](#repl) below.
-- **Custom REPL commands** — save the snippets you send to the REPL all day
-  (`(user/reset)`, `(user/stop)`) as named commands, and run them from the
-  sidebar, the palette, or your own keybindings. See
-  [Custom commands](#custom-commands) below.
+## Keep your REPLs close
 
-The available language features track whatever your installed `clj-pulse`
-version supports — see the [clj-pulse README](https://github.com/abogoyavlensky/clj-pulse#features).
+Use the **REPL manager** to name and configure your project's REPLs in a form.
+Start a new process or connect to an existing server, run several at once, and
+choose which one receives your evaluations. Each has its own output history.
 
-## Installation
+Save everyday snippets such as `(user/reset)` and `(user/stop)` in **REPL
+Commands**, then run them from the sidebar or your own shortcuts.
 
-Until the extension reaches the VS Code Marketplace, install it from
-[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest).
-Each release has one `.vsix` per platform, with the `clj-pulse` server
-inside, plus a universal one without it:
+[REPL manager and custom commands →](docs/repl.md)
 
-| File | Platform |
-| --- | --- |
-| `clojure-pulse-darwin-arm64-<version>.vsix` | macOS, Apple Silicon |
-| `clojure-pulse-darwin-x64-<version>.vsix` | macOS, Intel |
-| `clojure-pulse-linux-x64-<version>.vsix` | Linux, x86-64 |
-| `clojure-pulse-linux-arm64-<version>.vsix` | Linux, ARM64 |
-| `clojure-pulse-win32-x64-<version>.vsix` | Windows, x86-64 |
-| `clojure-pulse-<version>.vsix` | Universal: any platform, `clj-pulse` from your `PATH` |
+## Move a form. Its body follows.
 
-1. Download the `.vsix` for your platform. It includes `clj-pulse`; there is
-   nothing else to install.
-2. Install it from the command line (requires the `code` command on your `PATH`):
+Press **Tab** before a multiline form and its body moves with it, preserving
+nested and hand-aligned code. **Enter** indents the next line; **paste** places
+a multiline form at its new indentation while keeping its internal layout.
 
-   ```sh
-   code --install-extension clojure-pulse-<platform>-<version>.vsix
-   ```
+Use your project's **cljfmt** configuration or the **structural** indentation
+engine. cljfmt ships with the extension and needs no separate installation.
 
-   Or from the UI: Extensions view → **⋯** → **Install from VSIX…**.
+For example, moving this map keeps its values aligned:
 
-3. Reload VS Code.
-
-## Requirements
-
-VS Code 1.97 or newer. A platform build needs nothing else.
-
-**Remote hosts.** The extension runs where your files are, so under
-Remote-SSH, WSL or a dev container it runs on the remote host. Install the
-`.vsix` that matches the *remote* machine's platform there: while connected,
-Extensions view → **⋯** → **Install from VSIX…**.
-
-**Universal build.** The universal `.vsix` runs `clj-pulse` from your `PATH`
-(or the path in `clojurePulse.server.path`), so install the server yourself:
-
-```sh
-# Homebrew (macOS, Linux)
-brew install abogoyavlensky/tap/clj-pulse
-
-# or mise (macOS, Linux)
-mise use -g ubi:abogoyavlensky/clj-pulse
+```clojure
+{:name    "Ada"
+ :role    :developer
+ :active? true}
 ```
 
-You can also download a binary from the
-[clj-pulse releases](https://github.com/abogoyavlensky/clj-pulse/releases) and
-place it on your `PATH`. To confirm the install:
+[Editing and formatting →](docs/editing.md)
 
-```sh
-clj-pulse --version
+## Evaluate where you work
+
+Evaluate a form, selection, top-level definition, or file. Values appear beside
+your code; hover for the full result or copy it. The highlighted brackets show
+which form **Evaluate Current Form** will send, including inside rich comments:
+
+```clojure
+(comment
+  (mapv inc [1 2 3])) ; evaluate (mapv ...) to get [2 3 4]
 ```
 
-## Configuration
+[Evaluation and inline results →](docs/repl.md#evaluating)
 
-By default the extension runs the `clj-pulse` bundled with a platform build,
-or `clj-pulse` from your `PATH` in the universal build. To run a different
-server (a local build, say), set the path in your `settings.json`; any
-non-empty value overrides the bundled one:
+## Change code. Rerun the last test.
 
-```json
-{
-  "clojurePulse.server.path": "/absolute/path/to/clj-pulse",
-  "clojurePulse.server.args": [],
-  "clojurePulse.trace.server": "off"
-}
-```
+Run a test at the cursor or the tests in a namespace. See pass/fail marks in
+the gutter, inspect failures on hover, and check the verdict in the status bar.
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `clojurePulse.server.path` | `""` | Path to the server binary. Empty uses the bundled server, then `clj-pulse` on `PATH`. A bare name is resolved from `PATH`; an absolute or relative path is used as-is. Any non-empty value overrides the bundle. |
-| `clojurePulse.server.args` | `[]` | Extra arguments passed to the server on startup. |
-| `clojurePulse.trace.server` | `"off"` | Logs LSP traffic to the output channel (`off`, `messages`, or `verbose`). |
-| `clojurePulse.formatting.engine` | `"cljfmt"` | `"cljfmt"` (community rules, `.cljfmt.edn`-aware) or `"structural"` (the fixed 2-space rule) — see [Formatting](#formatting). |
-| `clojurePulse.maintainIndentation` | `true` | Keep relative indentation while editing (shift a form's following lines when its anchor moves). |
-| `clojurePulse.replConfigurations` | `[]` | The REPLs listed in the sidebar — see [REPL](#repl). |
-| `clojurePulse.projects` | `[]` | Per-project classpath overrides for multi-project workspaces — see [Monorepos](#monorepos). |
-| `clojurePulse.kondo.enabled` | `true` | Use clj-kondo for diagnostics when the binary is found — see [Linting](#linting). |
-| `clojurePulse.kondo.path` | `"clj-kondo"` | The clj-kondo command. A bare name is resolved from `PATH`. |
-| `clojurePulse.test.reloadBeforeRun` | `"clj-reload"` | Save dirty Clojure files and reload what changed before every test run, or `"none"` to skip it - see [Reload before tests](#reload-before-tests). |
-| `clojurePulse.lineComment` | `";"` | The token Toggle Line Comment inserts in Clojure files, either `";"` or `";;"`. |
+Switch to the implementation, make a change, and **Run Last Test Command**.
+The test runs again while you stay in your file. With clj-reload available,
+changed code is saved and reloaded before the run.
 
-The extension also sets two editor defaults for the `clojure` language:
-`editor.formatOnType: false` (Enter is handled client-side, so the server's
-on-type formatting must not fire too) and `editor.matchBrackets: "never"` (its own
-bracket highlight follows the form eval would send — see
-[Evaluating](#evaluating)). Override either under `"[clojure]"` in your
-settings.
+[Testing →](docs/testing.md)
 
-**Using Parinfer?** Parinfer's Smart Mode maintains indentation itself — running
-both would shift lines twice, so set `clojurePulse.maintainIndentation: false`
-(or disable Parinfer for Clojure). Parinfer's Indent Mode is complementary:
-Clojure Pulse indents and shifts, Parinfer places brackets. If you prefer
-Parinfer (or anything else) to drive the Enter key, remove or rebind the
-`clojurePulse.newline` keybinding in your Keyboard Shortcuts.
+## Explore your project and its dependencies
 
-## Formatting
+- **External Libraries:** browse dependencies and navigate within their source.
+- **Monorepos:** discover subprojects, group their libraries, and control
+  classpath resolution per project.
+- **Language tools:** completion, definitions, references, rename, namespace
+  fixes, and diagnostics, with optional clj-kondo linting.
+- **Offline ClojureDocs:** open community examples in a focused editor hover
+  with **Show ClojureDocs**.
 
-Two engines sit behind `clojurePulse.formatting.engine`, driving both
-indent-on-Enter and Format Document / Format Selection:
+[Navigation, libraries, and projects →](docs/projects.md)
 
-- **`cljfmt`** (default) formats exactly like the cljfmt CLI — the extension
-  bundles cljfmt 0.16.5 compiled to JavaScript
-  ([cljfmt-js](https://github.com/abogoyavlensky/cljfmt-js)), so Format
-  Document output is byte-identical to `cljfmt fix` with the same
-  configuration, Enter uses the same rules for the new line's column, and
-  nothing needs to be installed. For each file the nearest `.cljfmt.edn` or `cljfmt.edn` up
-  the directory tree (stopping at the workspace folder) applies, so monorepo
-  sub-projects can carry their own rules. `.cljfmt.clj` is not read — it is
-  arbitrary Clojure code, which cljfmt itself only evaluates behind an opt-in
-  flag.
-- **`structural`** is the fixed rule this extension started with: two spaces
-  inside symbol-headed lists, alignment to the first element everywhere else,
-  no configuration. With this engine Format Document only **re-indents** —
-  it never strips whitespace, sorts `ns` references, or otherwise rewrites
-  code.
+## Your shortcuts, your choice
 
-On Enter the cljfmt engine reformats only a small window around the cursor,
-so big files and giant `comment` blocks stay fast; when the code around the
-cursor is too unbalanced to parse mid-edit, the structural rule answers
-instead — Enter never fails. Format-on-save is VS Code's own switch: set
-`"editor.formatOnSave": true` under `"[clojure]"` if you want it.
+Evaluation, testing, and REPL commands leave shortcut selection to you. Start
+with the [keybinding examples](docs/keybindings.md), including shortcuts for
+named REPL commands and rerunning the last test. Enter and Escape have editor
+bindings out of the box.
 
-A config file that fails to parse never breaks formatting — the defaults
-apply, a warning appears once when the breaking save happens, and a
-`$(warning) cljfmt config` status-bar item stays visible (click it to open
-the file) until the config parses again.
+## Install
 
-## Linting
+Requires **VS Code 1.97+**. Download your platform's `.vsix` from
+[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest),
+then choose **Extensions → ⋯ → Install from VSIX…**.
 
-Diagnostics come from two tiers. The server's own lints always run and need
-nothing installed: unresolved, unused, and duplicate namespace requires,
-updated as you type, powering the "Add require" and "Clean namespace"
-quickfixes.
+Platform packages include clj-pulse starting with 0.6.0. Older releases and the
+universal package need a separate server installation. To start a REPL, you
+also need your project's runtime and build tool.
 
-Install [clj-kondo](https://github.com/clj-kondo/clj-kondo/blob/master/doc/install.md)
-and its full linter set joins them: unresolved symbols, arities, syntax errors,
-unused bindings, and the rest. Those findings are marked `clj-kondo` in the
-Problems panel, and your `.clj-kondo/config.edn` applies unchanged, so linter
-levels and excludes carry over from the command line. When clj-kondo also
-reports one of the server's three codes, the server's copy is dropped so
-nothing is listed twice. If clj-kondo is missing or fails, the built-in lints
-are published exactly as before.
+[Installation, remote hosts, and first evaluation →](docs/getting-started.md)
 
-Hover the `clj-pulse` status-bar item to see which tier is live; the tooltip
-reads `Linting: clj-kondo + native (v2026.08.04)` or `Linting: native lints
-only`.
+Under active development. [Report an issue](https://github.com/abogoyavlensky/clojure-pulse-vscode/issues)
+or see [Troubleshooting](docs/troubleshooting.md).
 
-Two settings control it, both applied live with no restart:
+## Inspiration and license
 
-```json
-{
-  "clojurePulse.kondo.enabled": true,
-  "clojurePulse.kondo.path": "clj-kondo"
-}
-```
-
-`enabled` means "use clj-kondo when it is found", not "require it", so leaving
-it on costs nothing when the binary is absent. Set it to `false` to stay on the
-built-in lints only.
-
-**Cross-file linters need a `.clj-kondo` directory.** clj-kondo caches the
-signatures your project and its dependencies define, and it writes that cache
-into a `.clj-kondo` directory it will not create itself. Run `mkdir .clj-kondo`
-once per project and `invalid-arity` and `unresolved-var` start working; the
-server scans your classpath in the background to fill the cache, showing
-"Linting classpath (clj-kondo)" in the status bar while it does.
-
-## ClojureDocs
-
-Put the cursor on a symbol and run **Clojure Pulse: Show ClojureDocs**. The
-editor hover opens with the usual arglists and docstring from clj-pulse, and
-below them the [ClojureDocs](https://clojuredocs.org) entry: the community
-examples, syntax-highlighted in your theme, and the see-also links. The hover
-opens focused, so Up and Down scroll it, PageUp and PageDown page through the
-examples, and Escape puts the cursor back where it was. Click a see-also link
-to load that var's examples in the same hover.
-
-The ordinary hover is unchanged: mouse hovers and `Ctrl+K Ctrl+I` never grow
-examples; only the command adds them.
-
-clj-pulse resolves the symbol the same way hover does, so `str/join` finds
-`clojure.string/join` through your `ns` form and bare names fall back to
-`clojure.core`. ClojureDocs covers `clojure.core` and the other `clojure.*`
-namespaces; a project function shows "No ClojureDocs entry".
-
-The data ships inside the extension as `data/clojuredocs.json`, a stripped
-copy of the official export that a scheduled workflow refreshes monthly, so
-nothing is downloaded and it works offline. It needs clj-pulse 0.4.0 or newer;
-an older server gets a message saying so.
-
-Like the eval commands, it ships without a default keybinding. Bind
-`clojurePulse.showClojureDocs` in your Keyboard Shortcuts, for example:
-
-```json
-{
-  "key": "ctrl+alt+d",
-  "command": "clojurePulse.showClojureDocs",
-  "when": "editorTextFocus && editorLangId == clojure"
-}
-```
-
-Examples are contributed to ClojureDocs under
-[CC0](https://creativecommons.org/publicdomain/zero/1.0/); docstrings come from
-Clojure under the EPL. ClojureDocs notes carry no stated license and are not
-bundled.
-
-## Monorepos
-
-A workspace holding several Clojure projects — a root plus `apps/backend`,
-`libs/common`, and so on — needs no configuration. clj-pulse detects every
-directory with a `deps.edn`, `project.clj`, or `lgx.edn` (up to four levels
-deep, honoring `.gitignore`), indexes each project's sources, and picks up
-whatever classpath its `.cpcache` already holds. Navigation and rename work
-across the whole workspace.
-
-In a multi-project workspace the External Libraries panel groups its tree by
-project: each row names the project, its build tool, and its classpath
-status, with the resolved libraries underneath. While any project's
-classpath is resolving, a progress bar runs across the view (and the server
-reports the same work in the status bar). The refresh button asks the server
-to rescan: it re-detects projects and re-resolves every enabled classpath —
-the way to retry after an error, or to pick up a newly created subproject.
-(Detection honors `.gitignore`, so a subproject in a gitignored directory
-still needs a `clojurePulse.projects` entry; rescan then picks it up. Against
-an older clj-pulse without rescan support, the button just repaints the
-view.)
-
-Resolving a project's *full* classpath — aliases included — runs its
-classpath command (`clojure -A:dev:test -Spath` for deps.edn projects,
-`lein classpath` for Leiningen; lgx projects resolve internally, without a
-command). The first run may download dependencies, so only the root project
-runs it by default. To enable it for a subproject, click the play button on
-the project's row (the stop button disables it again). The button writes the
-`clojurePulse.projects` setting in workspace settings; the panel follows the
-setting, so editing `settings.json` by hand works too. For the full edit —
-the classpath command, or adding a project clj-pulse didn't detect — use the
-pencil on a project's row, or the `+` on the view title. Both open a form
-that writes the same setting; its "Remove from settings" button drops the
-entry, which removes an added project and resets a detected one to defaults:
-
-```json
-{
-  "clojurePulse.projects": [
-    {
-      "path": "apps/backend",
-      "classpathEnabled": true,
-      "classpathCommand": "clojure -A:dev:test -Spath"
-    }
-  ]
-}
-```
-
-Entries override the server's per-project defaults and change only the keys
-they name. `path` is relative to the workspace root; `"."` is the root
-project. Listing a path detection skipped — say, a gitignored checkout with
-its own `deps.edn` — adds it as a project. Changes apply live; the server
-re-resolves without a restart.
-
-The same overrides can live in `.clj-pulse/config.edn` at the workspace root
-(see
-[clj-pulse configuration](https://github.com/abogoyavlensky/clj-pulse#configuration)),
-which works in every editor; where both name the same key, the VS Code
-setting wins. To reset everything to the auto-detected defaults, remove the
-`clojurePulse.projects` setting — it applies live, no restart needed (a
-`.clj-pulse/config.edn` keeps its own say).
-
-To run a REPL inside a subproject, point a `create` configuration's `cwd` at
-the subproject's directory — see [REPL](#repl).
-
-## REPL
-
-The **REPL** view in the Clojure Pulse sidebar lists your project's REPLs. Each
-one either starts a server for you or attaches to a server you already have
-running. Run as many as you like at once; evaluations go to the **active** one.
-
-### Naming your REPLs
-
-REPLs live in `clojurePulse.replConfigurations`, in workspace settings, so they
-travel with the project:
-
-```json
-{
-  "clojurePulse.replConfigurations": [
-    {
-      "name": "dev",
-      "type": "create",
-      "command": "clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version \"1.7.0\"} io.github.tonsky/clj-reload {:mvn/version \"1.0.0\"}} :main-opts [\"-m\" \"nrepl.cmdline\"]}}}' -M:clojure-pulse/nrepl"
-    },
-    { "name": "local", "type": "connect", "port": ".nrepl-port" },
-    { "name": "staging", "type": "connect", "host": "10.0.0.5", "port": 7888 }
-  ]
-}
-```
-
-The **+** on the view title opens a form in an editor tab, and so does a
-click on any row. The selector at the top chooses the kind and the fields
-below it follow, all on one page: the command comes prefilled for the project's
-build file, and **Delete** removes the REPL from the same place. Switching the
-kind keeps what you typed for the other one. Drag the tab into a floating
-window if you would rather keep the form beside your code.
-
-Saving writes to workspace settings, or to your user settings when no folder is
-open. `settings.json` stays the source of truth, so you can always edit it by
-hand and watch the view follow. An entry that does not validate is skipped,
-with the reason in the *Clojure Pulse* output channel — the rest of the list
-keeps working.
-
-#### `create` — start a server
-
-`command` runs through your shell, verbatim: what the view shows is what runs.
-Clojure Pulse reads the port from the server's startup line (or the
-`.nrepl-port` file it writes) and connects. There is no startup timeout, so a
-first run may take as long as it needs to download dependencies — the output
-channel shows the progress, and **Stop** is available throughout.
-
-The command the form prefills follows the build file at the workspace root:
-`deps.edn` gets the Clojure CLI one below, `project.clj` gets
-`lein repl :headless`, and `lgx.edn` gets `lgx nrepl`.
-
-The Clojure CLI command needs nothing in your `deps.edn`:
-
-```sh
-clojure -Sdeps '{:aliases {:clojure-pulse/nrepl {:extra-deps {nrepl/nrepl {:mvn/version "1.7.0"} io.github.tonsky/clj-reload {:mvn/version "1.0.0"}} :main-opts ["-m" "nrepl.cmdline"]}}}' -M:clojure-pulse/nrepl
-```
-
-Besides nREPL it injects [clj-reload](https://github.com/tonsky/clj-reload),
-which the test commands use to reload what you changed before they run
-([Reload before tests](#reload-before-tests)). Delete that dependency if you do
-not want it; everything else keeps working. A Leiningen project adds
-`[io.github.tonsky/clj-reload "1.0.0"]` to its `:dev` profile instead, and a
-REPL you configured before this version keeps the command you saved until you
-add the dependency by hand.
-
-It injects nREPL as an *alias*, so your own aliases compose with it: change the
-last argument to `-M:dev:test:clojure-pulse/nrepl` and every alias contributes
-its `:extra-deps`, while `:main-opts` (last alias wins) still starts nREPL. The
-namespaced name cannot collide with an alias of your own. The field is yours
-either way: any command that starts an nREPL server will do, a `bb` task or a
-Makefile target included.
-
-Add `"cwd"` (relative to the workspace root) to run the command somewhere else,
-such as a module in a monorepo.
-
-#### `connect` — attach to a running server
-
-`host` defaults to `localhost`. `port` is either a number or the path to a file
-holding one, relative to the workspace root — `".nrepl-port"` is the file nREPL
-writes, so that entry finds whatever port today's server picked.
-
-### Running them
-
-Start and stop from the buttons on each row, or from the Command Palette:
-**Start REPL** and **Stop REPL**. The same commands serve both kinds of
-configuration: starting a `connect` entry attaches to the running server, and
-stopping it disconnects. To bind one REPL to a key, pass its name as the
-command argument in `keybindings.json`:
-
-```json
-{
-  "key": "ctrl+alt+r",
-  "command": "clojurePulse.startRepl",
-  "args": "dev"
-}
-```
-
-**Restart REPL** does both halves in one go, and it is how a configuration
-edited while a REPL is running takes effect: a live REPL keeps the settings it
-started with, and the edit is applied on the way back up. Right-click a running
-row for it, or pick *Restart* from the status-bar REPL menu.
-
-Each REPL streams into its own **Output** channel, named `REPL: <name>` — a
-real editor buffer with Clojure highlighting, search, and scrollback. The
-output icon on a row opens it. A configured REPL keeps its channel across
-disconnects and restarts, so the history stays readable; an unsaved host/port
-connection is transient, and its channel goes away when it disconnects.
-
-When several REPLs are connected, one is **active** and receives every
-evaluation. Connecting a REPL makes it active; **Set Active REPL** (the row
-button, or *Switch active REPL* in the status-bar menu) moves the target. Stop
-the active REPL and there is no target until you choose one — evaluations warn
-rather than land somewhere you did not intend.
-
-### Evaluating
-
-- **Evaluate Current Form** — with no selection, evaluates the form at the
-  cursor. It picks the token under (or just before) the cursor, the form that
-  ends just before the cursor, or the innermost enclosing form — so putting the
-  cursor right after a closing paren evaluates that whole form. A `#_` discard
-  is unwrapped so the form itself runs, and the form is evaluated in the file's
-  namespace (its nearest preceding `ns` form). A non-empty selection is
-  evaluated as-is.
-
-  The highlighted bracket pair is that form's own brackets: Clojure Pulse
-  replaces VS Code's bracket matcher in Clojure files (it would highlight
-  `(bar)` in `(foo)|(bar)` where eval sends `(foo)`) by setting
-  `editor.matchBrackets` to `"never"` for the `clojure` language and drawing
-  its own highlight in the native colours. Tokens and strings get no highlight,
-  and neither does anything below an unclosed bracket. To get VS Code's matcher
-  back, set `"[clojure]": { "editor.matchBrackets": "always" }` in your
-  settings — the extension's highlight steps aside.
-- **Evaluate Top Form** — evaluates the top-level form around the cursor from
-  anywhere inside it, or the one ending just before the cursor, so a `defn`
-  can be re-evaluated without leaving its body. A `#_` discard is unwrapped
-  and the form runs in the file's namespace, as above. Inside a `(comment …)`
-  block, the forms directly under `comment` count as top level, so a rich
-  comment evaluates one form at a time. The selection is ignored; use
-  **Evaluate Current Form** to send a selection.
-- **Select Current Form** — selects exactly what **Evaluate Current Form**
-  would send, so it doubles as a preview: select, look, then evaluate the
-  selection.
-- **Evaluate File** — compiles the whole buffer (unsaved changes included) via
-  nREPL's `load-file`, so the file's own `ns` form takes effect and stack
-  traces carry real file/line locations. The run is silent — no output panel
-  opening on top of your code, no focus lost — with the verdict in the status
-  bar: the file name with a spinner while it loads, then green on success or a
-  red background carrying the compile error's first line in its tooltip. Click
-  it to open the REPL output, which has the full report either way.
-- **Reload before tests** — every test command starts by saving the dirty
-  Clojure files and reloading the namespaces whose files changed on disk,
-  along with the namespaces that depend on them, so the code you just edited
-  is the code the test runs against. It uses
-  [clj-reload](https://github.com/tonsky/clj-reload), which the prefilled
-  Clojure CLI command puts on the classpath for you. A file that no longer
-  compiles aborts the run: a notification names the namespace and the error's
-  first line, and the full trace is in the REPL's output channel. Without
-  clj-reload on the classpath the tests run as they always did, and the status
-  bar says so once per connection. Set
-  `clojurePulse.test.reloadBeforeRun` to `"none"` to turn the whole step off.
-  See [Reload before tests](#reload-before-tests) for what the extension
-  assumes about your project.
-- **Run Test at Cursor** — with the cursor inside a top-level `deftest` (or
-  right after its closing paren), re-evaluates the test in the file's namespace
-  so the buffer's current version is what runs, then executes it via
-  `clojure.test`. If the namespace isn't loaded yet, the file is loaded
-  automatically first — no manual **Evaluate File** needed. The summary map
-  (`{:test 1, :pass 2, :fail 0, …}`) appears inline on the form; the full
-  report streams to the REPL's output channel without moving focus there
-  (when inline results are off, the channel is shown up front, as for every
-  eval command — revealed, never focused). The gutter marks the deftest with a green check circle on
-  pass or a red cross circle on fail — hover the deftest's first line for the
-  failure report — and the status bar shows the verdict at a glance: the test
-  name in green when it passed, on a red background with fail/error counts
-  when it didn't; click it to open the REPL output. Marks always show the
-  result of the **last test command** only: a new run wipes the previous
-  report, and an edit to a marked deftest removes its (now stale) gutter
-  verdict. The status bar's verdict spot is shared with custom REPL commands
-  and **Evaluate File** — it shows the last run of any kind, so a newer run
-  replaces what is on display (the gutter marks keep the test report either
-  way). Works against JVM Clojure (1.11+) and
-  let-go REPLs — with one let-go caveat: until let-go gains `run-test-var`, a
-  single-test run there calls the test function directly, skipping
-  `use-fixtures` fixtures.
-- **Run Tests in Namespace** — runs every top-level `deftest` in the current
-  buffer. The buffer is loaded first (as **Evaluate File** does), so helpers
-  and tests are refreshed and what runs is exactly what you see; then each
-  test runs in turn, and its gutter mark appears as it finishes. A failing
-  test does not stop the run. The status bar shows the namespace name — a
-  spinner while it runs, then green on pass, or a red background with the
-  summed fail/error counts. Results live in the gutter and the REPL's output
-  channel: bulk runs paint no inline decorations, so an error that aborts the
-  run (a file that doesn't compile) is reported as a notification. Two
-  deliberate limits: a discarded `#_(deftest …)` is skipped (discarding a
-  test is how you disable it, and the load never defines it), as is one
-  wrapped in a reader conditional (`#?(:clj (deftest …))`); and because each
-  test runs on its own, `:once` fixtures run once *per test*, not once per
-  namespace (and on a let-go without `run-test-var`, the same fallback the
-  single-test command uses skips fixtures entirely).
-- **Run Last Test Command** — repeats whatever test command ran last, from
-  anywhere. The Cursive workflow this copies: run a `deftest`, switch to the
-  business-logic code, change something, then re-run the test without ever
-  leaving the file you're in. The change is saved and reloaded for you. The command re-reads the test
-  file's current content (unsaved edits included), finds the test again by
-  namespace and name — so it survives the deftest moving around the file — and
-  runs it exactly as the original command would: same gutter marks on the test
-  file, same status-bar verdict. Focus stays where you are; the test file is
-  never opened or revealed. If the recorded test has since been renamed or
-  deleted, a status-bar message says so instead of guessing.
-- **Inline results** — by default the value appears at the **end of the line**
-  in a muted, Cursive-style hint (never wedged between brackets): faint while it
-  runs, and the error's first line in red on failure. Hover the result for the
-  full value and a **Copy result** link. The evaluated form flashes briefly so
-  you can see what was sent. Press **Escape** to hide the results; they also
-  clear when you edit the evaluated form. **Copy Evaluation Result** copies the
-  value at the cursor. Turn the
-  hints off with the `clojurePulse.inlineEvalResults` setting — results still
-  stream to the REPL's output channel.
-- **Status bar** — `nREPL <name> host:port` at the bottom left names the active
-  REPL. Click it to show its output, switch the active REPL, add a
-  configuration, or disconnect. If a server goes away, its REPL returns to
-  *stopped*, the channel notes the lost connection, and a `create` REPL's
-  process is cleaned up with it. Tests, file evaluations, and custom REPL
-  commands share a run indicator beside it. Use **Clojure Pulse: Clear status
-  bar** in the Command Palette to dismiss its spinner or result. An active run
-  continues, and its completion stays hidden; the next run shows a new status.
-  Connection indicators remain visible.
-
-The REPL connection is independent of the `clj-pulse` language server — either
-works without the other.
-
-The eval commands ship without default keybindings. Bind the ones you use, for
-example in `keybindings.json`:
-
-```json
-{
-  "key": "cmd+enter",
-  "command": "clojurePulse.evalCurrentForm",
-  "when": "editorTextFocus && editorLangId == clojure"
-}
-```
-
-### Reload before tests
-
-The test commands reload what changed before they run, through
-[clj-reload](https://github.com/tonsky/clj-reload). It reloads only the
-namespaces whose files changed on disk and the namespaces that depend on them,
-in dependency order, and `defonce` vars survive the reload.
-
-**What the extension assumes: nothing.** It calls plain
-`clj-reload.core/reload` and nothing else. It never calls `init`, so your own
-`init` in `user.clj` (with `:no-unload`, `:no-reload`, `:output`) wins. It
-never calls a project's own reset wrapper, so an Integrant, Component or Mount
-system is not restarted before your test. A project that wants state to follow
-reloads uses clj-reload's own `before-ns-unload` and `after-ns-reload` hooks,
-plus `defonce` and `^:clj-reload/keep`; those fire inside `reload` and work
-here unchanged.
-
-If clj-reload is watching no files, the status bar says so once per
-connection. That is almost always an `init` whose `:files` regex matches
-nothing: clj-reload matches the *whole* file name, so tools.namespace's
-`#"\.clj"` idiom matches none of them, and every reload quietly does nothing.
-Use `#".*\.cljc?"` instead. (`integrant.repl`'s `set-reload-options!` passes
-its `:file-pattern` straight through to clj-reload as `:files`.)
-
-Three limits worth knowing:
-
-- clj-reload reads files from disk. Dirty editors are saved first, but an
-  untitled buffer has no file, so it is never reloaded.
-- clj-reload's idea of "changed" starts when `clj-reload.core` is first
-  required. Clojure Pulse requires it the moment a REPL connects. For a
-  `connect` REPL you started yourself, edits made between the JVM starting and
-  the extension connecting are missed; `(require 'clj-reload.core)` in your
-  `user.clj` closes that window.
-- It is JVM-only. On let-go the reload probe finds nothing to call and the
-  tests run without reloading.
-
-### Custom commands
-
-Save the snippets you send to the REPL all day — `(user/reset)`,
-`(user/stop)` — as named commands. The **REPL Commands** view sits between
-the REPL and External Libraries panes; the **+** on its title opens the same
-kind of editor-tab form the REPL manager uses, with a name and the code to
-run. Clicking a row opens that form; the play button on the row runs the
-command. The palette's **Run Custom REPL Command** picks one by name, and a
-keybinding runs one directly:
-
-```json
-{
-  "key": "ctrl+alt+r",
-  "command": "clojurePulse.runCustomReplCommand",
-  "args": "reset"
-}
-```
-
-A run is silent: no output panel stealing space, no notifications. The status
-bar shows a spinner while the code runs, then the verdict — the command name
-in green (hover for the result value) or on a red background when the
-evaluation failed. Click the item to open the REPL output; the transcript
-always carries the full exchange. The verdict spot is shared with test
-commands and **Evaluate File**: the status bar shows the last run of any kind,
-and a newer run replaces it.
-
-The commands live in the `clojurePulse.customReplCommands` setting, saved to
-workspace settings when a folder is open:
-
-```json
-[
-  { "name": "reset", "code": "(user/reset)" }
-]
-```
-
-The code is sent to the active REPL exactly as written, in the session's
-current namespace, so use fully-qualified symbols as in `(user/reset)`. A
-keybinding refers to a command by name; rename the command and the keybinding
-needs the new name too.
-
-## Commands
-
-Run these from the Command Palette:
-
-- **Clojure Pulse: Restart Language Server** — restart the language server.
-- **Clojure Pulse: Show Language Server Output** — open the language server's
-  output channel.
-- **Clojure Pulse: Start REPL** — bring up a configured REPL, `create` or
-  `connect`. Takes a name as its argument, so a keybinding can start one
-  directly. With nothing configured yet, it opens the form instead.
-- **Clojure Pulse: Stop REPL** — stop a running REPL, killing the server it
-  started, or disconnect from one it attached to.
-- **Clojure Pulse: Restart REPL** — stop a REPL and start it again, applying a
-  configuration edited while it was running. Takes a name as its argument, like
-  Start REPL.
-- **Clojure Pulse: Add REPL Configuration** — open the form for a new REPL
-  (also the **+** on the REPL view).
-- **Clojure Pulse: Edit REPL Configuration** — pick a REPL and open the form
-  on it (also a click on its row).
-- **Clojure Pulse: Set Active REPL** — choose which REPL evaluations go to.
-- **Clojure Pulse: Show REPL Output** — open a REPL's output channel (also
-  the output icon on its row).
-- **Clojure Pulse: Evaluate Current Form** — evaluate the form at the cursor,
-  or the selection when there is one, in the active REPL.
-- **Clojure Pulse: Evaluate Top Form** — evaluate the top-level form around
-  the cursor in the active REPL; inside a `(comment …)` block, the form
-  directly under `comment`.
-- **Clojure Pulse: Evaluate File** — load the whole current file into the REPL,
-  reporting in the status bar rather than opening the output panel.
-- **Clojure Pulse: Copy Evaluation Result** — copy the value of the result at
-  the cursor.
-- **Clojure Pulse: Run Test at Cursor** — reload what changed, then
-  re-evaluate and run the `deftest` under the cursor in the active REPL,
-  loading the file's namespace first if needed.
-- **Clojure Pulse: Run Tests in Namespace** — reload what changed, load the
-  current file, and run every top-level `deftest` in it, one after another.
-- **Clojure Pulse: Run Last Test Command** — repeat the last test command
-  (either of the two above) without switching to the test file.
-- **Clojure Pulse: Run Custom REPL Command** — run a saved command in the
-  active REPL. Takes a name as its argument, so a keybinding can run one
-  directly; with nothing configured yet, it opens the form instead.
-- **Clojure Pulse: Add Custom REPL Command** — open the form for a new command
-  (also the **+** on the REPL Commands view).
-- **Clojure Pulse: Edit Custom REPL Command** — pick a command and open the
-  form on it (also a click on its row).
-- **Clojure Pulse: Refresh External Libraries** — reload the External Libraries
-  tree (also available as a button on the view title).
-- **Clojure Pulse: Show ClojureDocs** — add the ClojureDocs entry for the
-  symbol under the cursor to the editor hover. See [ClojureDocs](#clojuredocs).
-
-A few actions stay out of the palette because they already have a better home.
-Enter and Escape are bound to `clojurePulse.newline` and
-`clojurePulse.clearInlineResults`; rebind them in Keyboard Shortcuts if you
-want other keys. **Select Current Form** (`clojurePulse.selectCurrentForm`)
-ships without a binding — add one in Keyboard Shortcuts to use it. Deleting a
-REPL configuration or a custom command is the **Delete** button on its Edit
-form, or the row's context menu. Adding a project to External Libraries is
-the **+** on that view's title, and the status-bar `nREPL` item opens a menu
-of REPL actions.
-
-## Using it on its own
-
-Clojure Pulse contributes the `clojure` language itself. If you also have Calva
-(or another extension that registers the `clojure` language) installed, disable
-it to avoid a duplicate language registration — Clojure Pulse is meant to stand
-on its own.
-
-## Development
-
-### Setup
-
-The toolchain is pinned with [mise](https://mise.jdx.dev/) (see `.mise.toml`):
-Node.js plus the `clj-pulse` server for end-to-end testing. With mise installed,
-from a fresh clone:
-
-```sh
-make setup       # mise install (Node + clj-pulse) + npm install
-```
-
-On Linux the test suite launches a real VS Code, which needs a virtual display —
-install `xvfb` (`sudo apt-get install -y xvfb`). macOS needs nothing extra.
-
-### Tasks
-
-Run `make` to list every task:
-
-| Command | Description |
-| --- | --- |
-| `make compile` | Type-check and bundle the extension |
-| `make watch` | Rebuild the bundle on change |
-| `make lint` | Run ESLint |
-| `make test` | Run the test suite (uses `xvfb` on Linux) |
-| `make check` | Lint, compile, and test |
-| `make fetch-server` | Download the pinned `clj-pulse` for this machine into `server/` |
-| `make package` | Build the `.vsix` for this machine, with `clj-pulse` bundled |
-| `make package-universal` | Build the `.vsix` without a bundled server |
-| `make install-extension` | Build the `.vsix` and install it into VS Code |
-
-Press <kbd>F5</kbd> in VS Code to launch an Extension Development Host with the
-extension loaded.
-
-### Install it on your own projects
-
-To run Clojure Pulse day-to-day from source — like a Marketplace install, but
-local — build and install the `.vsix` (requires the `code` command on your
-`PATH`):
-
-```sh
-make install-extension
-```
-
-That fetches the pinned `clj-pulse` for your platform and runs
-`code --install-extension clojure-pulse-<platform>-<version>.vsix --force`.
-You can also install it from the UI: Extensions view → **⋯** → **Install from
-VSIX…**. Reload VS Code afterwards, and rerun the command to update after
-changes (bump `version` in `package.json` for clean version tracking).
-
-### Releasing
-
-An extension release carries exactly one `clj-pulse` version, pinned as
-`cljPulseVersion` in `package.json`. To release:
-
-1. Bump `version` in `package.json`.
-2. Bump `cljPulseVersion` to the
-   [clj-pulse release](https://github.com/abogoyavlensky/clj-pulse/releases)
-   to ship.
-3. Commit, then `make tag`.
-
-The release workflow builds one `.vsix` per platform, each with that
-`clj-pulse` inside, plus the universal build, and publishes them all to
-GitHub Releases.
-
-## License
+Inspired by [Cursive](https://cursive-ide.com/) and
+[avli/clojureVSCode](https://github.com/avli/clojureVSCode).
 
 [MIT](LICENSE). Copyright (c) 2026 Andrey Bogoyavlenskiy.
-
-`data/clojuredocs.json` is derived from the
-[ClojureDocs](https://clojuredocs.org) export: examples under CC0, docstrings
-from Clojure under the EPL.
+ClojureDocs examples are CC0; bundled Clojure docstrings are under the EPL.
+See [ClojureDocs](docs/projects.md#clojuredocs) and
+[Development](docs/development.md) for details and contributing instructions.
