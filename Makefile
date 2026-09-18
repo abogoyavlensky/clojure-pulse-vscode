@@ -3,8 +3,24 @@
 .DEFAULT_GOAL := help
 
 VERSION := $(shell node -p "require('./package.json').version")
-VSIX := clojure-pulse-$(VERSION).vsix
 EXTENSION_ID := abogoyavlensky.clojure-pulse
+
+# The vsce target for this machine, so `make package` bundles the matching
+# clj-pulse. Windows is not a supported dev host for this Makefile.
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_S),Darwin)
+HOST_OS := darwin
+else
+HOST_OS := linux
+endif
+ifneq (,$(filter arm64 aarch64,$(UNAME_M)))
+HOST_ARCH := arm64
+else
+HOST_ARCH := x64
+endif
+HOST_TARGET := $(HOST_OS)-$(HOST_ARCH)
+VSIX := clojure-pulse-$(HOST_TARGET)-$(VERSION).vsix
 
 # The VS Code test host needs a display; use a virtual one on Linux, run
 # directly elsewhere (e.g. macOS).
@@ -15,8 +31,9 @@ else
 TEST_CMD := xvfb-run -a npm test
 endif
 
-.PHONY: help setup install compile watch lint test check package \
-	install-extension uninstall-extension clean icon tag clojuredocs
+.PHONY: help setup install compile watch lint test check fetch-server package \
+	package-universal install-extension uninstall-extension clean icon tag \
+	clojuredocs
 
 help: ## List available tasks
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -49,7 +66,14 @@ icon: ## Regenerate images/icon.png (256x256) from docs/images/icon.png
 clojuredocs: ## Regenerate data/clojuredocs.json from the ClojureDocs export
 	npm run clojuredocs:update
 
-package: ## Build the installable .vsix
+fetch-server: ## Download the pinned clj-pulse for this machine into server/
+	scripts/fetch-server.sh $(HOST_TARGET)
+
+package: fetch-server ## Build the .vsix for this machine, with clj-pulse bundled
+	npx vsce package --target $(HOST_TARGET)
+
+package-universal: ## Build the .vsix without a bundled server (uses clj-pulse from PATH)
+	rm -rf server
 	npm run package
 
 tag: ## Tag the current commit with package.json's version and push the tag
@@ -62,5 +86,5 @@ install-extension: package ## Build the .vsix and install it into VS Code
 uninstall-extension: ## Remove the extension from VS Code
 	code --uninstall-extension $(EXTENSION_ID)
 
-clean: ## Remove build output and packaged artifacts
-	rm -rf dist out .vscode-test *.vsix
+clean: ## Remove build output, packaged artifacts and the fetched server
+	rm -rf dist out .vscode-test *.vsix server

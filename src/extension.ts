@@ -121,6 +121,9 @@ let replRegistry: ReplRegistry | undefined;
 /** The bundled ClojureDocs export (`data/clojuredocs.json`), handed to the
  *  server at start so `clojurePulse/clojureDocs` never touches the network. */
 let clojureDocsPath: string | undefined;
+/** The clj-pulse binary a platform build ships in `server/`. The universal
+ *  build has no such file, and resolution then falls back to `PATH`. */
+let bundledServerPath: string | undefined;
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
@@ -148,6 +151,10 @@ export async function activate(
   outputChannel = vscode.window.createOutputChannel("Clojure Pulse");
   statusBar = createStatusBar();
   clojureDocsPath = context.asAbsolutePath(path.join("data", "clojuredocs.json"));
+  bundledServerPath = context.asAbsolutePath(
+    path.join("server", process.platform === "win32" ? "clj-pulse.exe" : "clj-pulse"),
+  );
+  ensureExecutable(bundledServerPath);
   const clojureDocsRequests = new PendingClojureDocsRequest();
 
   context.subscriptions.push(
@@ -379,10 +386,29 @@ export async function deactivate(): Promise<void> {
   await stop();
 }
 
+/**
+ * Sets the execute bit on the bundled server. Extracting a `.vsix` does not
+ * always preserve file modes, and a binary without the bit is skipped by
+ * resolution as if it were absent. Failures are logged and ignored: a
+ * read-only install whose bit is already set is fine.
+ */
+function ensureExecutable(file: string): void {
+  if (process.platform === "win32" || !fs.existsSync(file)) {
+    return;
+  }
+  try {
+    fs.chmodSync(file, 0o755);
+  } catch (err: unknown) {
+    outputChannel?.appendLine(
+      `[clojure-pulse] could not set the execute bit on ${file}: ${String(err)}`,
+    );
+  }
+}
+
 function readConfig(): ServerConfig {
   const config = vscode.workspace.getConfiguration("clojurePulse");
   return {
-    path: config.get<string>("server.path", "clj-pulse"),
+    path: config.get<string>("server.path", ""),
     args: config.get<string[]>("server.args", []),
   };
 }
@@ -553,7 +579,7 @@ function serverConfig(): ReturnType<typeof toServerConfig> & {
 }
 
 async function start(): Promise<void> {
-  const resolution = resolveServerPath(readConfig());
+  const resolution = resolveServerPath(readConfig(), process.env, bundledServerPath);
 
   if (isError(resolution)) {
     outputChannel?.appendLine(`[clojure-pulse] ${resolution.error}`);
@@ -562,7 +588,9 @@ async function start(): Promise<void> {
     return;
   }
 
-  outputChannel?.appendLine(`[clojure-pulse] starting server: ${resolution.command}`);
+  outputChannel?.appendLine(
+    `[clojure-pulse] starting server: ${resolution.command} (${resolution.source})`,
+  );
   statusBar?.update("starting");
   // The ClojureDocs path is read by the server at `initialize` only, so it
   // rides along here and not in the `didChangeConfiguration` push (which
@@ -577,6 +605,7 @@ async function start(): Promise<void> {
     statusBar?.update(status, {
       serverInfo: newClient.initializeResult?.serverInfo,
       command: resolution.command,
+      source: resolution.source,
       lint: lintStatus,
     });
 
@@ -624,7 +653,15 @@ async function start(): Promise<void> {
       externalLibraries?.refresh();
     })
     .catch((err: unknown) => {
-      outputChannel?.appendLine(`[clojure-pulse] failed to start server: ${String(err)}`);
+      // Name the file that failed. For the bundle, also name the way out: a
+      // host that forbids executing files from the home directory can point
+      // the setting at a copy installed elsewhere.
+      const message =
+        resolution.source === "bundled"
+          ? `the bundled server failed to start (${resolution.command}). ` +
+            `Set "clojurePulse.server.path" to use a different binary.`
+          : `failed to start the language server (${resolution.command})`;
+      outputChannel?.appendLine(`[clojure-pulse] ${message}: ${String(err)}`);
       if (client === newClient) {
         stateListener?.dispose();
         stateListener = undefined;
@@ -634,7 +671,7 @@ async function start(): Promise<void> {
         lintStatusListener = undefined;
         lintStatus = undefined;
         client = undefined;
-        statusBar?.update("error", { message: "failed to start the language server" });
+        statusBar?.update("error", { message });
       }
     });
 }

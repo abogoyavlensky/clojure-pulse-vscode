@@ -3,6 +3,7 @@
   "displayName": "Clojure Pulse",
   "description": "Lightweight, powerful Clojure and let-go support, powered by the clj-pulse language server.",
   "version": "0.5.2",
+  "cljPulseVersion": "0.5.4",
   "publisher": "abogoyavlensky",
   "license": "MIT",
   "author": "Andrey Bogoyavlenskiy",
@@ -14,6 +15,9 @@
   "engines": {
     "vscode": "^1.97.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Programming Languages",
     "Linters"
@@ -56,8 +60,8 @@
       "properties": {
         "clojurePulse.server.path": {
           "type": "string",
-          "default": "clj-pulse",
-          "markdownDescription": "Path to the `clj-pulse` language server binary. A bare name (e.g. `clj-pulse`) is resolved from your `PATH`; an absolute or relative path is used as-is."
+          "default": "",
+          "markdownDescription": "Path to the `clj-pulse` language server binary. Leave empty to use the server bundled with the extension, falling back to `clj-pulse` on your `PATH`. A bare name (e.g. `clj-pulse`) is resolved from your `PATH`; an absolute or relative path is used as-is. Any non-empty value overrides the bundled server."
         },
         "clojurePulse.server.args": {
           "type": "array",

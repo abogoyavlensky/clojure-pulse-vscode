@@ -7,10 +7,14 @@ export interface ServerConfig {
   args: string[];
 }
 
+/** Where a resolved command came from; the status bar and error text name it. */
+export type ServerSource = "explicit" | "bundled" | "path";
+
 /** A successfully resolved server invocation. */
 export interface ResolvedServer {
   command: string;
   args: string[];
+  source: ServerSource;
 }
 
 /** A resolution failure carrying a user-facing message. */
@@ -27,28 +31,46 @@ export function isError(r: ServerResolution): r is ServerResolutionError {
 const DEFAULT_COMMAND = "clj-pulse";
 
 /**
- * Resolves the `clj-pulse` server command from configuration.
+ * Resolves the `clj-pulse` server command from configuration, in this order:
  *
- * - An explicit path (one containing a path separator) is trusted and returned
- *   verbatim — the user knows where their binary lives.
- * - A bare command name is searched across the `PATH` entries in `env`; the
- *   first executable match wins. If none is found, a structured error is
- *   returned so the caller can guide the user instead of crashing.
+ * 1. A non-empty setting is the user's choice and the bundle is ignored. An
+ *    explicit path (one containing a path separator) is trusted and returned
+ *    verbatim; a bare command name is searched across the `PATH` entries in
+ *    `env`, first executable match wins.
+ * 2. With an empty setting, the `bundled` candidate (the binary shipped inside
+ *    the extension, when this build has one) wins when it exists and is
+ *    executable.
+ * 3. Otherwise `clj-pulse` is searched on `PATH`.
+ *
+ * If nothing is found, a structured error is returned so the caller can guide
+ * the user instead of crashing.
  */
 export function resolveServerPath(
   config: ServerConfig,
   env: NodeJS.ProcessEnv = process.env,
+  bundled?: string,
 ): ServerResolution {
-  const command = config.path?.trim() || DEFAULT_COMMAND;
+  const configured = config.path?.trim() ?? "";
   const args = config.args ?? [];
 
-  if (command.includes("/") || command.includes(path.sep)) {
-    return { command, args };
+  if (configured) {
+    if (configured.includes("/") || configured.includes(path.sep)) {
+      return { command: configured, args, source: "explicit" };
+    }
+    return fromPath(configured, args, env);
   }
 
+  if (bundled && isExecutableFile(bundled)) {
+    return { command: bundled, args, source: "bundled" };
+  }
+
+  return fromPath(DEFAULT_COMMAND, args, env);
+}
+
+function fromPath(command: string, args: string[], env: NodeJS.ProcessEnv): ServerResolution {
   const resolved = findOnPath(command, env);
   if (resolved) {
-    return { command: resolved, args };
+    return { command: resolved, args, source: "path" };
   }
 
   return {
