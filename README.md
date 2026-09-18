@@ -2,14 +2,14 @@
 
 <img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse" width="96" />
 
-**Clojure editing, REPLs, and tests. Together in VS Code.**
+**Clojure editing, REPLs and tools in VS Code.**
 
 Supports Clojure and [let-go](https://github.com/nooga/let-go), with language
 intelligence from [clj-pulse](https://github.com/abogoyavlensky/clj-pulse).
 
-Move whole forms while preserving their layout. Evaluate code and see results
-inline. Keep named REPLs in the sidebar and rerun tests from the file you are
-editing. Platform builds include the fast-starting clj-pulse language server.
+Evaluate code and see results inline. Keep named REPLs in the sidebar and rerun tests from the file you are
+editing. Move whole forms while preserving their layout.
+Platform builds include the fast-starting clj-pulse language server.
 
 [Get started](docs/getting-started.md) · [All features](docs/features.md) ·
 [Documentation](docs/README.md) · [Keybindings](docs/keybindings.md)
