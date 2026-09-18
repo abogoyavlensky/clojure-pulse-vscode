@@ -18,9 +18,19 @@ interface Contributes {
   configuration: { properties: Record<string, { enum?: string[]; default?: unknown }> };
 }
 
-function contributes(): Contributes {
+interface Manifest {
+  cljPulseVersion?: string;
+  extensionKind?: string[];
+  contributes: Contributes;
+}
+
+function manifest(): Manifest {
   const raw = fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8");
-  return (JSON.parse(raw) as { contributes: Contributes }).contributes;
+  return JSON.parse(raw) as Manifest;
+}
+
+function contributes(): Contributes {
+  return manifest().contributes;
 }
 
 const PALETTE = [
@@ -86,5 +96,19 @@ suite("manifest", () => {
     const titles = new Map(contributes().commands.map((x) => [x.command, x.title]));
     assert.strictEqual(titles.get("clojurePulse.restart"), "Restart Language Server");
     assert.strictEqual(titles.get("clojurePulse.showOutput"), "Show Language Server Output");
+  });
+
+  test("the clj-pulse pin is a plain semver, read by CI and Make with node -p", () => {
+    assert.match(manifest().cljPulseVersion ?? "", /^\d+\.\d+\.\d+$/);
+  });
+
+  test("the extension runs where the files are, so the bundled server can too", () => {
+    assert.deepStrictEqual(manifest().extensionKind, ["workspace"]);
+  });
+
+  test("the server path defaults to empty, which means the bundled server", () => {
+    const setting = contributes().configuration.properties["clojurePulse.server.path"];
+    assert.ok(setting, "expected the clojurePulse.server.path setting");
+    assert.strictEqual(setting.default, "");
   });
 });
