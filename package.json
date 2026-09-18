@@ -1,7 +1,7 @@
 {
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
-  "description": "Lightweight, powerful Clojure and let-go support, powered by the clj-pulse language server.",
+  "description": "Clojure editing, REPLs, and tests. Together in VS Code. Supports Clojure and let-go, powered by clj-pulse.",
   "version": "0.5.2",
   "cljPulseVersion": "0.5.4",
   "publisher": "abogoyavlensky",
@@ -92,7 +92,7 @@
             "Community formatting via cljfmt: byte-identical to the cljfmt CLI (bundled cljfmt 0.16.5), honoring the nearest .cljfmt.edn / cljfmt.edn up the directory tree. Falls back to the structural rule on unbalanced mid-edit code.",
             "The fixed structural rule: two spaces inside symbol-headed lists, alignment to the first element elsewhere. Format Document with this engine only re-indents - it never removes whitespace, sorts namespaces, or otherwise rewrites code."
           ],
-          "markdownDescription": "Engine for indent-on-Enter and Format Document in Clojure files."
+          "markdownDescription": "Engine for indentation on Enter and paste, Format Document, and Format Selection in Clojure files."
         },
         "clojurePulse.maintainIndentation": {
           "type": "boolean",
@@ -140,7 +140,7 @@
             "Save dirty Clojure files and reload the namespaces that changed, plus their dependents, through clj-reload.",
             "Run the tests against whatever the REPL already has loaded."
           ],
-          "markdownDescription": "What the test commands do before they run a test. With `clj-reload` they save every dirty Clojure file and reload the namespaces that changed on disk — and their dependents — through [clj-reload](https://github.com/tonsky/clj-reload), when it is on the REPL's classpath, so the code you just edited is what the test exercises. A file that fails to compile aborts the run with a notification. Without clj-reload on the classpath the tests run as before. `none` turns the whole step off. See [Reload before tests](https://github.com/abogoyavlensky/clojure-pulse-vscode#reload-before-tests)."
+          "markdownDescription": "What the test commands do before they run a test. With `clj-reload` they save every dirty Clojure file and reload the namespaces that changed on disk — and their dependents — through [clj-reload](https://github.com/tonsky/clj-reload), when it is on the REPL's classpath, so the code you just edited is what the test exercises. A file that fails to compile aborts the run with a notification. Without clj-reload on the classpath the tests run as before. `none` turns the whole step off. See [Reload before tests](https://github.com/abogoyavlensky/clojure-pulse-vscode/blob/master/docs/testing.md#reload-before-tests)."
         },
         "clojurePulse.replConfigurations": {
           "type": "array",
@@ -335,7 +335,7 @@
       },
       {
         "view": "clojurePulse.externalLibraries",
-        "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: direct dependencies only (best effort).\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
+        "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: resolve with `lein classpath`; if unavailable, only cached direct dependencies are shown.\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
       }
     ],
     "commands": [
