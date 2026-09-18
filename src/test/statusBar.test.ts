@@ -70,6 +70,24 @@ suite("statusPresentation", () => {
     assert.doesNotMatch(view.tooltip, /Linting:/);
   });
 
+  test("a bundled server is marked as such on the command line", () => {
+    const view = statusPresentation("running", {
+      serverInfo: { name: "clj-pulse", version: "0.5.4" },
+      command: "/ext/server/clj-pulse",
+      source: "bundled",
+    });
+    assert.match(view.tooltip, /^\/ext\/server\/clj-pulse \(bundled\)$/m);
+  });
+
+  test("a PATH server keeps the plain command line", () => {
+    const view = statusPresentation("running", {
+      command: "/usr/local/bin/clj-pulse",
+      source: "path",
+    });
+    assert.match(view.tooltip, /^\/usr\/local\/bin\/clj-pulse$/m);
+    assert.doesNotMatch(view.tooltip, /bundled/);
+  });
+
   test("error sets the error flag and surfaces the message", () => {
     const view = statusPresentation("error", { message: "clj-pulse not found on PATH" });
     assert.match(view.text, /\$\(error\) clj-pulse/);

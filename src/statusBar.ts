@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { ServerSource } from "./serverPath";
 
 /** High-level server status shown to the user, decoupled from the LSP State enum. */
 export type ServerStatus = "starting" | "running" | "stopped" | "error";
@@ -21,6 +22,8 @@ export interface StatusDetail {
   serverInfo?: ServerInfo;
   /** The resolved server command, shown in the tooltip when running. */
   command?: string;
+  /** Where `command` came from; a bundled server is marked in the tooltip. */
+  source?: ServerSource;
   /** A short reason, shown in the tooltip for the error state. */
   message?: string;
   /**
@@ -54,7 +57,8 @@ export function statusPresentation(
       };
     case "running": {
       const version = detail.serverInfo?.version ? ` v${detail.serverInfo.version}` : "";
-      const where = detail.command ? `\n${detail.command}` : "";
+      const bundled = detail.source === "bundled" ? " (bundled)" : "";
+      const where = detail.command ? `\n${detail.command}${bundled}` : "";
       const lint = detail.lint ? `\n${lintLine(detail.lint)}` : "";
       return {
         text: "$(pulse) clj-pulse",
