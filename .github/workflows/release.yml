@@ -33,6 +33,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The pinned clj-pulse: the end-to-end tests run against the exact
+      # server the release ships.
+      - name: Fetch clj-pulse
+        run: scripts/fetch-server.sh linux-x64
+
+      # The jar e2e fixture (src/test/fixtures/jar-project) has no cached
+      # classpath, so clj-pulse resolves it through `clojure -Spath`, which
+      # needs a JDK and the Clojure CLI.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+
+      # Warm the classpath explicitly so a resolution failure is its own
+      # step, not a test timeout.
+      - name: Resolve e2e fixture classpath
+        run: cd src/test/fixtures/jar-project && clojure -Spath > /dev/null
+
       - name: Lint
         run: npm run lint
 
@@ -40,10 +62,26 @@ jobs:
         run: npm run compile
 
       - name: Test
+        env:
+          CLJ_PULSE_E2E_BIN: ${{ github.workspace }}/server/clj-pulse
         run: xvfb-run -a npm test
 
+      - name: End-to-end (jar)
+        env:
+          CLJ_PULSE_E2E_BIN: ${{ github.workspace }}/server/clj-pulse
+        run: xvfb-run -a npx vscode-test -l jar-e2e
+
+      # One .vsix per platform, each carrying that platform's clj-pulse, then
+      # the universal build with no server. All in one step so a failure
+      # anywhere fails the whole release: it is never half published.
       - name: Package extension
-        run: npm run package
+        run: |
+          for target in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+            scripts/fetch-server.sh "$target"
+            npx vsce package --target "$target"
+            rm -rf server
+          done
+          npx vsce package
 
       - name: Generate checksums
         run: sha256sum clojure-pulse-*.vsix > checksums.txt
