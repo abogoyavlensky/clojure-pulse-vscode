@@ -10,6 +10,8 @@ node_modules/
 
 # Packaged extension
 *.vsix
+# The fetched clj-pulse binary (scripts/fetch-server.sh), bundled into the .vsix
+server/
 
 # Test runner
 .vscode-test/
