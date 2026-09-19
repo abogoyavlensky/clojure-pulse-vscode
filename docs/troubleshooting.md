@@ -68,4 +68,7 @@ editor to inspect conflicts and `when` conditions.
 
 [Open an issue](https://github.com/abogoyavlensky/clojure-pulse-vscode/issues)
 with the extension/server versions, OS or remote environment, relevant
-settings, a small reproduction, and the relevant output log excerpt.
+settings, a small reproduction, and the relevant output log excerpt. For the
+versions, copy the startup line from the Clojure Pulse output channel ("Clojure
+Pulse: Show Language Server Output"): it names the extension version, the
+server version, and the server path.
