@@ -82,6 +82,23 @@ export function statusPresentation(
 }
 
 /**
+ * The output-channel line written each time the server reaches Running, so a
+ * bug report can copy both versions from one place. The version degrades to
+ * "unknown" for servers that predate `serverInfo`, but the source and path are
+ * always in hand on the extension side, so they are always printed.
+ */
+export function serverReadyLine(
+  extensionVersion: string,
+  detail: { serverInfo?: ServerInfo; command: string; source: ServerSource },
+): string {
+  const name = detail.serverInfo?.name ?? "clj-pulse";
+  const version = detail.serverInfo?.version
+    ? `v${detail.serverInfo.version} (${detail.source})`
+    : `(version unknown, ${detail.source})`;
+  return `extension v${extensionVersion}, server ${name} ${version}: ${detail.command}`;
+}
+
+/**
  * The tooltip's lint line. Warming is a suffix, never a state change: the item
  * keeps its normal icon, because a cache scan degrades nothing while it runs.
  */
