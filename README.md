@@ -20,6 +20,8 @@ Use the **REPL manager** to name and configure your project's REPLs in a form.
 Start a new process or connect to an existing server, run several at once, and
 choose which one receives your evaluations. Each has its own output history.
 
+![REPL Manager](./docs/images/repl-manager.gif)
+
 Save everyday snippets such as `(user/reset)` and `(user/stop)` in **REPL
 Commands**, then run them from the sidebar or your own shortcuts.
 
