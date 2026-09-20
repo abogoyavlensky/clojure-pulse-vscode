@@ -20,7 +20,13 @@ import {
 } from "./projects";
 import { ProjectFormPanel } from "./projectFormPanel";
 import { isError, resolveServerPath, ServerConfig } from "./serverPath";
-import { createStatusBar, LintStatus, ServerStatus, StatusBar } from "./statusBar";
+import {
+  createStatusBar,
+  LintStatus,
+  serverReadyLine,
+  ServerStatus,
+  StatusBar,
+} from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
 import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
 import {
@@ -124,6 +130,8 @@ let clojureDocsPath: string | undefined;
 /** The clj-pulse binary a platform build ships in `server/`. The universal
  *  build has no such file, and resolution then falls back to `PATH`. */
 let bundledServerPath: string | undefined;
+/** The extension's own version, named on the output-channel ready line. */
+let extensionVersion = "";
 
 /** What activate() returns; consumed by integration tests. */
 export interface ExtensionApi {
@@ -155,6 +163,7 @@ export async function activate(
     path.join("server", process.platform === "win32" ? "clj-pulse.exe" : "clj-pulse"),
   );
   ensureExecutable(bundledServerPath);
+  extensionVersion = String(context.extension.packageJSON.version);
   const clojureDocsRequests = new PendingClojureDocsRequest();
 
   context.subscriptions.push(
@@ -609,8 +618,20 @@ async function start(): Promise<void> {
       lint: lintStatus,
     });
 
+  // The ready line is logged here rather than in `start().then()` because the
+  // client restarts itself after a crash, and only this listener sees that
+  // Running transition.
   stateListener = newClient.onDidChangeState((event) => {
     repaintStatus(toServerStatus(event.newState));
+    if (event.newState === State.Running) {
+      outputChannel?.appendLine(
+        `[clojure-pulse] ${serverReadyLine(extensionVersion, {
+          serverInfo: newClient.initializeResult?.serverInfo,
+          command: resolution.command,
+          source: resolution.source,
+        })}`,
+      );
+    }
     // A crashed server can never report "no longer resolving": a stop of any
     // kind closes the view's classpath progress bar.
     if (event.newState === State.Stopped) {
