@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { statusPresentation } from "../statusBar";
+import { serverReadyLine, statusPresentation } from "../statusBar";
 
 suite("statusPresentation", () => {
   test("starting shows an animated spinner", () => {
@@ -93,5 +93,51 @@ suite("statusPresentation", () => {
     assert.match(view.text, /\$\(error\) clj-pulse/);
     assert.match(view.tooltip, /not found/i);
     assert.strictEqual(view.error, true);
+  });
+});
+
+suite("serverReadyLine", () => {
+  test("names both versions, the source, and the path", () => {
+    const line = serverReadyLine("0.6.0", {
+      serverInfo: { name: "clj-pulse", version: "0.5.4" },
+      command: "/ext/server/clj-pulse",
+      source: "bundled",
+    });
+    assert.strictEqual(
+      line,
+      "extension v0.6.0, server clj-pulse v0.5.4 (bundled): /ext/server/clj-pulse",
+    );
+  });
+
+  test("without serverInfo the version reads unknown but the source stays", () => {
+    const line = serverReadyLine("0.6.0", {
+      command: "/usr/local/bin/clj-pulse",
+      source: "path",
+    });
+    assert.strictEqual(
+      line,
+      "extension v0.6.0, server clj-pulse (version unknown, path): /usr/local/bin/clj-pulse",
+    );
+  });
+
+  test("a name without a version is used and still marked unknown", () => {
+    const line = serverReadyLine("0.6.0", {
+      serverInfo: { name: "my-server" },
+      command: "/opt/my-server",
+      source: "path",
+    });
+    assert.strictEqual(
+      line,
+      "extension v0.6.0, server my-server (version unknown, path): /opt/my-server",
+    );
+  });
+
+  test("the explicit source appears verbatim", () => {
+    const line = serverReadyLine("0.6.0", {
+      serverInfo: { name: "clj-pulse", version: "0.5.4" },
+      command: "/home/me/bin/clj-pulse",
+      source: "explicit",
+    });
+    assert.match(line, /\(explicit\)/);
   });
 });
