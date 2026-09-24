@@ -2,7 +2,7 @@
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
   "description": "Clojure editing, REPLs, and tests. Powered by clj-pulse language server.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "cljPulseVersion": "0.5.4",
   "publisher": "abogoyavlensky",
   "license": "MIT",
