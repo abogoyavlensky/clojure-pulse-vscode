@@ -2,7 +2,8 @@
 
 <img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse" width="96" />
 
-**Clojure editing, REPLs and tools in VS Code.**
+**Clojure in VS Code with a bundled native language server. Instant start,
+inline evaluation, REPLs, and tests.**
 Supports Clojure and [let-go](https://github.com/nooga/let-go), with language
 intelligence from [clj-pulse](https://github.com/abogoyavlensky/clj-pulse).
 
@@ -100,13 +101,13 @@ bindings out of the box.
 
 ## Installation
 
-Requires **VS Code 1.97+**. Download your platform's `.vsix` from
-[GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest),
-then choose **Extensions → ⋯ → Install from VSIX…**.
+Install **Clojure Pulse** from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=abogoyavlensky.clojure-pulse),
+or from [Open VSX](https://open-vsx.org/extension/abogoyavlensky/clojure-pulse)
+in VSCodium and Cursor. Requires **VS Code 1.97+**. The language server comes
+with it; to start a REPL, you also need your project's runtime and build tool.
 
-Platform packages include clj-pulse starting with 0.6.0. Older releases and the
-universal package need a separate server installation. To start a REPL, you
-also need your project's runtime and build tool.
+To install a `.vsix` by hand, see [Manual install](docs/getting-started.md#manual-install).
 
 [Installation, remote hosts, and first evaluation →](docs/getting-started.md)
 

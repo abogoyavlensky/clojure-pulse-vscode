@@ -4,10 +4,16 @@
 
 ## Install
 
-Platform-specific packages include clj-pulse starting with 0.6.0. With an
-older release, follow the universal-build server instructions below.
+Install **Clojure Pulse** from the
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=abogoyavlensky.clojure-pulse),
+or from [Open VSX](https://open-vsx.org/extension/abogoyavlensky/clojure-pulse)
+in VSCodium and Cursor: search for "Clojure Pulse" in the Extensions view. The
+editor picks the build for your platform, with the `clj-pulse` language server
+inside.
 
-Until the extension reaches the VS Code Marketplace, install it from
+### Manual install
+
+Each release is also on
 [GitHub Releases](https://github.com/abogoyavlensky/clojure-pulse-vscode/releases/latest).
 Starting with 0.6.0, releases have one `.vsix` per platform, with the `clj-pulse` server
 inside, plus a universal one without it:
@@ -33,6 +39,9 @@ inside, plus a universal one without it:
 
 3. Reload VS Code.
 
+Releases before 0.6.0 have no server inside; follow the universal-build
+server instructions below.
+
 ## Requirements
 
 VS Code 1.97 or newer. Platform builds include the language server.
@@ -40,9 +49,11 @@ To start a REPL or resolve project dependencies, also install your project's
 runtime and build tool: the JDK and Clojure CLI, Leiningen, or let-go/lgx.
 
 **Remote hosts.** The extension runs where your files are, so under
-Remote-SSH, WSL or a dev container it runs on the remote host. Install the
-`.vsix` that matches the *remote* machine's platform there: while connected,
-Extensions view → **⋯** → **Install from VSIX…**.
+Remote-SSH, WSL or a dev container it runs on the remote host. A Marketplace
+or Open VSX install picks the remote machine's build by itself. On a host
+without access to either registry, install the `.vsix` that matches the
+*remote* machine's platform: while connected, Extensions view → **⋯** →
+**Install from VSIX…**.
 
 **Universal build.** The universal `.vsix` runs `clj-pulse` from your `PATH`
 (or the path in `clojurePulse.server.path`), so install the server yourself:
