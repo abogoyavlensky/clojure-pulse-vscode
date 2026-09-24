@@ -3,7 +3,6 @@
 <img src="https://raw.githubusercontent.com/abogoyavlensky/clojure-pulse-vscode/master/docs/images/icon.png" alt="Clojure Pulse" width="96" />
 
 **Clojure editing, REPLs and tools in VS Code.**
-
 Supports Clojure and [let-go](https://github.com/nooga/let-go), with language
 intelligence from [clj-pulse](https://github.com/abogoyavlensky/clj-pulse).
 
@@ -14,14 +13,20 @@ Platform builds include the fast-starting clj-pulse language server.
 [Get started](docs/getting-started.md) · [All features](docs/features.md) ·
 [Documentation](docs/README.md) · [Keybindings](docs/keybindings.md)
 
+![REPL Manager](./docs/images/preview.jpeg)
+
 ## Keep your REPLs close
 
 Use the **REPL manager** to name and configure your project's REPLs in a form.
 Start a new process or connect to an existing server, run several at once, and
 choose which one receives your evaluations. Each has its own output history.
 
+![REPL Manager](./docs/images/repl-manager.gif)
+
 Save everyday snippets such as `(user/reset)` and `(user/stop)` in **REPL
 Commands**, then run them from the sidebar or your own shortcuts.
+
+![REPL Manager](./docs/images/repl-commands.gif)
 
 [REPL manager and custom commands →](docs/repl.md)
 
@@ -42,6 +47,8 @@ For example, moving this map keeps its values aligned:
  :active? true}
 ```
 
+![Indentation](./docs/images/indentation.gif)
+
 [Editing and formatting →](docs/editing.md)
 
 ## Evaluate where you work
@@ -54,6 +61,8 @@ which form **Evaluate Current Form** will send, including inside rich comments:
 (comment
   (mapv inc [1 2 3])) ; evaluate (mapv ...) to get [2 3 4]
 ```
+
+![Inline Evaluation](./docs/images/inline-eval.gif)
 
 [Evaluation and inline results →](docs/repl.md#evaluating)
 
@@ -77,6 +86,8 @@ changed code is saved and reloaded before the run.
   fixes, and diagnostics, with optional clj-kondo linting.
 - **Offline ClojureDocs:** open community examples in a focused editor hover
   with **Show ClojureDocs**.
+
+![External Libraries](./docs/images/libs.gif)
 
 [Navigation, libraries, and projects →](docs/projects.md)
 
