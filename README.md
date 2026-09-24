@@ -26,6 +26,8 @@ choose which one receives your evaluations. Each has its own output history.
 Save everyday snippets such as `(user/reset)` and `(user/stop)` in **REPL
 Commands**, then run them from the sidebar or your own shortcuts.
 
+![REPL Manager](./docs/images/repl-commands.gif)
+
 [REPL manager and custom commands →](docs/repl.md)
 
 ## Move a form. Its body follows.
@@ -84,6 +86,8 @@ changed code is saved and reloaded before the run.
   fixes, and diagnostics, with optional clj-kondo linting.
 - **Offline ClojureDocs:** open community examples in a focused editor hover
   with **Show ClojureDocs**.
+
+![External Libraries](./docs/images/libs.gif)
 
 [Navigation, libraries, and projects →](docs/projects.md)
 
