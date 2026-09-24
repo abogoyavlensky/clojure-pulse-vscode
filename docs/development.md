@@ -63,7 +63,14 @@ An extension release carries exactly one `clj-pulse` version, pinned as
 
 The release workflow builds one `.vsix` per platform, each with that
 `clj-pulse` inside, plus the universal build, and publishes them all to
-GitHub Releases.
+GitHub Releases. It then publishes the same six files to the VS Code
+Marketplace and Open VSX, using the `VSCE_PAT` and `OVSX_PAT` repository
+secrets.
+
+Both tokens expire, the Azure DevOps one after a year at most. A failed publish
+step is the first sign. Renew the token, update the secret with
+`gh secret set`, and re-run the job: `--skip-duplicate` skips files a registry
+already has, so the re-run is safe.
 
 ## Documentation and recordings
 
