@@ -19,6 +19,7 @@ interface Contributes {
 }
 
 interface Manifest {
+  keywords?: string[];
   cljPulseVersion?: string;
   extensionKind?: string[];
   contributes: Contributes;
@@ -96,6 +97,10 @@ suite("manifest", () => {
     const titles = new Map(contributes().commands.map((x) => [x.command, x.title]));
     assert.strictEqual(titles.get("clojurePulse.restart"), "Restart Language Server");
     assert.strictEqual(titles.get("clojurePulse.showOutput"), "Show Language Server Output");
+  });
+
+  test("the listing keeps its search keywords", () => {
+    assert.ok(manifest().keywords?.includes("clojure"), "expected clojure among the keywords");
   });
 
   test("the clj-pulse pin is a plain semver, read by CI and Make with node -p", () => {

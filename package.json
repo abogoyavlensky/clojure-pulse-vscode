@@ -1,7 +1,7 @@
 {
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
-  "description": "Clojure editing, REPLs, and tests. Powered by clj-pulse language server.",
+  "description": "Clojure in VS Code with a bundled native language server. Instant start, inline evaluation, REPLs, and tests.",
   "version": "0.6.1",
   "cljPulseVersion": "0.5.4",
   "publisher": "abogoyavlensky",
@@ -21,6 +21,14 @@
   "categories": [
     "Programming Languages",
     "Linters"
+  ],
+  "keywords": [
+    "clojure",
+    "clojurescript",
+    "lsp",
+    "repl",
+    "nrepl",
+    "let-go"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
