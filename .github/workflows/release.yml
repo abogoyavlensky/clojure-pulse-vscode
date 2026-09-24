@@ -97,12 +97,13 @@ jobs:
       # even if a registry is down. Each tool reads the target platform from
       # the file's manifest, so one command publishes all six. --skip-duplicate
       # makes a re-run of an already-published version a no-op.
-      - name: Publish to the VS Code Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --skip-duplicate --packagePath clojure-pulse-*.vsix
+      # TODO: uncomment when get Azure tokens
+      # - name: Publish to the VS Code Marketplace
+      #   env:
+      #     VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      #   run: npx vsce publish --skip-duplicate --packagePath clojure-pulse-*.vsix
 
-      - name: Publish to Open VSX
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx ovsx publish --skip-duplicate --packagePath clojure-pulse-*.vsix
+      # - name: Publish to Open VSX
+      #   env:
+      #     OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      #   run: npx ovsx publish --skip-duplicate --packagePath clojure-pulse-*.vsix
