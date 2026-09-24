@@ -714,6 +714,7 @@
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.21.0",
     "eslint": "^9.0.0",
+    "ovsx": "^1.2.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.0.0",
     "vscode-oniguruma": "^2.0.1",
