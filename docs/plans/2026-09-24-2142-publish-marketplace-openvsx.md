@@ -1,5 +1,7 @@
 # Publish to the Marketplace and Open VSX Implementation Plan
 
+**Status: completed**
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every tagged release publishes its six `.vsix` files to the VS Code Marketplace and Open VSX from CI, and the docs send users to the Marketplace first.
@@ -132,26 +134,26 @@ time with the same six targets
 - Modify: `package.json`
 - Test: `src/test/manifest.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
   In `src/test/manifest.test.ts`, add a test in the `manifest` suite that
   reads the top-level `keywords` array from `package.json` (widen the parsed
   type as needed) and asserts it includes `"clojure"`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test -l unit -g manifest`
   Expected: FAIL, `keywords` is undefined.
 
-- [ ] **Step 3: Edit `package.json`**
+- [x] **Step 3: Edit `package.json`**
   - `description`: "Clojure in VS Code with a bundled native language server.
     Instant start, inline evaluation, REPLs, and tests."
   - Add `"keywords": ["clojure", "clojurescript", "lsp", "repl", "nrepl", "let-go"]`
     after `categories`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
   Run: `npm run compile-tests && xvfb-run -a npx vscode-test -l unit -g manifest`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Describe the extension for the Marketplace and add keywords"`
 
 ### Task 2: ovsx devDependency
@@ -159,15 +161,15 @@ time with the same six targets
 **Files:**
 - Modify: `package.json`, `package-lock.json`
 
-- [ ] **Step 1: Install**
+- [x] **Step 1: Install**
   Run: `npm install --save-dev ovsx`
   Expected: `ovsx` appears under `devDependencies` next to `@vscode/vsce`.
 
-- [ ] **Step 2: Confirm both tools run from the project**
+- [x] **Step 2: Confirm both tools run from the project**
   Run: `npx vsce --version && npx ovsx --version`
   Expected: two version lines.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Add ovsx for publishing to Open VSX"`
 
 ### Task 3: Publish steps in the release workflow
@@ -175,7 +177,7 @@ time with the same six targets
 **Files:**
 - Modify: `.github/workflows/release.yml`
 
-- [ ] **Step 1: Add the steps**
+- [x] **Step 1: Add the steps**
   After the `softprops/action-gh-release@v2` step, add:
   - `- name: Publish to the VS Code Marketplace`, `env: VSCE_PAT: ${{ secrets.VSCE_PAT }}`,
     `run: npx vsce publish --skip-duplicate --packagePath clojure-pulse-*.vsix`
@@ -186,11 +188,11 @@ time with the same six targets
   so one command publishes all six; `--skip-duplicate` makes a re-run of an
   already-published version a no-op.
 
-- [ ] **Step 2: Validate the YAML**
+- [x] **Step 2: Validate the YAML**
   Run: `npx --yes js-yaml .github/workflows/release.yml > /dev/null && echo ok`
   Expected: `ok`.
 
-- [ ] **Step 3: Duplicate-publish check against the current release**
+- [x] **Step 3: Duplicate-publish check against the current release**
   This is a real publish, not a dry run: any target missing from a registry
   would be uploaded. Against 0.6.1, which is fully published on the
   Marketplace, `--skip-duplicate` makes it a no-op there. Do not run the
@@ -209,7 +211,12 @@ time with the same six targets
   exit 0. Skip this step if the tokens are not created yet, and say so in
   the hand-off. Run `rm -f *.vsix` afterwards.
 
-- [ ] **Step 4: Commit**
+  > Deviation: tokens were not set, so the publish was skipped. The download
+  > check ran into `.tmp/v061/` instead of the repo root, because
+  > `rm -f *.vsix` would also delete an unrelated ignored
+  > `clojure-pulse-linux-x64-0.5.2.vsix` there. Result: 6 files.
+
+- [x] **Step 4: Commit**
   `git commit -m "Publish each release to the VS Code Marketplace and Open VSX"`
 
 ### Task 4: Docs
@@ -217,7 +224,7 @@ time with the same six targets
 **Files:**
 - Modify: `README.md`, `docs/getting-started.md`, `docs/development.md`
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
   Use /writing-clearly.
   - Replace the bold line under the title with the new description sentence.
     Keep the following sentence about Clojure and let-go support.
@@ -230,7 +237,11 @@ time with the same six targets
     instructions with one line: a manual `.vsix` install is described in the
     getting-started page.
 
-- [ ] **Step 2: getting-started.md**
+  > Deviation: dropped the "platform packages include clj-pulse starting with
+  > 0.6.0" sentence from the README. It only matters for manual installs,
+  > and getting-started still covers it.
+
+- [x] **Step 2: getting-started.md**
   - Install: Marketplace and Open VSX first, with the same two links. The
     platform build with clj-pulse inside is picked automatically.
   - Rename the current download steps to **Manual install** and keep the
@@ -239,30 +250,62 @@ time with the same six targets
   - Remote hosts: a Marketplace install picks the remote host's build by
     itself; the manual route is for hosts without registry access.
 
-- [ ] **Step 3: development.md**
+  > Deviation: moved the "releases before 0.6.0 have no server" note from the
+  > top of Install to the end of Manual install, where it applies.
+
+- [x] **Step 3: development.md**
   In Releasing, after the sentence about GitHub Releases, add that the
   workflow then publishes all six files to the Marketplace and Open VSX using
   the `VSCE_PAT` and `OVSX_PAT` repo secrets, that both tokens expire (Azure
   DevOps at most yearly) and a failed publish step is the first symptom, and
   that a re-run after fixing a token is safe because of `--skip-duplicate`.
 
-- [ ] **Step 4: Check the links**
+- [x] **Step 4: Check the links**
   Run: `grep -n "marketplace.visualstudio.com\|open-vsx.org" README.md docs/getting-started.md`
   Expected: both URLs present in both files, no typos.
   Run: `grep -rn "Until the extension reaches" README.md docs/`
   Expected: no output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "Point installation docs at the Marketplace and Open VSX"`
 
 ### Task 5: Full check and hand-off notes
 
-- [ ] **Step 1: Full suite**
+- [x] **Step 1: Full suite**
   Run: `make check`
   Expected: lint, compile and tests pass.
 
-- [ ] **Step 2: Hand-off**
+- [x] **Step 2: Hand-off**
   State in the final message whether the tokens were verified (Task 3 step
   3) and that the first CI publish happens on the next tag. Suggest updating
   the GitHub repo description to the new sentence, which is a settings change
   outside the repo.
+
+---
+
+## Completion summary
+
+Implemented on branch `publish-marketplace-openvsx`:
+
+- `package.json`: new description and keywords; a manifest test asserts
+  `clojure` is among the keywords.
+- `ovsx` 1.2.0 devDependency. It reads `OVSX_PAT` and accepts several
+  `--packagePath` files with `--skip-duplicate`, as the plan assumed.
+- `release.yml`: Marketplace and Open VSX publish steps after the GitHub
+  Release step.
+- README, getting-started and development docs point at both registries.
+
+Verification: `make check` passes (870 passing, 2 pending; the jar e2e test is
+pending locally without `CLJ_PULSE_E2E_BIN`). A locally packaged `.vsix`
+carries the new description and keywords in `extension.vsixmanifest`. Codex
+reviewed every task and found nothing to fix. The real check is the next tag.
+
+Deviations:
+- Task 3 step 3: no tokens, so no publish. The download check ran in `.tmp/`
+  to protect an unrelated ignored `.vsix` in the repo root.
+- Task 4: dropped the 0.6.0 sentence from the README; moved the pre-0.6.0 note
+  in getting-started under Manual install.
+
+What the plan could have specified better: the `rm -f *.vsix` cleanup should
+have used a scratch directory. The repo root can hold unrelated ignored
+`.vsix` files.
