@@ -2,7 +2,7 @@
   "name": "clojure-pulse",
   "displayName": "Clojure Pulse",
   "description": "Clojure in VS Code with a bundled native language server. Instant start, inline evaluation, REPLs, and tests.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "cljPulseVersion": "0.5.4",
   "publisher": "abogoyavlensky",
   "license": "MIT",
