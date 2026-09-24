@@ -45,6 +45,8 @@ For example, moving this map keeps its values aligned:
  :active? true}
 ```
 
+![Indentation](./docs/images/indentation.gif)
+
 [Editing and formatting →](docs/editing.md)
 
 ## Evaluate where you work
@@ -57,6 +59,8 @@ which form **Evaluate Current Form** will send, including inside rich comments:
 (comment
   (mapv inc [1 2 3])) ; evaluate (mapv ...) to get [2 3 4]
 ```
+
+![Inline Evaluation](./docs/images/inline-eval.gif)
 
 [Evaluation and inline results →](docs/repl.md#evaluating)
 
