@@ -224,7 +224,7 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 - Modify: `src/externalLibraries.ts`
 - Test: `src/test/externalLibraries.test.ts`
 
-- [ ] **Step 1: Write failing tests** (grouped server and `flatServer` fallback where it matters):
+- [x] **Step 1: Write failing tests** (grouped server and `flatServer` fallback where it matters):
   - `filter` is `""` initially; with no filter the tree is unchanged (existing tests keep passing);
   - a query matching a library label shows that library only, collapsed, and expanding it lists its full contents;
   - a query matching files shows the library pruned: only matching files and their ancestor folders, at every level;
@@ -239,15 +239,17 @@ test host under xvfb). Expected: all suites pass, 0 failing.
   - `setFilter` fires `onDidChangeTreeData` and its promise settles after the index loads;
   - with `libraryEntries` held on a deferred promise, `setFilter("x")` followed by `setFilter("")` before it resolves leaves the tree unfiltered once everything settles;
   - the directory walk does not descend into a symlinked directory (`FileType.Directory | FileType.SymbolicLink`).
-- [ ] **Step 2: Run `make test`** — the new tests fail.
-- [ ] **Step 3: Implement** per the Design's Structure section: the `filter`
+- [x] **Step 2: Run `make test`** — the new tests fail.
+- [x] **Step 3: Implement** per the Design's Structure section: the `filter`
   getter and `setFilter`; the generalized fold; the directory walk with its
   cache, dot-directory skip, and 5000-file cap; the 16-wide jar index load
   through `entriesFor`; filtered node construction; `getTreeItem` /
   `getChildren` handling of the new optional fields; `refresh()` clearing the
   walk cache.
-- [ ] **Step 4: Run `make test`** — PASS.
-- [ ] **Step 5: Commit** — `Filter the External Libraries tree by name`
+- [x] **Step 4: Run `make test`** — PASS.
+- [x] **Step 5: Commit** — `Filter the External Libraries tree by name`
+
+> Deviation: codex hit its usage limit, so this task's review checkpoint used an independent Claude subagent instead. Its one should-fix — a failed project load was cached as the query's empty result, pinning "no matches" — is fixed in a follow-up commit, with added tests for the 200/201 auto-expand boundary and the 16-request cap.
 
 ### Task 3: Manifest
 
@@ -255,14 +257,14 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 - Modify: `package.json`
 - Test: `src/test/manifest.test.ts`
 
-- [ ] **Step 1: Update the test** — add `clojurePulse.searchExternalLibraries`
+- [x] **Step 1: Update the test** — add `clojurePulse.searchExternalLibraries`
   to `PALETTE` (the clear command is hidden, so it is not listed).
-- [ ] **Step 2: Edit `package.json`** per the Design's `package.json` list:
+- [x] **Step 2: Edit `package.json`** per the Design's `package.json` list:
   two commands, four ordered `view/title` entries for the view, the
   `commandPalette` hide, the two `viewsWelcome` entries.
-- [ ] **Step 3: Run `make test`** — manifest suite passes. (The activation
+- [x] **Step 3: Run `make test`** — manifest suite passes. (The activation
   test does not yet know the commands; they are registered in Task 4.)
-- [ ] **Step 4: Commit** — `Contribute External Libraries search commands`
+- [x] **Step 4: Commit** — `Contribute External Libraries search commands`
 
 ### Task 4: Extension wiring
 
