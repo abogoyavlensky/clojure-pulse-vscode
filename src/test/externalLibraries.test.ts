@@ -658,7 +658,8 @@ suite("ExternalLibrariesProvider — search filter", () => {
   });
 
   test("pruned nodes auto-expand only while matches are few", async () => {
-    const many = Array.from({ length: 201 }, (_, i) => `big/f${i}.clj`);
+    // 200 `f` files and one `g` file: `big/f` matches exactly the limit.
+    const many = [...Array.from({ length: 200 }, (_, i) => `big/f${i}.clj`), "big/g.clj"];
     const big = { name: "big", version: "1", path: "/big.jar", kind: "jar" };
     const provider = new ExternalLibrariesProvider((method, param) =>
       method === "clojurePulse/projects"
@@ -666,8 +667,7 @@ suite("ExternalLibrariesProvider — search filter", () => {
         : Promise.resolve((param as { path: string }).path === "/big.jar" ? many : []),
     );
 
-    await provider.setFilter("f1");
-    // f1, f10–f19, f100–f199: 111 matches.
+    await provider.setFilter("big/f");
     let [proj] = await provider.getChildren();
     let [lib] = await provider.getChildren(proj);
     assert.strictEqual(
@@ -680,7 +680,7 @@ suite("ExternalLibrariesProvider — search filter", () => {
       vscode.TreeItemCollapsibleState.Expanded,
     );
 
-    await provider.setFilter(".clj"); // all 201
+    await provider.setFilter(".clj"); // 201, one over the limit
     [proj] = await provider.getChildren();
     [lib] = await provider.getChildren(proj);
     assert.strictEqual(
@@ -692,6 +692,59 @@ suite("ExternalLibrariesProvider — search filter", () => {
       provider.getTreeItem(folder).collapsibleState,
       vscode.TreeItemCollapsibleState.Collapsed,
     );
+  });
+
+  test("at most 16 jar entry requests are in flight while indexing", async () => {
+    const jars = Array.from({ length: 20 }, (_, i) => ({
+      name: `lib${i}`,
+      version: "1",
+      path: `/lib${i}.jar`,
+      kind: "jar",
+    }));
+    const resolvers: (() => void)[] = [];
+    let inFlight = 0;
+    let peak = 0;
+    const provider = new ExternalLibrariesProvider((method) => {
+      if (method === "clojurePulse/projects") {
+        return Promise.resolve([project({ path: ".", libraries: jars })]);
+      }
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      return new Promise<string[]>((res) => {
+        resolvers.push(() => {
+          inFlight -= 1;
+          res(["x/core.clj"]);
+        });
+      });
+    });
+
+    const settled = provider.setFilter("core");
+    // Release requests one at a time until all twenty have been made.
+    for (let released = 0; released < jars.length; released++) {
+      await new Promise((r) => setTimeout(r, 0));
+      resolvers[released]();
+    }
+    await settled;
+    assert.strictEqual(resolvers.length, 20);
+    assert.strictEqual(peak, 16);
+  });
+
+  test("a failed project load under a filter is retried on the next paint", async () => {
+    let calls = 0;
+    const provider = new ExternalLibrariesProvider((method) => {
+      if (method === "clojurePulse/projects") {
+        calls += 1;
+        return calls === 1
+          ? Promise.reject(new Error("not ready"))
+          : Promise.resolve([project({ path: ".", libraries: [AERO] })]);
+      }
+      return Promise.resolve(ENTRIES["/aero.jar"]);
+    });
+    await provider.setFilter("aero"); // this build's project load fails
+    assert.strictEqual(calls, 1);
+    const roots = await provider.getChildren();
+    assert.strictEqual(calls, 2, "the failed empty result was not cached");
+    assert.strictEqual(roots.length, 1);
   });
 
   test("jar entries are requested once across queries, again after refresh", async () => {

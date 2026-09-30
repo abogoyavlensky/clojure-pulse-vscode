@@ -300,7 +300,7 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
   private filteredRootNodes(): Promise<LibNode[]> {
     const key = `${this.generation}\0${this.query}`;
     if (this.filteredRoot?.key !== key) {
-      this.filteredRoot = { key, nodes: this.buildFilteredRoot(this.query) };
+      this.filteredRoot = { key, nodes: this.buildFilteredRoot(this.query, key) };
     }
     return this.filteredRoot.nodes;
   }
@@ -312,9 +312,14 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
    * and only the projects left with a library. A build superseded by a newer
    * query or a refresh still resolves — to its stale caller only.
    */
-  private async buildFilteredRoot(query: string): Promise<LibNode[]> {
+  private async buildFilteredRoot(query: string, key: string): Promise<LibNode[]> {
     const terms = parseQuery(query);
     const roots = await this.rootChildren();
+    if (!this.rootNodes && this.filteredRoot?.key === key) {
+      // The root load failed and was evicted for a retry; don't pin its empty
+      // result as this query's answer, or the retry would never happen.
+      this.filteredRoot = undefined;
+    }
     const groups: { projectPath: string; project?: ProjectInfo; libraries: Library[] }[] =
       roots.map((node) =>
         node.type === "project"
