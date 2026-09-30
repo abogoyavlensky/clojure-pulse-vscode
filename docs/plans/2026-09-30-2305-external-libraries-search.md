@@ -288,7 +288,7 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 **Files:**
 - Modify: `docs/projects.md`, `docs/reference.md`, `docs/features.md`
 
-- [ ] **Step 1: Manual check** in an Extension Development Host (F5) on a
+- [x] **Step 1: Manual check** in an Extension Development Host (F5) on a
   deps.edn project: search button opens the box; typing narrows the tree live;
   a library name shows the library whole; `<lib> <file>` and a dotted namespace
   find a file and clicking it opens the read-only source; Esc restores the
@@ -297,11 +297,56 @@ test host under xvfb). Expected: all suites pass, 0 failing.
   the "No libraries or files match" welcome with a working Clear Filter link;
   refresh keeps the filter. If no display is available to the executor, say so
   in the final report rather than claiming this step.
-- [ ] **Step 2: Docs** — `docs/projects.md`: a short paragraph in "External
+- [x] **Step 2: Docs** — `docs/projects.md`: a short paragraph in "External
   Libraries" on searching (what matches, live narrowing, clearing).
   `docs/reference.md`: a row for `clojurePulse.searchExternalLibraries` in the
   table that holds Refresh External Libraries, and a row for the clear command
   (view button only). `docs/features.md`: mention search in the External
   Libraries bullet. Use /writing-clearly.
-- [ ] **Step 3: Run `make test`** — PASS.
-- [ ] **Step 4: Commit** — `Document External Libraries search`
+- [x] **Step 3: Run `make test`** — PASS.
+- [x] **Step 4: Commit** — `Document External Libraries search`
+
+> Deviation: no interactive display was available, so Step 1 ran headless instead: a throwaway (uncommitted) test in the VS Code test host started the real clj-pulse on `src/test/fixtures/jar-project` and drove the real provider and commands. Verified: `clojure.walk` finds `clojure/walk.clj` in the Clojure 1.12.5 jar (first search incl. indexing 83 ms, later ones 16–26 ms); `spec alpha` shows both spec libraries whole and collapsed; a nonsense query yields an empty tree; the pruned leaf's `jar:` URI opens through the content provider; the search command opens and cancels, and clear runs, without error. Not driven: typing into the box, Enter/Esc, the title description, and the welcome-view link — those need a hand check.
+
+
+---
+
+## Completion
+
+**Status: completed** (branch `external-libraries-search`)
+
+**Summary.** The External Libraries view has a search button (and a palette
+command) that opens an input box; the tree narrows live to libraries matched
+by name (shown whole) and to matching files with their folders (pruned,
+auto-expanded up to 200 matches). Matching is multi-term, case-insensitive,
+and understands paths and namespaces. The filter survives refreshes, shows
+next to the view title, and is cleared by a title button, an empty submit, or
+the no-match welcome's link. Pure matcher in `src/externalLibrariesFilter.ts`;
+filtered tree in `ExternalLibrariesProvider`; wiring in `src/extension.ts`.
+Suite: 894 passing (was 870).
+
+**Issues encountered.**
+- Codex hit its usage limit after Task 1; the remaining review checkpoints
+  used independent Claude subagents.
+- Review of Task 2: a failed project load was cached as the query's empty
+  result — fixed, with tests.
+- Review of Tasks 3–4: clicking a result hid the input box, which ran the
+  Esc-restore and snapped the tree back under the cursor — fixed with
+  `ignoreFocusOut` and a single-box guard; the context key is now reset on
+  activation.
+- Real jars contain many AOT `.class` files, so a namespace query like
+  `clojure.walk` returns 23 `walk$…class` files next to `walk.clj`. Left as
+  designed; raised with the user.
+- Prettier (width 100, matching the file's existing style) rewrapped a few
+  untouched lines in `src/externalLibraries.ts` and its test.
+
+**Deviations** (details under each task): Task 2 review by subagent plus the
+failed-load fix; Task 4 focuses a hidden view before searching, reads the
+trimmed query back from `setFilter`, and keeps the box open on focus loss;
+Task 5's manual check ran headless against a real server, with the input-box
+interactions left for a hand check.
+
+**What the plan could have specified better:** how the input box behaves on
+focus loss — "Esc restores" silently assumed a hide means Esc, and the tree
+being the result list made that wrong. It also should have checked what real
+jars contain (AOT classes) before settling the matching rules.

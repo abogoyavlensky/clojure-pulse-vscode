@@ -43,6 +43,20 @@ falls back to direct dependencies with explicit versions already in `~/.m2`.
 The empty state offers classpath setup guidance. The tree updates after re-indexing,
 and the refresh button rescans projects and their enabled classpaths.
 
+To find a library or a file inside one, click the search button in the view's
+title bar and start typing. The tree narrows as you type:
+
+- A library whose name or version matches appears whole.
+- Otherwise a library appears with just its matching files and their folders.
+- Words can match in any order, and a namespace works too: `aero core`,
+  `aero/core`, and `aero.core` all find `aero/core.cljc`.
+
+The search box stays open while you click through the results. Press Enter to
+keep the filter, or Esc to go back to the one you had before.
+The query shows next to the view title. Clear it with the view's clear button or
+by submitting an empty search. The first search after a refresh reads every
+library's file list, so it can take a moment on large projects.
+
 ## Monorepos
 
 A workspace holding several Clojure projects - a root plus `apps/backend`,
