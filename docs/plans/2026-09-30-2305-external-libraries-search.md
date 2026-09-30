@@ -204,7 +204,7 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 - Create: `src/externalLibrariesFilter.ts`
 - Test: `src/test/externalLibrariesFilter.test.ts`
 
-- [ ] **Step 1: Write failing tests** covering: `parseQuery` trims, lowercases,
+- [x] **Step 1: Write failing tests** covering: `parseQuery` trims, lowercases,
   splits on any whitespace, and returns `[]` for blank input; a label match
   returns `{ whole: true }` regardless of entries; `aero core`, `aero/core`,
   `aero.core`, and `AERO CORE` each return only `aero/core.cljc` from
@@ -212,11 +212,11 @@ test host under xvfb). Expected: all suites pass, 0 failing.
   label `aero 1.1.6`; `_` → `-` in the namespace form (`my-ns` finds
   `my_ns/core.clj`); terms may be split between label and path; no match
   returns `undefined`; an entries-only match preserves the input order.
-- [ ] **Step 2: Run `make test`** — the new suite fails (module missing).
-- [ ] **Step 3: Implement** `parseQuery` and `matchLibrary` per the Design's
+- [x] **Step 2: Run `make test`** — the new suite fails (module missing).
+- [x] **Step 3: Implement** `parseQuery` and `matchLibrary` per the Design's
   Matching section. No `vscode` import.
-- [ ] **Step 4: Run `make test`** — PASS.
-- [ ] **Step 5: Commit** — `Add External Libraries name matcher`
+- [x] **Step 4: Run `make test`** — PASS.
+- [x] **Step 5: Commit** — `Add External Libraries name matcher`
 
 ### Task 2: Filtered tree in the provider
 

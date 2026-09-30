@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import {
   ExternalLibrariesProvider,
+  LibNode,
   rescanOrRefresh,
   SendRequest,
 } from "../externalLibraries";
@@ -161,9 +162,7 @@ suite("ExternalLibrariesProvider", () => {
       ["util", vscode.FileType.Directory],
     ];
     const provider = new ExternalLibrariesProvider(
-      flatServer(() =>
-        Promise.resolve([{ name: "my-local", path: "/some/dir", kind: "dir" }]),
-      ),
+      flatServer(() => Promise.resolve([{ name: "my-local", path: "/some/dir", kind: "dir" }])),
       (uri) => {
         reads.push(uri.fsPath);
         return Promise.resolve(dirEntries);
@@ -224,9 +223,7 @@ suite("ExternalLibrariesProvider — grouped by project", () => {
 
   test("resolving shows a spinner and an ellipsis", async () => {
     const provider = new ExternalLibrariesProvider(() =>
-      Promise.resolve([
-        project({ classpath: { enabled: true, status: "resolving" } }),
-      ]),
+      Promise.resolve([project({ classpath: { enabled: true, status: "resolving" } })]),
     );
     const [node] = await provider.getChildren();
     const item = provider.getTreeItem(node);
@@ -282,9 +279,7 @@ suite("ExternalLibrariesProvider — grouped by project", () => {
   });
 
   test("method-not-found falls back to the flat library list", async () => {
-    const provider = new ExternalLibrariesProvider(
-      flatServer(() => Promise.resolve([JAR_LIB])),
-    );
+    const provider = new ExternalLibrariesProvider(flatServer(() => Promise.resolve([JAR_LIB])));
     const roots = await provider.getChildren();
     assert.deepStrictEqual(labelsOf(provider, roots), ["aero 1.1.6"]);
   });
@@ -336,9 +331,7 @@ suite("ExternalLibrariesProvider — grouped by project", () => {
     let calls = 0;
     const provider = new ExternalLibrariesProvider(() => {
       calls += 1;
-      return calls === 1
-        ? Promise.reject(new Error("not ready"))
-        : Promise.resolve([project()]);
+      return calls === 1 ? Promise.reject(new Error("not ready")) : Promise.resolve([project()]);
     });
 
     assert.deepStrictEqual(await provider.getChildren(), []);
@@ -403,9 +396,7 @@ suite("ExternalLibrariesProvider — root status callback", () => {
     const first = provider.getChildren();
     provider.refresh();
     await provider.getChildren(); // second request settles, reports false
-    resolveFirst([
-      project({ classpath: { enabled: true, status: "resolving" } }),
-    ]);
+    resolveFirst([project({ classpath: { enabled: true, status: "resolving" } })]);
     await first;
     // The stale true must not arrive after the fresh false.
     assert.deepStrictEqual(reports, [false]);
@@ -451,5 +442,356 @@ suite("rescanOrRefresh", () => {
     assert.strictEqual(refreshed, 1);
     assert.strictEqual(rescanning, false);
     assert.ok(log.some((line) => line.includes("server busy")));
+  });
+});
+
+suite("ExternalLibrariesProvider — search filter", () => {
+  const AERO = { name: "aero", version: "1.1.6", path: "/aero.jar", kind: "jar" };
+  const MALLI = { name: "malli", version: "0.16.0", path: "/malli.jar", kind: "jar" };
+  const ENTRIES: Record<string, string[]> = {
+    "/aero.jar": ["META-INF/MANIFEST.MF", "aero/core.cljc", "aero/impl/walk.cljc"],
+    "/malli.jar": ["malli/core.cljc", "malli/util.cljc"],
+  };
+
+  /** A grouped server whose jars answer from `ENTRIES`, counting requests. */
+  function groupedServer(
+    projects: Record<string, unknown>[],
+    entryCalls: string[] = [],
+  ): SendRequest {
+    return (method, param) => {
+      if (method === "clojurePulse/projects") {
+        return Promise.resolve(projects);
+      }
+      assert.strictEqual(method, "clojurePulse/libraryEntries");
+      const path = (param as { path: string }).path;
+      entryCalls.push(path);
+      return Promise.resolve(ENTRIES[path] ?? []);
+    };
+  }
+
+  /** Every label reachable under `node`, depth-first, indented by level. */
+  async function outline(
+    provider: ExternalLibrariesProvider,
+    node?: LibNode,
+    depth = 0,
+  ): Promise<string[]> {
+    const lines: string[] = [];
+    for (const child of await provider.getChildren(node)) {
+      lines.push(`${"  ".repeat(depth)}${provider.getTreeItem(child).label}`);
+      if (provider.getTreeItem(child).collapsibleState !== vscode.TreeItemCollapsibleState.None) {
+        lines.push(...(await outline(provider, child, depth + 1)));
+      }
+    }
+    return lines;
+  }
+
+  test("filter is empty initially", () => {
+    const provider = new ExternalLibrariesProvider(groupedServer([]));
+    assert.strictEqual(provider.filter, "");
+  });
+
+  test("a library-name match shows the library whole and collapsed", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([project({ path: ".", libraries: [AERO, MALLI] })]),
+    );
+    await provider.setFilter("malli");
+    assert.strictEqual(provider.filter, "malli");
+
+    const [proj] = await provider.getChildren();
+    assert.strictEqual(
+      provider.getTreeItem(proj).collapsibleState,
+      vscode.TreeItemCollapsibleState.Expanded,
+    );
+    const libs = await provider.getChildren(proj);
+    assert.deepStrictEqual(labelsOf(provider, libs), ["malli 0.16.0"]);
+    assert.strictEqual(
+      provider.getTreeItem(libs[0]).collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    // Its contents are the full jar, not pruned.
+    const [folder] = await provider.getChildren(libs[0]);
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren(folder)), [
+      "core.cljc",
+      "util.cljc",
+    ]);
+  });
+
+  test("a file match prunes the library to matching files and their folders", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([project({ path: ".", libraries: [AERO, MALLI] })]),
+    );
+    await provider.setFilter("walk");
+    const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? ".";
+    assert.deepStrictEqual(await outline(provider), [
+      workspaceName,
+      "  aero 1.1.6",
+      "    aero",
+      "      impl",
+      "        walk.cljc",
+    ]);
+  });
+
+  test("namespace-style queries find files", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([project({ path: ".", libraries: [AERO, MALLI] })]),
+    );
+    await provider.setFilter("malli.util");
+    const [proj] = await provider.getChildren();
+    const [lib] = await provider.getChildren(proj);
+    assert.strictEqual(provider.getTreeItem(lib).label, "malli 0.16.0");
+    const [folder] = await provider.getChildren(lib);
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren(folder)), ["util.cljc"]);
+  });
+
+  test("projects without surviving libraries are hidden", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([
+        project({ path: ".", libraries: [AERO] }),
+        project({ path: "apps/x", libraries: [MALLI] }),
+      ]),
+    );
+    await provider.setFilter("malli");
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren()), ["apps/x"]);
+
+    await provider.setFilter("nothing-matches-this");
+    assert.deepStrictEqual(await provider.getChildren(), []);
+  });
+
+  test("the flat fallback is filtered too", async () => {
+    const provider = new ExternalLibrariesProvider(
+      flatServer((method, param) =>
+        method === "clojurePulse/externalLibraries"
+          ? Promise.resolve([AERO, MALLI])
+          : Promise.resolve(ENTRIES[(param as { path: string }).path]),
+      ),
+    );
+    await provider.setFilter("aero core");
+    assert.deepStrictEqual(await outline(provider), ["aero 1.1.6", "  aero", "    core.cljc"]);
+  });
+
+  test("pruned jar leaves open the same jar: URI as unfiltered leaves", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([project({ path: ".", libraries: [AERO] })]),
+    );
+    await provider.setFilter("walk");
+    const [proj] = await provider.getChildren();
+    const [lib] = await provider.getChildren(proj);
+    const [aero] = await provider.getChildren(lib);
+    const [impl] = await provider.getChildren(aero);
+    const [file] = await provider.getChildren(impl);
+    const item = provider.getTreeItem(file);
+    const expected = vscode.Uri.parse("jar:file:///aero.jar!/aero/impl/walk.cljc");
+    assert.strictEqual(item.resourceUri?.toString(), expected.toString());
+    assert.strictEqual(item.command?.command, "vscode.open");
+  });
+
+  test("dir libraries are walked recursively, skipping dot-dirs and symlinked dirs", async () => {
+    const tree: Record<string, [string, vscode.FileType][]> = {
+      "/local": [
+        ["src", vscode.FileType.Directory],
+        [".git", vscode.FileType.Directory],
+        ["linked", vscode.FileType.Directory | vscode.FileType.SymbolicLink],
+        ["deps.edn", vscode.FileType.File],
+      ],
+      "/local/src": [["my_lib", vscode.FileType.Directory]],
+      "/local/src/my_lib": [
+        ["core.clj", vscode.FileType.File],
+        ["walker.clj", vscode.FileType.File | vscode.FileType.SymbolicLink],
+      ],
+      "/local/.git": [["walk-secret.clj", vscode.FileType.File]],
+      "/local/linked": [["walk-loop.clj", vscode.FileType.File]],
+    };
+    const reads: string[] = [];
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([
+        project({ path: ".", libraries: [{ name: "my-local", path: "/local", kind: "dir" }] }),
+      ]),
+      (uri) => {
+        reads.push(uri.fsPath);
+        return Promise.resolve(tree[uri.fsPath] ?? []);
+      },
+    );
+
+    await provider.setFilter("walk");
+    const workspaceName = vscode.workspace.workspaceFolders?.[0]?.name ?? ".";
+    assert.deepStrictEqual(await outline(provider), [
+      workspaceName,
+      "  my-local",
+      "    src",
+      "      my_lib",
+      "        walker.clj",
+    ]);
+    assert.ok(!reads.includes("/local/.git"), "dot-directories are not read");
+    assert.ok(!reads.includes("/local/linked"), "symlinked directories are not read");
+
+    // Namespace form of a dir entry, and the leaf opens the file on disk.
+    await provider.setFilter("src.my-lib.core");
+    const [proj] = await provider.getChildren();
+    const [lib] = await provider.getChildren(proj);
+    const [src] = await provider.getChildren(lib);
+    const [myLib] = await provider.getChildren(src);
+    const [file] = await provider.getChildren(myLib);
+    const item = provider.getTreeItem(file);
+    assert.strictEqual(item.label, "core.clj");
+    const arg = (item.command?.arguments ?? [])[0] as vscode.Uri;
+    assert.strictEqual(arg.toString(), vscode.Uri.file("/local/src/my_lib/core.clj").toString());
+  });
+
+  test("a library shared by two projects gets distinct tree-item ids", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([
+        project({ path: ".", libraries: [AERO] }),
+        project({ path: "apps/x", libraries: [AERO] }),
+      ]),
+    );
+    await provider.setFilter("core");
+    const [a, b] = await provider.getChildren();
+    const [libA] = await provider.getChildren(a);
+    const [libB] = await provider.getChildren(b);
+    const idA = provider.getTreeItem(libA).id;
+    const idB = provider.getTreeItem(libB).id;
+    assert.ok(idA && idB);
+    assert.notStrictEqual(idA, idB);
+    const [folderA] = await provider.getChildren(libA);
+    const [folderB] = await provider.getChildren(libB);
+    assert.notStrictEqual(provider.getTreeItem(folderA).id, provider.getTreeItem(folderB).id);
+  });
+
+  test("pruned nodes auto-expand only while matches are few", async () => {
+    const many = Array.from({ length: 201 }, (_, i) => `big/f${i}.clj`);
+    const big = { name: "big", version: "1", path: "/big.jar", kind: "jar" };
+    const provider = new ExternalLibrariesProvider((method, param) =>
+      method === "clojurePulse/projects"
+        ? Promise.resolve([project({ path: ".", libraries: [big] })])
+        : Promise.resolve((param as { path: string }).path === "/big.jar" ? many : []),
+    );
+
+    await provider.setFilter("f1");
+    // f1, f10–f19, f100–f199: 111 matches.
+    let [proj] = await provider.getChildren();
+    let [lib] = await provider.getChildren(proj);
+    assert.strictEqual(
+      provider.getTreeItem(lib).collapsibleState,
+      vscode.TreeItemCollapsibleState.Expanded,
+    );
+    let [folder] = await provider.getChildren(lib);
+    assert.strictEqual(
+      provider.getTreeItem(folder).collapsibleState,
+      vscode.TreeItemCollapsibleState.Expanded,
+    );
+
+    await provider.setFilter(".clj"); // all 201
+    [proj] = await provider.getChildren();
+    [lib] = await provider.getChildren(proj);
+    assert.strictEqual(
+      provider.getTreeItem(lib).collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    [folder] = await provider.getChildren(lib);
+    assert.strictEqual(
+      provider.getTreeItem(folder).collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+  });
+
+  test("jar entries are requested once across queries, again after refresh", async () => {
+    const calls: string[] = [];
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([project({ path: ".", libraries: [AERO, MALLI] })], calls),
+    );
+    await provider.setFilter("core");
+    await provider.setFilter("util");
+    assert.deepStrictEqual([...calls].sort(), ["/aero.jar", "/malli.jar"]);
+
+    provider.refresh();
+    assert.strictEqual(provider.filter, "util", "refresh keeps the query");
+    const [proj] = await provider.getChildren();
+    const libs = await provider.getChildren(proj);
+    assert.deepStrictEqual(labelsOf(provider, libs), ["malli 0.16.0"]);
+    assert.strictEqual(calls.length, 4);
+  });
+
+  test("a jar whose entries fail still matches by name", async () => {
+    const provider = new ExternalLibrariesProvider((method, param) => {
+      if (method === "clojurePulse/projects") {
+        return Promise.resolve([project({ path: ".", libraries: [AERO, MALLI] })]);
+      }
+      return (param as { path: string }).path === "/aero.jar"
+        ? Promise.reject(new Error("corrupt jar"))
+        : Promise.resolve(ENTRIES["/malli.jar"]);
+    });
+    await provider.setFilter("aero");
+    const [proj] = await provider.getChildren();
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren(proj)), ["aero 1.1.6"]);
+
+    await provider.setFilter("core");
+    const [proj2] = await provider.getChildren();
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren(proj2)), ["malli 0.16.0"]);
+  });
+
+  test("clearing the filter restores the unfiltered tree and its ids", async () => {
+    const provider = new ExternalLibrariesProvider(
+      groupedServer([
+        project({ path: ".", libraries: [AERO] }),
+        project({ path: "apps/x", libraries: [MALLI] }),
+      ]),
+    );
+    await provider.setFilter("malli");
+    await provider.setFilter("   ");
+    assert.strictEqual(provider.filter, "");
+    const roots = await provider.getChildren();
+    assert.strictEqual(roots.length, 2);
+    assert.strictEqual(provider.getTreeItem(roots[1]).id, "clojurePulseProject:apps/x");
+    assert.strictEqual(
+      provider.getTreeItem(roots[1]).collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+  });
+
+  test("setFilter repaints and settles after the index loads", async () => {
+    let resolveEntries: (v: string[]) => void = () => undefined;
+    const provider = new ExternalLibrariesProvider((method) =>
+      method === "clojurePulse/projects"
+        ? Promise.resolve([project({ path: ".", libraries: [AERO] })])
+        : new Promise<string[]>((res) => {
+            resolveEntries = res;
+          }),
+    );
+    let fired = 0;
+    provider.onDidChangeTreeData(() => fired++);
+
+    let settled = false;
+    const pending = provider.setFilter("walk").then(() => {
+      settled = true;
+    });
+    assert.strictEqual(fired, 1);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(settled, false, "waits for the jar index");
+    resolveEntries(ENTRIES["/aero.jar"]);
+    await pending;
+    assert.strictEqual(settled, true);
+  });
+
+  test("clearing before a slow search settles leaves the tree unfiltered", async () => {
+    const resolvers: (() => void)[] = [];
+    const provider = new ExternalLibrariesProvider((method, param) =>
+      method === "clojurePulse/projects"
+        ? Promise.resolve([project({ path: ".", libraries: [AERO, MALLI] })])
+        : new Promise<string[]>((res) => {
+            resolvers.push(() => res(ENTRIES[(param as { path: string }).path]));
+          }),
+    );
+    const searching = provider.setFilter("walk");
+    const clearing = provider.setFilter("");
+    await new Promise((r) => setTimeout(r, 10));
+    assert.strictEqual(resolvers.length, 2, "both jars are being indexed");
+    resolvers.forEach((resolve) => resolve());
+    await Promise.all([searching, clearing]);
+    assert.strictEqual(provider.filter, "");
+    const [proj] = await provider.getChildren();
+    assert.deepStrictEqual(labelsOf(provider, await provider.getChildren(proj)), [
+      "aero 1.1.6",
+      "malli 0.16.0",
+    ]);
   });
 });

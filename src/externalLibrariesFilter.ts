@@ -5,7 +5,10 @@
 
 /** Lowercased whitespace-separated terms; empty array = no filter. */
 export function parseQuery(query: string): string[] {
-  return query.toLowerCase().split(/\s+/).filter((term) => term.length > 0);
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 0);
 }
 
 /** What a library shows under `terms`: everything, only `entries`, or nothing. */

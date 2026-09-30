@@ -33,10 +33,10 @@ suite("externalLibrariesFilter", () => {
   });
 
   test("terms may be split between the label and the path", () => {
-    assert.deepStrictEqual(
-      matchLibrary(["1.1.6", "walk"], "aero 1.1.6", ENTRIES),
-      { whole: false, entries: ["aero/impl/walk.cljc"] },
-    );
+    assert.deepStrictEqual(matchLibrary(["1.1.6", "walk"], "aero 1.1.6", ENTRIES), {
+      whole: false,
+      entries: ["aero/impl/walk.cljc"],
+    });
   });
 
   test("no match is undefined", () => {
