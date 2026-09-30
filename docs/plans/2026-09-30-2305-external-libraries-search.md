@@ -272,13 +272,15 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 - Modify: `src/extension.ts`
 - Test: `src/test/extension.test.ts`
 
-- [ ] **Step 1: Extend the activation test** to assert both new commands are registered.
-- [ ] **Step 2: Implement** per the Design's `src/extension.ts` list: switch to
+- [x] **Step 1: Extend the activation test** to assert both new commands are registered.
+- [x] **Step 2: Implement** per the Design's `src/extension.ts` list: switch to
   `createTreeView` (pushed to `context.subscriptions`), `applyLibrariesFilter`,
   the search command's input box with the 200 ms debounce and Esc-restores
   rule, the clear command. Clear any pending debounce timer on accept and hide.
-- [ ] **Step 3: Run `make test`** — PASS.
-- [ ] **Step 4: Commit** — `Add Search External Libraries command`
+- [x] **Step 3: Run `make test`** — PASS.
+- [x] **Step 4: Commit** — `Add Search External Libraries command`
+
+> Deviation: the search command first focuses the External Libraries view when it is hidden (e.g. run from the palette), since the tree is the result list. `applyLibrariesFilter` reads the trimmed query back from `setFilter` (synchronous) rather than setting UI state before calling it — same guarantee, nothing is updated after an await.
 
 ### Task 5: Manual check and docs
 

@@ -28,7 +28,7 @@ import {
   StatusBar,
 } from "./statusBar";
 import { createJarContentProvider } from "./jarContentProvider";
-import { ExternalLibrariesProvider, rescanOrRefresh } from "./externalLibraries";
+import { ExternalLibrariesProvider, LibNode, rescanOrRefresh } from "./externalLibraries";
 import {
   createIgnoredFormDecorator,
   IgnoredFormDecorator,
@@ -119,6 +119,8 @@ let lintStatusListener: vscode.Disposable | undefined;
  *  repaint. Cleared with the client so a restart cannot show a stale engine. */
 let lintStatus: LintStatus | undefined;
 let externalLibraries: ExternalLibrariesProvider | undefined;
+/** The External Libraries view — held for its title description (the query). */
+let librariesView: vscode.TreeView<LibNode> | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 /** Kept out of `context.subscriptions` so deactivate() can *await* shutdown:
@@ -278,10 +280,17 @@ export async function activate(
     (message) => outputChannel?.appendLine(`[clojure-pulse] ${message}`),
     (anyResolving) => updateClasspathProgress(anyResolving),
   );
+  librariesView = vscode.window.createTreeView("clojurePulse.externalLibraries", {
+    treeDataProvider: externalLibraries,
+    showCollapseAll: true,
+  });
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(
-      "clojurePulse.externalLibraries",
-      externalLibraries,
+    librariesView,
+    vscode.commands.registerCommand("clojurePulse.searchExternalLibraries", () =>
+      searchExternalLibraries(),
+    ),
+    vscode.commands.registerCommand("clojurePulse.clearExternalLibrariesSearch", () =>
+      applyLibrariesFilter(""),
     ),
     // Refresh asks the server to re-detect and re-resolve; the resulting
     // librariesChanged notifications repaint the tree. Older servers (no
@@ -471,6 +480,90 @@ function rawProjects(): unknown[] {
 interface ClasspathProgressSession {
   closed: boolean;
   done?: () => void;
+}
+
+/** How long typing pauses before the External Libraries tree re-filters. */
+const LIBRARIES_SEARCH_DEBOUNCE_MS = 200;
+
+/**
+ * Filters the External Libraries tree. The title description and the
+ * `clojurePulse.externalLibrariesFiltered` context key (the clear button and
+ * the no-match welcome) are set synchronously, before anything is awaited, so
+ * a slow search that settles after a newer call cannot overwrite them.
+ */
+function applyLibrariesFilter(query: string): Thenable<void> {
+  const provider = externalLibraries;
+  if (!provider) {
+    return Promise.resolve();
+  }
+  const settled = provider.setFilter(query);
+  const filter = provider.filter;
+  if (librariesView) {
+    librariesView.description = filter || undefined;
+  }
+  void vscode.commands.executeCommand(
+    "setContext",
+    "clojurePulse.externalLibrariesFiltered",
+    filter !== "",
+  );
+  if (!filter) {
+    return settled;
+  }
+  return vscode.window.withProgress(
+    { location: { viewId: "clojurePulse.externalLibraries" }, title: "Searching libraries…" },
+    () => settled,
+  );
+}
+
+/**
+ * The search button's input box. The tree narrows as the user types
+ * (debounced); Enter keeps the filter, Esc restores the one active when the
+ * box opened. Opens prefilled with that filter, so it also edits it.
+ */
+async function searchExternalLibraries(): Promise<void> {
+  const provider = externalLibraries;
+  if (!provider) {
+    return;
+  }
+  // From the palette the view may be hidden; the tree is the result list.
+  if (!librariesView?.visible) {
+    await vscode.commands.executeCommand("clojurePulse.externalLibraries.focus");
+  }
+  const original = provider.filter;
+  const box = vscode.window.createInputBox();
+  box.title = "Search External Libraries";
+  box.prompt = "Filter libraries and files by name";
+  box.placeholder = "e.g. aero core";
+  box.value = original;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let accepted = false;
+  const cancelPending = (): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  box.onDidChangeValue((value) => {
+    cancelPending();
+    timer = setTimeout(() => {
+      timer = undefined;
+      void applyLibrariesFilter(value);
+    }, LIBRARIES_SEARCH_DEBOUNCE_MS);
+  });
+  box.onDidAccept(() => {
+    cancelPending();
+    accepted = true;
+    void applyLibrariesFilter(box.value);
+    box.hide();
+  });
+  box.onDidHide(() => {
+    cancelPending();
+    if (!accepted && provider.filter !== original) {
+      void applyLibrariesFilter(original);
+    }
+    box.dispose();
+  });
+  box.show();
 }
 
 /** The open session, if any — single-flight. */
