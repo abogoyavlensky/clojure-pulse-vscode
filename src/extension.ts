@@ -121,6 +121,8 @@ let lintStatus: LintStatus | undefined;
 let externalLibraries: ExternalLibrariesProvider | undefined;
 /** The External Libraries view — held for its title description (the query). */
 let librariesView: vscode.TreeView<LibNode> | undefined;
+/** The open search box, if any — the search button re-shows it, never stacks a second. */
+let librariesSearchBox: vscode.InputBox | undefined;
 let decorator: IgnoredFormDecorator | undefined;
 let dimRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 /** Kept out of `context.subscriptions` so deactivate() can *await* shutdown:
@@ -284,6 +286,8 @@ export async function activate(
     treeDataProvider: externalLibraries,
     showCollapseAll: true,
   });
+  // Context keys outlive an extension-host restart; the provider starts unfiltered.
+  void vscode.commands.executeCommand("setContext", "clojurePulse.externalLibrariesFiltered", false);
   context.subscriptions.push(
     librariesView,
     vscode.commands.registerCommand("clojurePulse.searchExternalLibraries", () =>
@@ -518,11 +522,17 @@ function applyLibrariesFilter(query: string): Thenable<void> {
 /**
  * The search button's input box. The tree narrows as the user types
  * (debounced); Enter keeps the filter, Esc restores the one active when the
- * box opened. Opens prefilled with that filter, so it also edits it.
+ * box opened. Opens prefilled with that filter, so it also edits it. The box
+ * survives focus loss: the tree is the result list, and clicking into it must
+ * not count as Esc.
  */
 async function searchExternalLibraries(): Promise<void> {
   const provider = externalLibraries;
   if (!provider) {
+    return;
+  }
+  if (librariesSearchBox) {
+    librariesSearchBox.show();
     return;
   }
   // From the palette the view may be hidden; the tree is the result list.
@@ -531,6 +541,8 @@ async function searchExternalLibraries(): Promise<void> {
   }
   const original = provider.filter;
   const box = vscode.window.createInputBox();
+  librariesSearchBox = box;
+  box.ignoreFocusOut = true;
   box.title = "Search External Libraries";
   box.prompt = "Filter libraries and files by name";
   box.placeholder = "e.g. aero core";
@@ -557,6 +569,7 @@ async function searchExternalLibraries(): Promise<void> {
     box.hide();
   });
   box.onDidHide(() => {
+    librariesSearchBox = undefined;
     cancelPending();
     if (!accepted && provider.filter !== original) {
       void applyLibrariesFilter(original);

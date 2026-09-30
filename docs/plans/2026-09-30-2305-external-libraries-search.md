@@ -281,6 +281,7 @@ test host under xvfb). Expected: all suites pass, 0 failing.
 - [x] **Step 4: Commit** — `Add Search External Libraries command`
 
 > Deviation: the search command first focuses the External Libraries view when it is hidden (e.g. run from the palette), since the tree is the result list. `applyLibrariesFilter` reads the trimmed query back from `setFilter` (synchronous) rather than setting UI state before calling it — same guarantee, nothing is updated after an await.
+> Deviation (review fix): the input box sets `ignoreFocusOut`, since otherwise clicking a result in the tree hid the box and triggered the Esc-restore; a second search click re-shows the open box instead of stacking another. The filtered context key is reset to `false` on activation, as context keys outlive an extension-host restart.
 
 ### Task 5: Manual check and docs
 
