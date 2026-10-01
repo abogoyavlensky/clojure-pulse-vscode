@@ -51,7 +51,8 @@
 - Symbol-occurrence highlighting and structural selection expansion.
 - Namespace quick fixes, built-in diagnostics, and optional clj-kondo linting.
 - Keyword and Integrant-key navigation; JDK interop support.
-- External Libraries tree with read-only JAR sources and directory dependencies.
+- External Libraries tree with read-only JAR sources and directory dependencies,
+  searchable by library and file name.
 - Navigation, hover, and completion within dependency sources.
 - Offline ClojureDocs examples and see-also links, opened with Show ClojureDocs.
 - Monorepo discovery, libraries grouped by project, per-project classpath

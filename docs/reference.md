@@ -96,6 +96,8 @@ hidden from the palette. See [Keybindings](keybindings.md) for examples.
 
 | Command | ID | Behavior |
 | --- | --- | --- |
+| Search External Libraries | `clojurePulse.searchExternalLibraries` | Filter the tree to libraries and files whose names match; Esc restores the previous filter. |
+| Clear External Libraries Search | `clojurePulse.clearExternalLibrariesSearch` | Remove the filter from the view's clear button. |
 | Refresh External Libraries | `clojurePulse.refreshExternalLibraries` | Rescan projects and re-resolve enabled classpaths; older servers only refresh the tree. |
 | Enable Classpath Resolution | `clojurePulse.enableProjectClasspath` | Enable resolution for the selected project. |
 | Disable Classpath Resolution | `clojurePulse.disableProjectClasspath` | Disable resolution for the selected project. |

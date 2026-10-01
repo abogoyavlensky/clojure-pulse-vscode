@@ -56,6 +56,7 @@ const PALETTE = [
   "clojurePulse.addCustomReplCommand",
   "clojurePulse.editCustomReplCommand",
   "clojurePulse.refreshExternalLibraries",
+  "clojurePulse.searchExternalLibraries",
   "clojurePulse.showClojureDocs",
 ];
 

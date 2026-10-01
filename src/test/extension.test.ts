@@ -46,6 +46,12 @@ suite("extension activation", () => {
       commands.includes("clojurePulse.refreshExternalLibraries"),
       "clojurePulse.refreshExternalLibraries should be registered",
     );
+    for (const id of [
+      "clojurePulse.searchExternalLibraries",
+      "clojurePulse.clearExternalLibrariesSearch",
+    ]) {
+      assert.ok(commands.includes(id), `${id} should be registered`);
+    }
   });
 
   test("restart recovers after a failed server start", async () => {

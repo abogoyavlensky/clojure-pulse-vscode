@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { matchLibrary, parseQuery } from "./externalLibrariesFilter";
 
 /**
  * Minimal slice of `LanguageClient.sendRequest`, injected so the provider can
@@ -21,6 +22,13 @@ const LIBRARY_ENTRIES = "clojurePulse/libraryEntries";
 /** JSON-RPC method-not-found — how an older server answers `PROJECTS`. */
 const METHOD_NOT_FOUND = -32601;
 
+/** Pruned libraries and folders open by default up to this many matching files. */
+const AUTO_EXPAND_LIMIT = 200;
+/** Jar entry requests in flight at once while indexing for a search. */
+const INDEX_CONCURRENCY = 16;
+/** A directory library's walk stops after this many files. */
+const DIR_INDEX_LIMIT = 5000;
+
 type LibraryKind = "jar" | "dir";
 
 /** One resolved library, mirroring the server's `Library` shape. */
@@ -31,13 +39,7 @@ interface Library {
   kind: LibraryKind;
 }
 
-type ClasspathStatus =
-  | "disabled"
-  | "cached"
-  | "resolving"
-  | "resolved"
-  | "unresolved"
-  | "error";
+type ClasspathStatus = "disabled" | "cached" | "resolving" | "resolved" | "unresolved" | "error";
 
 /** One project of the workspace, mirroring the server's `PROJECTS` shape. */
 interface ProjectInfo {
@@ -54,13 +56,36 @@ interface ProjectInfo {
   libraries: Library[];
 }
 
-/** A node in the External Libraries tree. */
-export type LibNode =
-  | { type: "project"; project: ProjectInfo }
-  | { type: "library"; library: Library }
-  | { type: "jarFolder"; jarPath: string; prefix: string; name: string }
+/**
+ * Carried only by the expandable nodes of a filtered tree: an explicit tree-item
+ * id (embedding the query, so a new query starts from the computed expansion)
+ * and whether the node opens expanded.
+ */
+interface FilterMeta {
+  id?: string;
+  expanded?: boolean;
+}
+
+/**
+ * A node in the External Libraries tree. The optional fields appear only on
+ * filtered nodes: a project's surviving libraries, a library's or folder's
+ * pruned entry list (a library without `matches` is shown whole), and the
+ * pruned list a directory entry folds its children from instead of disk.
+ */
+export type LibNode = (
+  | { type: "project"; project: ProjectInfo; children?: LibNode[] }
+  | { type: "library"; library: Library; matches?: string[] }
+  | { type: "jarFolder"; jarPath: string; prefix: string; name: string; entries?: string[] }
   | { type: "jarFile"; jarPath: string; entry: string; name: string }
-  | { type: "dirEntry"; uri: vscode.Uri; name: string; isDirectory: boolean };
+  | {
+      type: "dirEntry";
+      uri: vscode.Uri;
+      name: string;
+      isDirectory: boolean;
+      pruned?: { root: vscode.Uri; entries: string[]; prefix: string };
+    }
+) &
+  FilterMeta;
 
 /**
  * Lazy tree of the libraries clj-pulse resolved for the project. Jar libraries
@@ -90,11 +115,19 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
    * repopulate (or evict from) the freshly-cleared cache.
    */
   private generation = 0;
+  /** The active search query, trimmed; `""` when the tree is unfiltered. */
+  private query = "";
+  /**
+   * The filtered root for one query and generation — recomputed when either
+   * changes, so repaints under an unchanged filter cost nothing.
+   */
+  private filteredRoot: { key: string; nodes: Promise<LibNode[]> } | undefined;
+  /** Directory libraries' walked file lists, keyed by path, until `refresh()`. */
+  private readonly dirFiles = new Map<string, Promise<string[]>>();
 
   constructor(
     private readonly sendRequest: SendRequest,
-    private readonly readDirectory: ReadDirectory = (uri) =>
-      vscode.workspace.fs.readDirectory(uri),
+    private readonly readDirectory: ReadDirectory = (uri) => vscode.workspace.fs.readDirectory(uri),
     private readonly log: (message: string) => void = () => {},
     /**
      * Told, on every root-load settle, whether any project is still
@@ -105,15 +138,48 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
     private readonly onRootStatuses: (anyResolving: boolean) => void = () => {},
   ) {}
 
-  /** Clears caches and repaints the tree (refresh triggers call this). */
+  /**
+   * Clears caches and repaints the tree (refresh triggers call this). The
+   * search query survives: the new data is filtered again.
+   */
   refresh(): void {
     this.generation += 1;
     this.jarEntries.clear();
+    this.dirFiles.clear();
     this.rootNodes = undefined;
+    this.filteredRoot = undefined;
     this._onDidChangeTreeData.fire();
   }
 
+  /** The active query, `""` when unfiltered. */
+  get filter(): string {
+    return this.query;
+  }
+
+  /**
+   * Sets (or, with a blank query, clears) the filter and repaints. Settles
+   * once the filtered root for this query has been computed; never rejects.
+   */
+  setFilter(query: string): Promise<void> {
+    this.query = parseQuery(query).length > 0 ? query.trim() : "";
+    this._onDidChangeTreeData.fire();
+    return this.query ? this.filteredRootNodes().then(() => undefined) : Promise.resolve();
+  }
+
   getTreeItem(node: LibNode): vscode.TreeItem {
+    const item = this.baseTreeItem(node);
+    if (node.id !== undefined) {
+      item.id = node.id;
+    }
+    if (node.expanded !== undefined) {
+      item.collapsibleState = node.expanded
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed;
+    }
+    return item;
+  }
+
+  private baseTreeItem(node: LibNode): vscode.TreeItem {
     switch (node.type) {
       case "project": {
         const { path, kind, classpath } = node.project;
@@ -133,11 +199,7 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
           classpath.status === "resolving" ? "resolving…" : classpath.status
         }`;
         item.iconPath = new vscode.ThemeIcon(
-          classpath.status === "resolving"
-            ? "loading~spin"
-            : isRoot
-              ? "root-folder"
-              : "folder",
+          classpath.status === "resolving" ? "loading~spin" : isRoot ? "root-folder" : "folder",
         );
         // The toggle commands are gated on these in package.json; contributed
         // icons are static, so each direction needs its own context value.
@@ -150,13 +212,12 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
         return item;
       }
       case "library": {
-        const { name, version, path } = node.library;
         const item = new vscode.TreeItem(
-          version ? `${name} ${version}` : name,
+          libraryLabel(node.library),
           vscode.TreeItemCollapsibleState.Collapsed,
         );
         item.iconPath = new vscode.ThemeIcon("library");
-        item.tooltip = path;
+        item.tooltip = node.library.path;
         return item;
       }
       case "jarFolder": {
@@ -199,25 +260,183 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
 
   async getChildren(node?: LibNode): Promise<LibNode[]> {
     if (!node) {
-      return this.rootChildren();
+      return this.query ? this.filteredRootNodes() : this.rootChildren();
     }
     switch (node.type) {
       case "project":
-        return node.project.libraries.map((library) => ({
-          type: "library",
-          library,
-        }));
-      case "library":
-        return node.library.kind === "jar"
-          ? this.jarChildren(node.library.path, "")
-          : this.dirChildren(vscode.Uri.file(node.library.path));
+        return (
+          node.children ??
+          node.project.libraries.map((library) => ({
+            type: "library",
+            library,
+          }))
+        );
+      case "library": {
+        const { kind, path } = node.library;
+        if (node.matches) {
+          return kind === "jar"
+            ? prunedJarLevel(path, node.matches, "", node)
+            : prunedDirLevel(vscode.Uri.file(path), node.matches, "", node);
+        }
+        return kind === "jar"
+          ? this.jarChildren(path, "")
+          : this.dirChildren(vscode.Uri.file(path));
+      }
       case "jarFolder":
-        return this.jarChildren(node.jarPath, node.prefix);
+        return node.entries
+          ? prunedJarLevel(node.jarPath, node.entries, node.prefix, node)
+          : this.jarChildren(node.jarPath, node.prefix);
       case "dirEntry":
+        if (node.pruned) {
+          return prunedDirLevel(node.pruned.root, node.pruned.entries, node.pruned.prefix, node);
+        }
         return node.isDirectory ? this.dirChildren(node.uri) : [];
       case "jarFile":
         return [];
     }
+  }
+
+  /** The filtered root for the current query and generation, cached. */
+  private filteredRootNodes(): Promise<LibNode[]> {
+    const key = `${this.generation}\0${this.query}`;
+    if (this.filteredRoot?.key !== key) {
+      this.filteredRoot = { key, nodes: this.buildFilteredRoot(this.query, key) };
+    }
+    return this.filteredRoot.nodes;
+  }
+
+  /**
+   * Loads the usual root (projects, or the flat fallback), indexes every
+   * library the query does not already match by name, and keeps what
+   * matches: whole libraries on a label match, pruned ones on file matches,
+   * and only the projects left with a library. A build superseded by a newer
+   * query or a refresh still resolves — to its stale caller only.
+   */
+  private async buildFilteredRoot(query: string, key: string): Promise<LibNode[]> {
+    const terms = parseQuery(query);
+    const roots = await this.rootChildren();
+    if (!this.rootNodes && this.filteredRoot?.key === key) {
+      // The root load failed and was evicted for a retry; don't pin its empty
+      // result as this query's answer, or the retry would never happen.
+      this.filteredRoot = undefined;
+    }
+    const groups: { projectPath: string; project?: ProjectInfo; libraries: Library[] }[] =
+      roots.map((node) =>
+        node.type === "project"
+          ? {
+              projectPath: node.project.path,
+              project: node.project,
+              libraries: node.project.libraries,
+            }
+          : { projectPath: "", libraries: node.type === "library" ? [node.library] : [] },
+      );
+
+    const toIndex = new Map<string, Library>();
+    for (const { libraries } of groups) {
+      for (const library of libraries) {
+        if (!matchLibrary(terms, libraryLabel(library), [])) {
+          toIndex.set(library.path, library);
+        }
+      }
+    }
+    const index = new Map<string, string[]>();
+    await mapLimit([...toIndex.values()], INDEX_CONCURRENCY, async (library) => {
+      index.set(
+        library.path,
+        library.kind === "jar"
+          ? await this.entriesFor(library.path)
+          : await this.dirFilesFor(library.path),
+      );
+    });
+
+    let matchedFiles = 0;
+    const matched = groups.map((group) => ({
+      ...group,
+      libraries: group.libraries.flatMap((library) => {
+        const match = matchLibrary(terms, libraryLabel(library), index.get(library.path) ?? []);
+        if (!match) {
+          return [];
+        }
+        if (!match.whole) {
+          matchedFiles += match.entries.length;
+        }
+        return [{ library, match }];
+      }),
+    }));
+    const expanded = matchedFiles <= AUTO_EXPAND_LIMIT;
+
+    const nodes: LibNode[] = [];
+    for (const { projectPath, project, libraries } of matched) {
+      const libraryNodes: LibNode[] = libraries.map(({ library, match }) => ({
+        type: "library",
+        library,
+        ...(match.whole ? {} : { matches: match.entries }),
+        id: `clojurePulseFilter:${query}:${projectPath}:${library.path}:`,
+        expanded: match.whole ? false : expanded,
+      }));
+      if (!project) {
+        nodes.push(...libraryNodes);
+      } else if (libraryNodes.length > 0) {
+        nodes.push({
+          type: "project",
+          project,
+          children: libraryNodes,
+          id: `clojurePulseFilter:${query}:${projectPath}`,
+          expanded: true,
+        });
+      }
+    }
+    return nodes;
+  }
+
+  /** A directory library's file list, walked at most once until `refresh()`. */
+  private dirFilesFor(path: string): Promise<string[]> {
+    let files = this.dirFiles.get(path);
+    if (!files) {
+      files = this.walkDir(vscode.Uri.file(path));
+      this.dirFiles.set(path, files);
+    }
+    return files;
+  }
+
+  /**
+   * `/`-separated paths of the files under `root`. Skips dot-directories and
+   * never descends into a symlinked directory (which rules out cycles); stops
+   * at `DIR_INDEX_LIMIT` files. Unreadable directories are logged and skipped.
+   */
+  private async walkDir(root: vscode.Uri): Promise<string[]> {
+    const files: string[] = [];
+    const pending = [""];
+    let truncated = false;
+    while (pending.length > 0 && !truncated) {
+      const dir = pending.shift() as string;
+      let entries: [string, vscode.FileType][];
+      try {
+        entries = await this.readDirectory(dir ? vscode.Uri.joinPath(root, dir) : root);
+      } catch (e) {
+        this.log(`External Libraries: failed to read ${root.fsPath}/${dir}: ${errMessage(e)}`);
+        continue;
+      }
+      for (const [name, fileType] of entries) {
+        const path = dir ? `${dir}/${name}` : name;
+        if ((fileType & vscode.FileType.Directory) !== 0) {
+          if ((fileType & vscode.FileType.SymbolicLink) === 0 && !name.startsWith(".")) {
+            pending.push(path);
+          }
+        } else if (files.length >= DIR_INDEX_LIMIT) {
+          truncated = true;
+          break;
+        } else {
+          files.push(path);
+        }
+      }
+    }
+    if (truncated) {
+      this.log(
+        `External Libraries: search indexes only the first ${DIR_INDEX_LIMIT} files of ${root.fsPath}`,
+      );
+    }
+    return files;
   }
 
   /** The cached root of the tree, requested at most once per refresh. */
@@ -331,11 +550,11 @@ export class ExternalLibrariesProvider implements vscode.TreeDataProvider<LibNod
 }
 
 /**
- * Folds the flat entry list into the immediate children under `prefix`:
- * an entry with a further `/` contributes a folder, one without is a file.
- * Folders sort before files; both alphabetically.
+ * Folds a flat entry list into the immediate children under `prefix`: an
+ * entry with a further `/` contributes a folder name, one without a file name.
+ * Both come back sorted alphabetically.
  */
-function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNode[] {
+function foldLevel(entries: string[], prefix: string): { folders: string[]; files: string[] } {
   const folders = new Set<string>();
   const files = new Set<string>();
   for (const entry of entries) {
@@ -353,13 +572,91 @@ function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNo
       folders.add(rest.slice(0, slash));
     }
   }
-  const folderNodes: LibNode[] = [...folders]
-    .sort(byName)
-    .map((name) => ({ type: "jarFolder", jarPath, prefix: `${prefix}${name}/`, name }));
-  const fileNodes: LibNode[] = [...files]
-    .sort(byName)
-    .map((name) => ({ type: "jarFile", jarPath, entry: `${prefix}${name}`, name }));
-  return [...folderNodes, ...fileNodes];
+  return { folders: [...folders].sort(byName), files: [...files].sort(byName) };
+}
+
+/** A jar's children under `prefix`: folders before files, both alphabetical. */
+function foldJarLevel(entries: string[], jarPath: string, prefix: string): LibNode[] {
+  const { folders, files } = foldLevel(entries, prefix);
+  return [
+    ...folders.map((name): LibNode => ({
+      type: "jarFolder",
+      jarPath,
+      prefix: `${prefix}${name}/`,
+      name,
+    })),
+    ...files.map((name): LibNode => ({
+      type: "jarFile",
+      jarPath,
+      entry: `${prefix}${name}`,
+      name,
+    })),
+  ];
+}
+
+/**
+ * One level of a pruned jar library. Folders carry the pruned list down and
+ * derive their ids from the parent's, so every level of the filtered tree has
+ * a unique, query-specific id and the parent's expansion.
+ */
+function prunedJarLevel(
+  jarPath: string,
+  entries: string[],
+  prefix: string,
+  parent: FilterMeta,
+): LibNode[] {
+  return foldJarLevel(entries, jarPath, prefix).map((node) =>
+    node.type === "jarFolder"
+      ? { ...node, entries, id: `${parent.id ?? ""}${node.name}/`, expanded: parent.expanded }
+      : node,
+  );
+}
+
+/** One level of a pruned directory library, folded from its walked file list. */
+function prunedDirLevel(
+  root: vscode.Uri,
+  entries: string[],
+  prefix: string,
+  parent: FilterMeta,
+): LibNode[] {
+  const { folders, files } = foldLevel(entries, prefix);
+  return [
+    ...folders.map((name): LibNode => ({
+      type: "dirEntry",
+      uri: vscode.Uri.joinPath(root, `${prefix}${name}`),
+      name,
+      isDirectory: true,
+      pruned: { root, entries, prefix: `${prefix}${name}/` },
+      id: `${parent.id ?? ""}${name}/`,
+      expanded: parent.expanded,
+    })),
+    ...files.map((name): LibNode => ({
+      type: "dirEntry",
+      uri: vscode.Uri.joinPath(root, `${prefix}${name}`),
+      name,
+      isDirectory: false,
+    })),
+  ];
+}
+
+/** A library row's text, and what a search matches its name against. */
+function libraryLabel({ name, version }: Library): string {
+  return version ? `${name} ${version}` : name;
+}
+
+/** Maps `items` through `fn` with at most `limit` calls in flight. */
+async function mapLimit<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      await fn(items[next++]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 /** What the root (`"."`) project node is labeled: the workspace folder. */

@@ -343,6 +343,12 @@
       },
       {
         "view": "clojurePulse.externalLibraries",
+        "when": "clojurePulse.externalLibrariesFiltered",
+        "contents": "No libraries or files match the filter.\n\n[Clear Filter](command:clojurePulse.clearExternalLibrariesSearch)"
+      },
+      {
+        "view": "clojurePulse.externalLibraries",
+        "when": "!clojurePulse.externalLibrariesFiltered",
         "contents": "No libraries resolved yet.\n\nThe clj-pulse language server lists the dependencies it resolved for this project here.\n\n- deps.edn: run `clojure -Spath` or start a REPL once to generate `.cpcache`.\n- Leiningen: resolve with `lein classpath`; if unavailable, only cached direct dependencies are shown.\n- lgx: run `lgx run` or `lgx build` once to fetch deps."
       }
     ],
@@ -480,6 +486,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "clojurePulse.searchExternalLibraries",
+        "title": "Search External Libraries",
+        "category": "Clojure Pulse",
+        "icon": "$(search)"
+      },
+      {
+        "command": "clojurePulse.clearExternalLibrariesSearch",
+        "title": "Clear External Libraries Search",
+        "category": "Clojure Pulse",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "clojurePulse.refreshExternalLibraries",
         "title": "Refresh External Libraries",
         "category": "Clojure Pulse",
@@ -528,14 +546,24 @@
           "group": "navigation"
         },
         {
+          "command": "clojurePulse.searchExternalLibraries",
+          "when": "view == clojurePulse.externalLibraries",
+          "group": "navigation@1"
+        },
+        {
+          "command": "clojurePulse.clearExternalLibrariesSearch",
+          "when": "view == clojurePulse.externalLibraries && clojurePulse.externalLibrariesFiltered",
+          "group": "navigation@2"
+        },
+        {
           "command": "clojurePulse.refreshExternalLibraries",
           "when": "view == clojurePulse.externalLibraries",
-          "group": "navigation"
+          "group": "navigation@3"
         },
         {
           "command": "clojurePulse.addProject",
           "when": "view == clojurePulse.externalLibraries",
-          "group": "navigation"
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [
@@ -636,6 +664,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "clojurePulse.clearExternalLibrariesSearch",
+          "when": "false"
+        },
         {
           "command": "clojurePulse.enableProjectClasspath",
           "when": "false"
