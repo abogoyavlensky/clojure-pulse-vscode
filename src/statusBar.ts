@@ -34,6 +34,9 @@ export interface StatusDetail {
   lint?: LintStatus;
 }
 
+/** Ends the first tooltip line of every state: a click opens the server menu. */
+const CLICK_HINT = "— click for actions";
+
 export interface StatusView {
   text: string;
   tooltip: string;
@@ -52,7 +55,7 @@ export function statusPresentation(
     case "starting":
       return {
         text: "$(loading~spin) clj-pulse",
-        tooltip: "Clojure Pulse: starting the language server…",
+        tooltip: `Clojure Pulse: starting the language server… ${CLICK_HINT}`,
         error: false,
       };
     case "running": {
@@ -62,23 +65,53 @@ export function statusPresentation(
       const lint = detail.lint ? `\n${lintLine(detail.lint)}` : "";
       return {
         text: "$(pulse) clj-pulse",
-        tooltip: `Clojure Pulse: running${version}${where}${lint}`,
+        tooltip: `Clojure Pulse: running${version} ${CLICK_HINT}${where}${lint}`,
         error: false,
       };
     }
     case "stopped":
       return {
         text: "$(circle-slash) clj-pulse",
-        tooltip: "Clojure Pulse: server stopped — click to view output",
+        tooltip: `Clojure Pulse: server stopped ${CLICK_HINT}`,
         error: false,
       };
     case "error":
       return {
         text: "$(error) clj-pulse",
-        tooltip: `Clojure Pulse: ${detail.message ?? "server unavailable"} — click to view output`,
+        tooltip: `Clojure Pulse: ${detail.message ?? "server unavailable"} ${CLICK_HINT}`,
         error: true,
       };
   }
+}
+
+export type ServerMenuAction = "show" | "restart";
+
+export interface ServerMenuItem extends vscode.QuickPickItem {
+  action: ServerMenuAction;
+}
+
+export interface ServerMenu {
+  items: ServerMenuItem[];
+  placeHolder: string;
+}
+
+/**
+ * The quick pick the status-bar item opens. Output comes first: it is the
+ * read-only action, and what a click did before the menu existed. Restart
+ * reads "Start" when the server is down, though both run the same
+ * stop-then-start. Pure data, so it is unit-tested without VS Code.
+ */
+export function serverMenuItems(status: ServerStatus): ServerMenu {
+  const down = status === "stopped" || status === "error";
+  return {
+    items: [
+      { label: "$(output) Show server output", action: "show" },
+      down
+        ? { label: "$(debug-start) Start language server", action: "restart" }
+        : { label: "$(debug-restart) Restart language server", action: "restart" },
+    ],
+    placeHolder: `Language server actions — ${status}`,
+  };
 }
 
 /**
@@ -112,6 +145,8 @@ function lintLine(lint: LintStatus): string {
 }
 
 export interface StatusBar {
+  /** The last status painted; "stopped" before the first update. */
+  readonly status: ServerStatus;
   update(status: ServerStatus, detail?: StatusDetail): void;
   dispose(): void;
 }
@@ -124,9 +159,14 @@ export function createStatusBar(): StatusBar {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   item.name = "Clojure Pulse";
   item.command = "clojurePulse.showOutput";
+  let current: ServerStatus = "stopped";
 
   return {
+    get status() {
+      return current;
+    },
     update(status, detail) {
+      current = status;
       const view = statusPresentation(status, detail);
       item.text = view.text;
       item.tooltip = view.tooltip;

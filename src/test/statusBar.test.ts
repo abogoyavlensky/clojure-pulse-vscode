@@ -1,5 +1,10 @@
 import * as assert from "assert";
-import { serverReadyLine, statusPresentation } from "../statusBar";
+import {
+  serverMenuItems,
+  serverReadyLine,
+  ServerStatus,
+  statusPresentation,
+} from "../statusBar";
 
 suite("statusPresentation", () => {
   test("starting shows an animated spinner", () => {
@@ -88,6 +93,27 @@ suite("statusPresentation", () => {
     assert.doesNotMatch(view.tooltip, /bundled/);
   });
 
+  test("every state's tooltip ends its first line with the click hint", () => {
+    const statuses: ServerStatus[] = ["starting", "running", "stopped", "error"];
+    for (const status of statuses) {
+      const view = statusPresentation(status);
+      assert.match(view.tooltip, /click for actions$/m, status);
+    }
+  });
+
+  test("the running hint stays on the first line above the detail lines", () => {
+    const view = statusPresentation("running", {
+      serverInfo: { name: "clj-pulse", version: "0.5.4" },
+      command: "/ext/server/clj-pulse",
+      source: "bundled",
+      lint: { engine: "native" },
+    });
+    const lines = view.tooltip.split("\n");
+    assert.match(lines[0], /^Clojure Pulse: running v0\.5\.4 — click for actions$/);
+    assert.strictEqual(lines[1], "/ext/server/clj-pulse (bundled)");
+    assert.strictEqual(lines[2], "Linting: native lints only");
+  });
+
   test("error sets the error flag and surfaces the message", () => {
     const view = statusPresentation("error", { message: "clj-pulse not found on PATH" });
     assert.match(view.text, /\$\(error\) clj-pulse/);
@@ -139,5 +165,45 @@ suite("serverReadyLine", () => {
       source: "explicit",
     });
     assert.match(line, /\(explicit\)/);
+  });
+});
+
+suite("serverMenuItems", () => {
+  test("running offers output first, then restart", () => {
+    const menu = serverMenuItems("running");
+    assert.deepStrictEqual(
+      menu.items.map((i) => i.action),
+      ["show", "restart"],
+    );
+    assert.match(menu.items[0].label, /Show server output/);
+    assert.match(menu.items[1].label, /Restart language server/);
+  });
+
+  test("starting still offers restart", () => {
+    const menu = serverMenuItems("starting");
+    assert.match(menu.items[1].label, /Restart language server/);
+  });
+
+  test("stopped offers start instead of restart", () => {
+    const menu = serverMenuItems("stopped");
+    assert.strictEqual(menu.items[1].action, "restart");
+    assert.match(menu.items[1].label, /Start language server/);
+  });
+
+  test("error offers start instead of restart", () => {
+    const menu = serverMenuItems("error");
+    assert.strictEqual(menu.items[1].action, "restart");
+    assert.match(menu.items[1].label, /Start language server/);
+  });
+
+  test("the placeholder names the status", () => {
+    assert.strictEqual(
+      serverMenuItems("running").placeHolder,
+      "Language server actions — running",
+    );
+    assert.strictEqual(
+      serverMenuItems("error").placeHolder,
+      "Language server actions — error",
+    );
   });
 });
