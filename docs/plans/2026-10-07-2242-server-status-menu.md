@@ -1,5 +1,7 @@
 # Server Status Bar Menu Implementation Plan
 
+**Status: completed** (branch `server-status-menu`)
+
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Clicking the `clj-pulse` status-bar item opens a quick pick that restarts the language server or shows its output, mirroring the nREPL item's menu.
@@ -148,7 +150,7 @@ verified by hand.
 - Modify: `src/statusBar.ts`
 - Test: `src/test/statusBar.test.ts`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
   Add `suite("serverMenuItems", ...)` to `src/test/statusBar.test.ts` with
   the five cases from the design (running, starting, stopped, error,
   placeholder). Assert on `items[i].action` and `items[i].label`. In the
@@ -158,11 +160,11 @@ verified by hand.
   is on the first line (`tooltip.split("\n")[0]` ends with it) and the
   command and lint lines follow unchanged.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
   Run: `npm run compile-tests` then `make test`
   Expected: compile fails because `serverMenuItems` is not exported.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `src/statusBar.ts` add the types and `serverMenuItems` from the design
   after `statusPresentation`. Append `— click for actions` to every
   tooltip's first line in `statusPresentation` (replace the two existing
@@ -173,15 +175,15 @@ verified by hand.
   in the same commit that registers the command, so no commit leaves the
   item pointing at an unregistered command.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
   Run: `make test`
   Expected: PASS, including the new suite.
 
-- [ ] **Step 5: Lint**
+- [x] **Step 5: Lint**
   Run: `npm run lint`
   Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
   `git commit -m "Describe the server status-bar menu as pure data"`
 
 ### Task 2: Wire the menu command
@@ -191,23 +193,23 @@ verified by hand.
 - Modify: `package.json`
 - Modify: `src/test/extension.test.ts`
 
-- [ ] **Step 1: Contribute the command**
+- [x] **Step 1: Contribute the command**
   In `package.json` add `clojurePulse.serverMenu` (title `Language Server
   Menu`, category `Clojure Pulse`) to `contributes.commands` right after
   `clojurePulse.showOutput`, and a `{"command": "clojurePulse.serverMenu", "when": "false"}`
   entry in `menus.commandPalette` next to the `replMenu` one.
 
-- [ ] **Step 2: Assert registration**
+- [x] **Step 2: Assert registration**
   In `src/test/extension.test.ts` "registers its commands", add an assertion
   that `clojurePulse.serverMenu` is registered, in the same style as the
   `showOutput` one.
 
-- [ ] **Step 3: Run the tests to verify the new assertion fails**
+- [x] **Step 3: Run the tests to verify the new assertion fails**
   Run: `make test`
   Expected: the manifest tests pass; "registers its commands" fails on
   `clojurePulse.serverMenu`.
 
-- [ ] **Step 4: Implement `serverMenu`**
+- [x] **Step 4: Implement `serverMenu`**
   In `src/statusBar.ts` `createStatusBar`, set
   `item.command = "clojurePulse.serverMenu"` and update its doc comment to
   say clicking opens the server menu. In `src/extension.ts` import `serverMenuItems` from `./statusBar`. Add
@@ -218,11 +220,11 @@ verified by hand.
   Register `vscode.commands.registerCommand("clojurePulse.serverMenu", serverMenu)`
   beside the `restart` and `showOutput` registrations.
 
-- [ ] **Step 5: Type-check, lint, test**
+- [x] **Step 5: Type-check, lint, test**
   Run: `make check`
   Expected: lint clean, compile clean, all tests pass.
 
-- [ ] **Step 6: Verify in the editor**
+- [x] **Step 6: Verify in the editor**
   Run: `make package && make install-extension`, reload the window, open a
   Clojure file. Click the `clj-pulse` item.
   Expected: a quick pick with **Show server output** and **Restart language
@@ -233,8 +235,17 @@ verified by hand.
   the item turns red, and its menu now offers **Start language server**.
   If no editor is available, drive the same through `vscode-test` as the
   log-server-version plan did and note the deviation.
+  > Deviation: no `code` CLI in the executing session. A throwaway
+  > (uncommitted) test under `.tmp/menu-e2e/` ran in the VS Code test host
+  > against the fetched clj-pulse 0.5.4, stubbing `showQuickPick` to pick
+  > entries. It saw the running menu (show, Restart, placeholder `— running`),
+  > the restart produced a new `starting server` and ready line in the
+  > channel's persisted log, show output ran cleanly, and after a bogus
+  > `server.path` the menu read `— error` with **Start language server**.
+  > The status-item click itself (`item.command`) is not driven by the API,
+  > so it is covered by reading the code only.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
   `git commit -m "Open a restart/output menu from the clj-pulse status item"`
 
 ### Task 3: Docs
@@ -242,12 +253,42 @@ verified by hand.
 **Files:**
 - Modify: `docs/troubleshooting.md`
 
-- [ ] **Step 1: Describe the menu**
+- [x] **Step 1: Describe the menu**
   In "Language server does not start", change the first paragraph to say the
   **clj-pulse** status item opens a menu with **Show server output** and
   **Restart language server** (**Start language server** once the server is
   stopped or in error), and that the palette commands still work.
   Keep the hover sentence. Use /writing-clearly.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
   `git commit -m "Docs: the clj-pulse status item opens a menu"`
+
+## Completion summary
+
+**Implemented.** Clicking the `clj-pulse` status item runs the hidden
+`clojurePulse.serverMenu` command, which opens a quick pick with **Show
+server output** and **Restart language server**. The second entry reads
+**Start language server** when the server is stopped or in error. The menu
+data is the pure `serverMenuItems` in `src/statusBar.ts`, and `StatusBar`
+gained a `status` getter. Every tooltip now ends its first line with
+`— click for actions`. The troubleshooting doc describes the menu.
+Commits: b8956fe, a9de3a5, a9776ab.
+
+**Verified.** `make check` passes (lint, compile, 877 tests, up from 869).
+A throwaway test in the VS Code test host drove the menu against a real
+clj-pulse 0.5.4: restart, show output, and the Start label after a failed
+start all behaved as designed. Codex reviewed each commit. Its only finding,
+on Task 1, was that the menu was not wired yet, which Task 2 did as planned.
+
+**Issues.** None.
+
+**Deviations.**
+- Task 2 Step 6: no `code` CLI, so the editor check ran in the VS Code test
+  host with a stubbed `showQuickPick` (see the note under the step). The
+  status-item click itself is covered by reading the code only.
+- The branch is cut from `publish-marketplace-openvsx`, where the plan was
+  committed, not from `master`.
+
+**What the plan could have specified better.** It could have named the
+test-host route for the editor check up front, since no `code` CLI is
+available in agent sessions.
