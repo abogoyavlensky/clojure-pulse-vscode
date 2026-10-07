@@ -364,6 +364,11 @@
         "category": "Clojure Pulse"
       },
       {
+        "command": "clojurePulse.serverMenu",
+        "title": "Language Server Menu",
+        "category": "Clojure Pulse"
+      },
+      {
         "command": "clojurePulse.startRepl",
         "title": "Start REPL",
         "category": "Clojure Pulse",
@@ -686,6 +691,10 @@
         },
         {
           "command": "clojurePulse.replMenu",
+          "when": "false"
+        },
+        {
+          "command": "clojurePulse.serverMenu",
           "when": "false"
         },
         {

@@ -153,12 +153,12 @@ export interface StatusBar {
 
 /**
  * Creates a left-aligned status-bar item (sitting by the git/diagnostics area)
- * that clicking opens the server output channel.
+ * that clicking opens the server menu (`serverMenuItems`).
  */
 export function createStatusBar(): StatusBar {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   item.name = "Clojure Pulse";
-  item.command = "clojurePulse.showOutput";
+  item.command = "clojurePulse.serverMenu";
   let current: ServerStatus = "stopped";
 
   return {

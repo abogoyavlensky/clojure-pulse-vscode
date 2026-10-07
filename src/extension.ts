@@ -23,6 +23,7 @@ import { isError, resolveServerPath, ServerConfig } from "./serverPath";
 import {
   createStatusBar,
   LintStatus,
+  serverMenuItems,
   serverReadyLine,
   ServerStatus,
   StatusBar,
@@ -203,6 +204,7 @@ export async function activate(
     vscode.commands.registerCommand("clojurePulse.showOutput", () =>
       outputChannel?.show(),
     ),
+    vscode.commands.registerCommand("clojurePulse.serverMenu", serverMenu),
     vscode.commands.registerCommand("clojurePulse.newline", insertStructuralNewline),
     // `jar:` documents (library / clojure.core sources) are served by the
     // running server; the closure resolves the current client per request so it
@@ -2380,6 +2382,22 @@ async function copyEvalResult(
 function basename(fsPath: string): string {
   const parts = fsPath.split(/[\\/]/);
   return parts[parts.length - 1] || fsPath;
+}
+
+/** What clicking the clj-pulse status item opens: output, or a restart. */
+async function serverMenu(): Promise<void> {
+  const menu = serverMenuItems(statusBar?.status ?? "stopped");
+  const choice = await vscode.window.showQuickPick(menu.items, {
+    placeHolder: menu.placeHolder,
+  });
+  switch (choice?.action) {
+    case "show":
+      outputChannel?.show();
+      break;
+    case "restart":
+      await restart();
+      break;
+  }
 }
 
 async function replMenu(registry: ReplRegistry, form: ReplFormPanel): Promise<void> {
