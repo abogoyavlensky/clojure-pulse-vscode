@@ -43,6 +43,10 @@ suite("extension activation", () => {
       "clojurePulse.showOutput should be registered",
     );
     assert.ok(
+      commands.includes("clojurePulse.serverMenu"),
+      "clojurePulse.serverMenu should be registered",
+    );
+    assert.ok(
       commands.includes("clojurePulse.refreshExternalLibraries"),
       "clojurePulse.refreshExternalLibraries should be registered",
     );

@@ -4,8 +4,12 @@
 
 ## Language server does not start
 
-Click the **clj-pulse** status item, or run **Clojure Pulse: Show Language
-Server Output**. Hover the status item to see which server is selected.
+Click the **clj-pulse** status item and choose **Show server output**. The
+same menu has **Restart language server**, which reads **Start language
+server** once the server has stopped or failed. The **Clojure Pulse: Show
+Language Server Output** and **Clojure Pulse: Restart Language Server**
+commands do the same from the Command Palette. Hover the status item to see
+which server is selected.
 
 - Use the platform-specific VSIX for the machine running the extension.
   With SSH, WSL, or containers, this is the remote host.
